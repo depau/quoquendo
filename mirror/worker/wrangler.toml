@@ -1,0 +1,7 @@
+name = "quoquendo-voices"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "VOICES"
+bucket_name = "quoquendo-voices"

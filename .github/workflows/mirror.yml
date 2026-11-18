@@ -1,0 +1,43 @@
+name: mirror
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release --bin quoquendo
+      - name: Download and unpack every installer
+        run: |
+          set -euo pipefail
+          mkdir -p out/LTTS7
+          ./target/release/quoquendo --list-installers > installers.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            enc=$(jq -rn --arg s "$f" '$s|@uri')
+            echo "::group::$f"
+            curl -fL --retry 3 -o "$f" "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/$enc"
+            ./target/release/quoquendo --unpack "$f" out/LTTS7
+            rm "$f"
+            echo "::endgroup::"
+          done < installers.txt
+      - name: Catalog
+        run: ./target/release/quoquendo --mirror-catalog out/LTTS7 out/catalog.json
+      - name: Upload to R2
+        run: |
+          set -euo pipefail
+          cd out/LTTS7
+          find . -type f ! -path ./installers.json -printf '%P\n' | sort | while IFS= read -r p; do
+            npx --yes wrangler@3 r2 object put "quoquendo-voices/v1/$p" --file "$p" --remote
+          done
+          npx --yes wrangler@3 r2 object put quoquendo-voices/v1/catalog.json --file ../catalog.json --content-type application/json --remote
+      - name: Deploy the Worker
+        working-directory: mirror/worker
+        run: npx --yes wrangler@3 deploy
