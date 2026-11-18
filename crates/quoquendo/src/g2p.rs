@@ -608,8 +608,8 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
 
 const GERMAN_UNSTRESSED: &[&str] = &[
     "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer", "einen", "einem", "und", "ist", "im", "in", "am", "an",
-    "zu", "zum", "zur", "mit", "von", "nach", "auf", "aus", "bei", "ich", "sie", "mir", "mein", "meine", "wo", "hat", "bin",
-    "es", "er", "wir", "ihr", "uns", "vom",
+    "zu", "zum", "zur", "um", "du", "seit", "durch", "bevor", "von", "nach", "auf", "aus", "bei", "ich", "mir", "mein", "meine", "wo", "es", "er", "wir",
+    "ihr", "wegen", "ihre", "ihren", "ihrer", "ihres", "uns", "vom", "für",
 ];
 
 /// What the original does across German words (Katrin's transcriptions):
@@ -641,10 +641,34 @@ fn german_connected_speech(tokens: &mut [Token]) {
         let joined = next.map(|j| tokens[i + 1..j].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))).unwrap_or(false);
         let starts_new_phrase = phrase_start;
         phrase_start = !joined;
+        // a final stop is released into a vowel or h (Gepäck und, und halten)
+        let next_open = joined && next.and_then(|j| tokens[j].symbols().first().map(|s| vowelish(s) || s == "h")).unwrap_or(false);
         if let Token::Word { text, symbols } = &mut tokens[i] {
-            if GERMAN_UNSTRESSED.contains(&text.as_str()) {
+            // little words keep their stress at the end of a phrase (wo der Bahnhof ist?)
+            if joined && GERMAN_UNSTRESSED.contains(&text.as_str()) {
                 for s in symbols.iter_mut() {
                     *s = s.trim_start_matches('`').to_string();
+                }
+            }
+            // the dictionary's citation forms, said in a sentence: no
+            // aspiration after s/sch (nächste), -en after a fricative or
+            // stop is a syllabic n (München)
+            for k in 1..symbols.len() {
+                if matches!(symbols[k - 1].as_str(), "s" | "$") && matches!(symbols[k].as_str(), "ph" | "th" | "kh") {
+                    symbols[k].truncate(1);
+                }
+            }
+            if let [.., a, e, n] = symbols.as_slice() {
+                if e == "HEh" && n == "n" && matches!(a.as_str(), "c" | "x" | "f" | "s" | "z" | "$" | "Ts" | "Pf" | "b") {
+                    let syllabic = if a == "b" { "Hm" } else { "Hn" };
+                    symbols.pop();
+                    *symbols.last_mut().unwrap() = syllabic.into();
+                }
+            }
+            // a final aspirated stop is decided by what follows, as for ours
+            if let Some(l) = symbols.last_mut() {
+                if matches!(l.as_str(), "ph" | "th" | "kh") {
+                    l.truncate(1);
                 }
             }
             let m = symbols.len();
@@ -655,7 +679,8 @@ fn german_connected_speech(tokens: &mut [Token]) {
                 let nxt = symbols.get(k + 1).map(String::as_str);
                 let last = k + 1 == m;
                 let unrel = |c: &str| match c {
-                    "p" | "b" => "Hup",
+                    "p" => "Hup",
+                    "b" => "Hub",
                     "t" | "d" => "Hut",
                     "k" => "Huk",
                     "g" => "Hug",
@@ -679,16 +704,20 @@ fn german_connected_speech(tokens: &mut [Token]) {
                         c => c,
                     };
                     out[k] = if joined {
-                        if voiceless == "t" && matches!(prev, Some("n" | "l" | "R" | "AR")) { "t".into() } else { unrel(voiceless).into() }
+                        if next_open { voiceless.into() } else { unrel(voiceless).into() }
                     } else {
                         asp(voiceless).into()
                     };
-                } else if nxt == Some("Hn") {
+                } else if matches!(nxt, Some("Hn" | "Hm")) {
                     out[k] = unrel(cur).into();
-                } else if matches!(cur, "p" | "t" | "k") && nxt.map(vowelish).unwrap_or(false) && !matches!(prev, Some("s" | "$")) {
+                } else if matches!(cur, "p" | "t" | "k")
+                    && !matches!(prev, Some("s" | "$"))
+                    && (nxt.map(vowelish).unwrap_or(false)
+                        || matches!(nxt, Some("R" | "l")) && symbols.get(k + 2).map(|s| vowelish(s)).unwrap_or(false) && prev.map(vowelish).unwrap_or(true))
+                {
                     out[k] = asp(cur).into();
                 } else if nxt.map(|n| matches!(n, "p" | "t" | "k" | "b" | "d" | "g")).unwrap_or(false)
-                    || nxt.map(|n| !vowelish(n) && !matches!(n, "R" | "l" | "Hn" | "$" | "s" | "v" | "j")).unwrap_or(false) && prev.map(vowelish).unwrap_or(false)
+                    || nxt.map(|n| !vowelish(n) && !matches!(n, "R" | "l" | "Hn" | "$" | "s" | "j" | "h")).unwrap_or(false) && prev.map(vowelish).unwrap_or(false)
                 {
                     out[k] = unrel(cur).into();
                 }

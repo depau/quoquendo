@@ -197,13 +197,20 @@ decompiled lines, not ported; ours were fitted to the original's output:
 88.0% of held-out words, 98.4% of their sounds). Spanish (Jorge, `spanish.rs`)
 99.8%: written accent or the usual stress rule, i/u gliding, c/z `Th`, ll
 `Gl`; b/d/g softened between vowels across words. German (Katrin,
-`german.rs`) 93.0%: be-/ge-/ver-/er-/ent- prefixes before a root stay
-unstressed, a vowel before one consonant or doubled/h is long, -e -en -er
--el endings reduce (`HEh`, `Hn`, `AR`), ch `x` after back vowels else `c`,
-st-/sp- `$`; across words final b/d/g devoice, p/t/k aspirate before a
-vowel (not after s), stops before a consonant are unreleased (`Hut`…), n
-before k/g is `N`, a vowel-initial word inside a phrase starts with `Hk`.
-Left for German: stress on loanwords (Berlin), compounds (Bahn|hof).
+`german.rs`) 100% (97.6% on sentences the rules were not fitted to,
+`oracle/bench-de2.txt`): be-/ge-/ver-/er-/ent- prefixes before a root (not
+before a bare ending: geben) stay unstressed, a vowel before one consonant,
+a stop + r/l, doubled or h is long, -e -en -er -el -eln endings reduce
+(`HEh`, `Hn`, `Hm` after b, `AR`, `Hl n`), -ig is `I c`, -ier- takes the
+stress, ch `x` after back vowels else `c`, st-/sp- `$`, dt `t`; compounds
+split after a known first part (Haupt|bahn|hof, Ab|stand) and the later
+parts lose their stress. The dictionary's citation forms are reshaped in
+the sentence too (nächste: no aspiration after s; München: `c Hn`). Across
+words final b/d/g devoice, a final stop is released into a vowel or h and
+unreleased before other consonants (`Hut Hub Huk`), p/t/k aspirate before
+a vowel or stop+r (not after s), n before k/g is `N`, a vowel-initial word
+inside a phrase starts with `Hk`; little words lose their stress except at
+the end of a phrase. Left: loanword stress (Konzert, Büro).
 
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
@@ -461,8 +468,8 @@ when a speed/pitch change asks for it.
 ## 11. Not done / unknown
 
 - An exact port of French letter-to-sound (FonTrasParola, LTTS7French.dll
-  0x1000f730, 3 570 lines) instead of fitted rules (97.9%); German compounds
-  and loanword stress (93.0%); Italian's exception and ending tables in
+  0x1000f730, 3 570 lines) instead of fitted rules (97.9%); German loanword
+  stress (97.6% held out); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
 - Reading the installers natively (Inno Setup 5.2.3 headers + LZMA) instead
