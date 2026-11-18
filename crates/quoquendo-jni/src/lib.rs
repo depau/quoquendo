@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jlong, jshortArray, jstring};
 use jni::JNIEnv;
-use quoquendo::{catalog, synth, Voice, VoiceFiles};
+use quoquendo::{catalog, codec, synth, Voice, VoiceFiles};
 use serde_json::{json, Value};
 
 /// Run `f`, turning an `Err` or a panic into a thrown `RuntimeException` and
@@ -94,6 +94,8 @@ fn list_voices(store: &str) -> String {
                 .map(str::trim)
                 .filter(|a| a.contains('-'))
                 .collect();
+            // what deleting the voice removes
+            let files: Vec<&String> = [Some(&v.vcf), Some(&v.dir), v.library.as_ref()].into_iter().flatten().collect();
             json!({
                 "name": d.name,
                 "description": d.description,
@@ -101,12 +103,24 @@ fn list_voices(store: &str) -> String {
                 "locales": locales,
                 "gender": d.gender,
                 "rate": d.audio_rate,
+                "demoSentence": d.demo_sentence,
                 "languageMissing": v.language_missing.is_some(),
                 "unsupported": v.unsupported,
+                "languageFolder": v.language_dir().and_then(|d| d.rsplit('/').next()),
+                "files": files,
             })
         })
         .collect();
     Value::Array(voices).to_string()
+}
+
+/// Why an installer's voice can't speak yet, known from its name alone: its
+/// language has no module in the pack (`Valencian Catalan` → `no Valencian module`).
+fn catalog_unsupported(language: &str) -> Option<String> {
+    language
+        .split_whitespace()
+        .find(|w| catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(w)))
+        .map(|w| format!("no {w} module"))
 }
 
 fn catalog_json() -> String {
@@ -121,6 +135,7 @@ fn catalog_json() -> String {
                 "gender": i.gender,
                 "size": i.size,
                 "archiveUrl": catalog::archive_url(i.file),
+                "unsupported": catalog_unsupported(i.language),
             })
         })
         .collect();
@@ -158,6 +173,23 @@ fn to_pcm16(samples: &[f32]) -> Vec<i16> {
         .collect()
 }
 
+/// The recordings bank, or why there is none.
+fn bank(voice: &Voice) -> Result<&codec::AudioBank, String> {
+    let db = &voice.db;
+    db.audio
+        .as_ref()
+        .ok_or_else(|| db.audio_error.clone().unwrap_or_else(|| "this voice's recordings were not found".into()))
+}
+
+/// The rate `synthesize` returns: banks at another rate are resampled to the
+/// engine's output rate (`synth::render`).
+fn output_rate(voice: &Voice) -> u32 {
+    match &voice.db.audio {
+        Some(_) => codec::OUTPUT_RATE,
+        None => voice.db.audio_rate(),
+    }
+}
+
 fn analyse(voice: &Voice, text: &str) -> String {
     let db = &voice.db;
     let targets = voice.transcribe(text);
@@ -173,9 +205,10 @@ fn analyse(voice: &Voice, text: &str) -> String {
         })
         .collect();
     let plan = synth::select_all(db, &targets);
-    let rate = db.audio_rate().max(1) as f32;
+    // piece positions are samples of the recordings bank
+    let rate = db.audio.as_ref().map_or(db.audio_rate(), |b| b.rate).max(1) as f32;
     let mut pieces = Vec::new();
-    for phrase in &plan {
+    for (i, phrase) in plan.iter().enumerate() {
         for p in &phrase.pieces {
             let sentence = db
                 .units
@@ -184,9 +217,12 @@ fn analyse(voice: &Voice, text: &str) -> String {
                 .map(|s| s.join(" "))
                 .unwrap_or_default();
             pieces.push(json!({
+                "phrase": i,
                 "covers": p.covers,
                 "unit": p.unit,
                 "sentence": sentence,
+                "from": p.from,
+                "to": p.to,
                 "atS": p.from as f32 / rate,
                 "lenMs": p.to.saturating_sub(p.from) as f32 * 1000.0 / rate,
                 "pitch": p.pitch,
@@ -194,11 +230,23 @@ fn analyse(voice: &Voice, text: &str) -> String {
             }));
         }
     }
-    let missing: Vec<&String> = plan.iter().flat_map(|p| &p.missing).collect();
-    let envelope = synth::render(&plan, db, synth::Settings::default())
-        .map(|s| synth::envelope(&s, 256))
-        .unwrap_or_default();
-    json!({ "phrases": phrases, "pieces": pieces, "missing": missing, "envelope": envelope }).to_string()
+    // per picked phrase: the pause after it and the sounds never recorded
+    let picked: Vec<Value> = plan
+        .iter()
+        .map(|p| json!({ "pauseMs": p.pause_ms, "mood": p.mood.map(String::from), "missing": p.missing }))
+        .collect();
+    let audio = match synth::render(&plan, db, synth::Settings::default()) {
+        Ok(s) => json!({ "rate": s.rate, "samples": s.samples.len(), "seconds": s.duration_s(), "envelope": synth::envelope(&s, 256) }),
+        Err(e) => json!({ "error": e }),
+    };
+    json!({
+        "phrases": phrases,
+        "plan": picked,
+        "pieces": pieces,
+        "sentences": db.units.len(),
+        "audio": audio,
+    })
+    .to_string()
 }
 
 /// The voice behind a handle from `loadVoice`.
@@ -263,7 +311,40 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_freeVoice<'l>(mut env: JNI
 
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_sampleRate<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, handle: jlong) -> jint {
-    guard(&mut env, 0, |_| Ok(voice(handle)?.db.audio_rate() as jint))
+    guard(&mut env, 0, |_| Ok(output_rate(voice(handle)?) as jint))
+}
+
+/// The recordings bank's own rate (44 000 for CodecMsx voices): the rate of `pieceSamples`.
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_audioRate<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, handle: jlong) -> jint {
+    guard(&mut env, 0, |_| Ok(bank(voice(handle)?)?.rate as jint))
+}
+
+/// One recorded piece as it sits in the recordings: samples `from..to` of the
+/// bank (an `analyse` piece's `from`/`to`), at `audioRate`. `unit` is the
+/// piece's recorded sentence, checked against the inventory.
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_pieceSamples<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    handle: jlong,
+    unit: jint,
+    from: jint,
+    to: jint,
+) -> jshortArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let v = voice(handle)?;
+        if unit < 0 || unit as usize >= v.db.units.len() {
+            return Err(format!("no recorded sentence #{unit}"));
+        }
+        if from < 0 || to < from {
+            return Err(format!("bad piece range {from}..{to}"));
+        }
+        let pcm = bank(v)?.read(from as usize, (to - from) as usize);
+        let array = env.new_short_array(pcm.len() as i32).map_err(|e| e.to_string())?;
+        env.set_short_array_region(&array, 0, &pcm).map_err(|e| e.to_string())?;
+        Ok(array.into_raw())
+    })
 }
 
 #[no_mangle]
@@ -331,5 +412,12 @@ mod tests {
         let v: Value = serde_json::from_str(&catalog_json()).unwrap();
         assert_eq!(v.as_array().unwrap().len(), catalog::INSTALLERS.len());
         assert!(v[0]["archiveUrl"].as_str().unwrap().starts_with("https://archive.org/"));
+    }
+
+    #[test]
+    fn catalog_names_missing_modules() {
+        assert_eq!(catalog_unsupported("Valencian Catalan").as_deref(), Some("no Valencian module"));
+        assert_eq!(catalog_unsupported("Chinese").as_deref(), Some("no Chinese module"));
+        assert_eq!(catalog_unsupported("Italian"), None);
     }
 }

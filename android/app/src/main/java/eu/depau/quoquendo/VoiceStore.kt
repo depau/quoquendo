@@ -19,20 +19,19 @@ data class InstalledVoice(
     val locales: List<Locale>,
     val gender: String,
     val rate: Int,
+    val demoSentence: String,
     val languageMissing: Boolean,
     val unsupported: String?,
+    /** `Italian`: the folder under data/languages its language data comes from */
+    val languageFolder: String?,
+    /** what deleting it removes, relative to the store */
+    val files: List<String>,
 ) {
-    /** Why it can't speak, or null when it can. */
-    val problem: String?
-        get() = unsupported?.let { "Unsupported yet: $it" }
-
-    /** Shown under the name when its language data comes from another installer. */
-    val warning: String?
-        get() = if (languageMissing && unsupported == null)
-            "Needs $motherTongue language data: add any $motherTongue voice from the pack, or download it from the mirror"
-        else null
-
+    /** It can speak (possibly on built-in rules alone, when its language data is missing). */
     val speakable: Boolean get() = unsupported == null
+
+    /** Speak is offered: it speaks, and with its own language data. */
+    val ready: Boolean get() = unsupported == null && !languageMissing
 }
 
 /** One installer of the pack (`Native.catalog`). */
@@ -44,7 +43,12 @@ data class Installer(
     val gender: String,
     val size: Long,
     val archiveUrl: String,
-)
+    /** why its voice can't speak yet, known from the catalog alone */
+    val unsupported: String?,
+) {
+    /** `English` for `UK English`: the filter chip it belongs to. */
+    val family: String get() = language.substringAfterLast(' ')
+}
 
 /** Progress callback: bytes done, total (or -1 when unknown). */
 typealias Progress = (done: Long, total: Long) -> Unit
@@ -58,7 +62,7 @@ class VoiceStore(context: Context) {
         val arr = JSONArray(Native.listVoices(root.path))
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
-            val locales = o.getJSONArray("locales").let { l -> (0 until l.length()).map { l.getString(it) } }
+            val locales = o.getJSONArray("locales").strings()
                 .map { Locale.forLanguageTag(it) }
                 .filter { it.language.isNotEmpty() }
             InstalledVoice(
@@ -68,25 +72,35 @@ class VoiceStore(context: Context) {
                 locales = locales,
                 gender = o.optString("gender"),
                 rate = o.optInt("rate"),
+                demoSentence = o.optString("demoSentence"),
                 languageMissing = o.optBoolean("languageMissing"),
-                unsupported = if (o.isNull("unsupported")) null else o.getString("unsupported"),
+                unsupported = o.stringOrNull("unsupported"),
+                languageFolder = o.stringOrNull("languageFolder"),
+                files = o.getJSONArray("files").strings(),
             )
         }
     }
 
+    /** Bytes the voice's own files take (its language data aside). */
+    fun bytesOf(v: InstalledVoice): Long = v.files.sumOf { bytesUnder(File(root, it)) }
+
+    /** Bytes the whole store takes. */
+    fun bytesUsed(): Long = bytesUnder(root)
+
+    private fun bytesUnder(f: File): Long = f.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
     fun delete(name: String) = Native.deleteVoice(root.path, name)
 
     /** Unpack an installer file into the store; returns the voices it brought. */
-    fun importInstaller(exe: File): List<String> {
-        val out = JSONObject(Native.unpackInstaller(exe.path, root.path)).getJSONArray("voices")
-        return (0 until out.length()).map { out.getString(it) }
-    }
+    fun importInstaller(exe: File): List<String> =
+        JSONObject(Native.unpackInstaller(exe.path, root.path)).getJSONArray("voices").strings()
 
-    /** Copy [input] to a temporary file, unpack it, delete the copy. */
-    fun importStream(input: InputStream, progress: Progress): List<String> {
+    /** Copy [input] to a temporary file (reporting copy progress), unpack it, delete the copy. */
+    fun importStream(input: InputStream, size: Long, progress: Progress, unpacking: () -> Unit): List<String> {
         val tmp = File.createTempFile("import", ".exe", cache)
         try {
-            tmp.outputStream().use { out -> copy(input, out, -1, progress) }
+            tmp.outputStream().use { out -> copy(input, out, size, progress) }
+            unpacking()
             return importInstaller(tmp)
         } finally {
             tmp.delete()
@@ -97,11 +111,19 @@ class VoiceStore(context: Context) {
      * Install [installer]'s voice: from the mirror when one is configured and
      * has it, otherwise the installer from archive.org.
      */
-    fun download(installer: Installer, mirror: String, progress: Progress): List<String> {
+    fun download(installer: Installer, mirror: String, progress: Progress, unpacking: () -> Unit): List<String> {
         if (mirror.isNotEmpty()) {
             try {
-                if (downloadFromMirror(installer, mirror, progress)) return listOf(installer.voice)
+                val catalog = mirrorCatalog(mirror)
+                val voice = catalog.voices().firstOrNull {
+                    it.optString("installer") == installer.file || it.getString("name").equals(installer.voice, ignoreCase = true)
+                }
+                if (voice != null) {
+                    fetch(mirror, voice.getJSONArray("files").objects() + catalog.languageFiles(voice), progress)
+                    return listOf(voice.getString("name"))
+                }
             } catch (e: Exception) {
+                if (e is InterruptedException) throw e
                 android.util.Log.w(TAG, "mirror failed for ${installer.file}, falling back to archive.org", e)
             }
         }
@@ -111,27 +133,35 @@ class VoiceStore(context: Context) {
                 val total = conn.contentLengthLong.takeIf { it > 0 } ?: installer.size
                 conn.inputStream.use { input -> tmp.outputStream().use { copy(input, it, total, progress) } }
             }
+            unpacking()
             return importInstaller(tmp)
         } finally {
             tmp.delete()
         }
     }
 
-    /** False when the mirror's catalog doesn't have the voice. */
-    private fun downloadFromMirror(installer: Installer, mirror: String, progress: Progress): Boolean {
-        val catalog = get("$mirror/v1/catalog.json").use { c -> JSONObject(c.inputStream.bufferedReader().readText()) }
-        val voices = catalog.getJSONArray("voices")
-        val voice = (0 until voices.length()).map { voices.getJSONObject(it) }.firstOrNull {
-            it.optString("installer") == installer.file || it.getString("name").equals(installer.voice, ignoreCase = true)
-        } ?: return false
-        val files = mutableListOf<JSONObject>()
-        voice.getJSONArray("files").let { f -> (0 until f.length()).forEach { files += f.getJSONObject(it) } }
-        if (!voice.isNull("language_folder")) {
-            val folder = voice.getString("language_folder")
-            catalog.getJSONObject("languages").optJSONObject(folder)?.getJSONArray("files")?.let { f ->
-                (0 until f.length()).forEach { files += f.getJSONObject(it) }
-            }
-        }
+    /** Fetch only the language data [voice] needs, from the mirror. */
+    fun downloadLanguage(voice: String, mirror: String, progress: Progress) {
+        val catalog = mirrorCatalog(mirror)
+        val entry = catalog.voices().firstOrNull { it.getString("name").equals(voice, ignoreCase = true) }
+            ?: throw IllegalStateException("the mirror doesn't know $voice")
+        val files = catalog.languageFiles(entry)
+        if (files.isEmpty()) throw IllegalStateException("the mirror has no language data for $voice")
+        fetch(mirror, files, progress)
+    }
+
+    private fun mirrorCatalog(mirror: String): JSONObject =
+        get("$mirror/v1/catalog.json").use { c -> JSONObject(c.inputStream.bufferedReader().readText()) }
+
+    private fun JSONObject.voices(): List<JSONObject> = getJSONArray("voices").objects()
+
+    private fun JSONObject.languageFiles(voice: JSONObject): List<JSONObject> {
+        val folder = voice.stringOrNull("language_folder") ?: return emptyList()
+        return getJSONObject("languages").optJSONObject(folder)?.getJSONArray("files")?.objects() ?: emptyList()
+    }
+
+    /** Fetch every mirror file not stored yet, each checked against its sha256. */
+    private fun fetch(mirror: String, files: List<JSONObject>, progress: Progress) {
         val wanted = files.filter { f ->
             val target = File(root, f.getString("path"))
             !(target.isFile && target.length() == f.getLong("size"))
@@ -147,20 +177,17 @@ class VoiceStore(context: Context) {
             val digest = MessageDigest.getInstance("SHA-256")
             get("$mirror/v1/" + path.split('/').joinToString("/") { Uri.encode(it) }).use { conn ->
                 conn.inputStream.use { input ->
-                    part.outputStream().use { out ->
-                        copy(input, out, total, { d, t -> progress(before + d, t) }, digest)
-                    }
+                    part.outputStream().use { out -> copy(input, out, total, { d, t -> progress(before + d, t) }, digest) }
                 }
             }
             val hex = digest.digest().joinToString("") { "%02x".format(it) }
             if (!hex.equals(f.getString("sha256"), ignoreCase = true)) {
                 part.delete()
-                throw IllegalStateException("$path: checksum mismatch")
+                throw IllegalStateException("$path: checksum mismatch — nothing was installed")
             }
             if (!part.renameTo(target)) throw IllegalStateException("$path: could not be stored")
             before += f.getLong("size")
         }
-        return true
     }
 
     private fun get(url: String): ConnectionHandle {
@@ -179,7 +206,7 @@ class VoiceStore(context: Context) {
             }
             if (code !in 200..299) {
                 conn.disconnect()
-                throw IllegalStateException("$current: HTTP $code")
+                throw IllegalStateException("${current.host} answered $code")
             }
             return ConnectionHandle(conn)
         }
@@ -209,7 +236,7 @@ class VoiceStore(context: Context) {
             out.write(buf, 0, n)
             digest?.update(buf, 0, n)
             done += n
-            if (done - reported >= 512 * 1024) {
+            if (done - reported >= 256 * 1024) {
                 reported = done
                 progress(done, total)
             }
@@ -220,23 +247,24 @@ class VoiceStore(context: Context) {
     companion object {
         const val TAG = "quoquendo"
 
-        fun catalog(): List<Installer> {
-            val arr = JSONArray(Native.catalog())
-            return (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                Installer(
-                    file = o.getString("file"),
-                    label = o.getString("label"),
-                    language = o.getString("language"),
-                    voice = o.getString("voice"),
-                    gender = o.getString("gender"),
-                    size = o.getLong("size"),
-                    archiveUrl = o.getString("archiveUrl"),
-                )
-            }
+        fun catalog(): List<Installer> = JSONArray(Native.catalog()).objects().map { o ->
+            Installer(
+                file = o.getString("file"),
+                label = o.getString("label"),
+                language = o.getString("language"),
+                voice = o.getString("voice"),
+                gender = o.getString("gender"),
+                size = o.getLong("size"),
+                archiveUrl = o.getString("archiveUrl"),
+                unsupported = o.stringOrNull("unsupported"),
+            )
         }
 
         /** The Android TTS voice name of [voice] speaking [locale]. */
         fun ttsVoiceName(voice: String, locale: Locale) = "$voice-${locale.toLanguageTag()}"
     }
 }
+
+private fun JSONArray.strings(): List<String> = (0 until length()).map { getString(it) }
+private fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
+private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)

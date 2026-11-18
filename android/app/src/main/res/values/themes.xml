@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Quoquendo" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.Quoquendo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFFF8F1</item>
+    </style>
     <style name="Theme.Quoquendo.Invisible" parent="android:Theme.Translucent.NoTitleBar" />
 </resources>

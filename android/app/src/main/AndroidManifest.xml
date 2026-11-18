@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <queries>
         <intent>
@@ -27,6 +28,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- the engine's settings activity (tts_engine.xml): opens the Settings screen -->
+        <activity-alias
+            android:name=".EngineSettings"
+            android:exported="true"
+            android:targetActivity=".MainActivity" />
 
         <activity
             android:name=".CheckVoiceDataActivity"
