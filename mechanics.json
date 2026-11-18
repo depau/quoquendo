@@ -566,6 +566,19 @@
    "value": "0x10000",
    "unit": "bytes",
    "source": "inno.rs; every file of the Katrin and Raffaele installers compared byte for byte with innoextract"
+  },
+  {
+   "name": "German function word longest unstressed",
+   "group": "German FON",
+   "value": 7,
+   "unit": "letters",
+   "source": "LTTS7German.dll 0x10008130 (stress-grade pass)"
+  },
+  {
+   "name": "German function word classes",
+   "group": "German FON",
+   "value": "0x19, 0x1e, 0x18, 0x20, 0x21, 0x16, 0x22, 0x1f, 0x82, 0x2e",
+   "source": "LTTS7German.dll 0x10008130; class codes from 0x1000a470"
   }
  ]
 }

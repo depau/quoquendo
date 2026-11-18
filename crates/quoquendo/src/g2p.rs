@@ -432,6 +432,9 @@ use std::collections::HashMap;
 
 pub struct LanguageData {
     dictionary: HashMap<String, Vec<String>>,
+    /// `grammaticale` as the language module's class code and whether
+    /// `gradoaccentuale` is DEA, for words that have both
+    grammar: HashMap<String, (u8, bool)>,
     gpr: Option<crate::gpr::Gpr>,
     names: HashMap<u32, String>,
 }
@@ -444,8 +447,16 @@ static LANGUAGE_DATA: std::sync::RwLock<Option<HashMap<Language, std::sync::Arc<
 /// Returns the number of dictionary words.
 pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>, phones: &[(String, u32)]) -> usize {
     let mut dictionary = HashMap::new();
+    let mut grammar = HashMap::new();
     if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
         for r in rows {
+            // the German module's own query (LTTS7German.dll 0x10007720):
+            // grafemica, gradoaccentuale, grammaticale WHERE both are set
+            if let (Some(word), Some(grade), Some(class)) = (r.first().and_then(|v| v.text()), r.get(2).and_then(|v| v.text()), r.get(3).and_then(|v| v.text())) {
+                if !grade.is_empty() && !class.is_empty() {
+                    grammar.entry(word.to_lowercase()).or_insert((german_class(&class), grade == "DEA"));
+                }
+            }
             let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else { continue };
             let syms: Vec<String> = pron.split(|c| c == ' ' || c == '-').filter(|s| !s.is_empty()).map(str::to_string).collect();
             if !syms.is_empty() {
@@ -458,7 +469,7 @@ pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>
         names.entry(*f).or_insert_with(|| name.clone());
     }
     let n = dictionary.len();
-    let data = LanguageData { dictionary, gpr: gpr.and_then(crate::gpr::Gpr::parse), names };
+    let data = LanguageData { dictionary, grammar, gpr: gpr.and_then(crate::gpr::Gpr::parse), names };
     LANGUAGE_DATA.write().unwrap().get_or_insert_with(HashMap::new).insert(lang, std::sync::Arc::new(data));
     n
 }
@@ -606,11 +617,49 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
 
 // --- German connected speech -------------------------------------------------
 
-const GERMAN_UNSTRESSED: &[&str] = &[
-    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer", "einen", "einem", "und", "ist", "im", "in", "am", "an",
-    "zu", "zum", "zur", "um", "du", "seit", "durch", "bevor", "von", "nach", "auf", "aus", "bei", "ich", "mir", "mein", "meine", "wo", "es", "er", "wir",
-    "ihr", "wegen", "ihre", "ihren", "ihrer", "ihres", "uns", "vom", "für",
-];
+/// The German module's class code for a `grammaticale` label
+/// (LTTS7German.dll 0x1000a470).
+fn german_class(label: &str) -> u8 {
+    match label {
+        "PRON" | "PRONP" | "PRONPS" | "PRONR" | "PRONP_AGG" | "PRONP_AGG_PRONPS" => 0x20,
+        "VERBO" => 0x2a,
+        "VERBOA" => 0x2b,
+        "VERBOE" => 0x2c,
+        "NONVERBO" => 0x2f,
+        "AVV" | "AVV_CONG" => 0x33,
+        "AGG" | "AGG_PRON" => 0x29,
+        "SOST" => 0x15,
+        "ARTIC" => 0x18,
+        "CONG" => 0x1f,
+        "PREP" | "PREPS" | "PREP_CONG" => 0x19,
+        "PREPA" => 0x1e,
+        "ECONG" | "CONGE" => 0x82,
+        "SIGLAU" => 0x84,
+        "NEGAZ" => 0x2e,
+        _ => 0xc8,
+    }
+}
+
+/// Whether a German word loses its stress in a sentence, by the module's
+/// stress-grade pass (LTTS7German.dll 0x10008130): a function word
+/// (article, preposition, pronoun, conjunction, negation) or one the
+/// dictionary marks DEA, of at most 7 letters, except sie, mit and nicht.
+/// Words the dictionary doesn't classify fall back to `GERMAN_UNSTRESSED`
+/// (the module's own morphological analyser isn't ported).
+fn german_unstressed(word: &str) -> bool {
+    const FUNCTION_CLASSES: [u8; 10] = [0x19, 0x1e, 0x18, 0x20, 0x21, 0x16, 0x22, 0x1f, 0x82, 0x2e];
+    if matches!(word, "sie" | "mit" | "nicht") {
+        return false;
+    }
+    match language_data(Language::German).and_then(|d| d.grammar.get(word).copied()) {
+        Some((class, dea)) => (FUNCTION_CLASSES.contains(&class) || dea) && word.chars().count() <= 7,
+        None => GERMAN_UNSTRESSED.contains(&word),
+    }
+}
+
+/// Little words the voice's dictionary doesn't classify, which the module's
+/// morphological analyser would call prepositions or possessives.
+const GERMAN_UNSTRESSED: &[&str] = &["mein", "meine", "wegen", "für"];
 
 /// What the original does across German words (Katrin's transcriptions):
 /// little words lose their stress; p/t/k are aspirated (ph th kh) at the
@@ -645,7 +694,7 @@ fn german_connected_speech(tokens: &mut [Token]) {
         let next_open = joined && next.and_then(|j| tokens[j].symbols().first().map(|s| vowelish(s) || s == "h")).unwrap_or(false);
         if let Token::Word { text, symbols } = &mut tokens[i] {
             // little words keep their stress at the end of a phrase (wo der Bahnhof ist?)
-            if joined && GERMAN_UNSTRESSED.contains(&text.as_str()) {
+            if joined && german_unstressed(text) {
                 for s in symbols.iter_mut() {
                     *s = s.trim_start_matches('`').to_string();
                 }

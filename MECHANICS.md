@@ -210,7 +210,31 @@ words final b/d/g devoice, a final stop is released into a vowel or h and
 unreleased before other consonants (`Hut Hub Huk`), p/t/k aspirate before
 a vowel or stop+r (not after s), n before k/g is `N`, a vowel-initial word
 inside a phrase starts with `Hk`; little words lose their stress except at
-the end of a phrase. Left: loanword stress (Konzert, Büro).
+the end of a phrase (observed; not in the module). Left: loanword stress
+(Konzert, Büro).
+
+**German, decompiled** (LTTS7German.dll; its one export `German` 0x10007f00
+hands the engine a table of named functions at 0x100294a8: LesAccenta
+0x100014d0, LesNormalizzaAccento 0x10003410, LesGradiAccentuali 0x10008130,
+FonTrasParola 0x10015b50, FonAllofonoLingua 0x10012830, FonGetSamples
+0x100071e0). The loader 0x10007720 reads the voice dictionary three ways:
+`SELECT grafemica, fonetica FROM lessico` (pronunciations), `SELECT
+grafemica, gradoaccentuale, grammaticale, tempomodo, gennum … WHERE both set`
+(grammar) and the abbreviations. 0x1000a470 turns `grammaticale` into a
+class: PREP/PREPS/PREP_CONG 0x19, PREPA 0x1e, ARTIC 0x18, PRON/PRONP/PRONPS/
+PRONR/PRONP_AGG(_PRONPS) 0x20, CONG 0x1f, ECONG/CONGE 0x82, NEGAZ 0x2e,
+SIGLAU 0x84, AVV(_CONG) 0x33, AGG(_PRON) 0x29, VERBO 0x2a, VERBOA 0x2b,
+VERBOE 0x2c, NONVERBO 0x2f, SOST 0x15. The stress-grade pass 0x10008130
+gives a word grade 3 (unstressed) when its class is one of 0x19 0x1e 0x18
+0x20 0x21 0x16 0x22 0x1f 0x82 0x2e or its grade is already DEA, and it has
+at most 7 letters, except `sie`/`Sie`, `mit`, `nicht` (written `sìe`,
+`mìt`, `nìcht` in the module's marked spelling), which keep grade 0;
+`es` is unstressed unless punctuation follows. `g2p::german_unstressed`
+does this from the dictionary's own columns; the four little words the
+dictionary doesn't classify (mein, meine, wegen, für) stand in for the
+module's morphological analyser. FonAllofonoLingua (1 964 lines) rewrites
+phones by the engine's feature codes (0x19e2 → 0x59f2 before 0x1942…);
+not ported, our fitted allophone rules match it on both benchmarks.
 
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
