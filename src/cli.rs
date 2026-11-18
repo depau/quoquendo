@@ -36,6 +36,9 @@ pub struct LaunchOptions {
     mirror_catalog: Option<(PathBuf, PathBuf)>,
     /// `--list-installers`: the pack's installer file names
     list_installers: bool,
+    /// `--compare-all`: every voice against the original on its language's
+    /// benchmark, into oracle/out/dashboard.md
+    compare_all: bool,
 }
 
 pub fn parse_args() -> LaunchOptions {
@@ -88,6 +91,8 @@ pub fn parse_args() -> LaunchOptions {
             }
         } else if a == "--list-installers" {
             opts.list_installers = true;
+        } else if a == "--compare-all" {
+            opts.compare_all = true;
         } else if a == "--store" {
             if let Some(dir) = args.next() {
                 install::set_store(dir.into());
@@ -272,6 +277,59 @@ fn compare(what: &str, voice: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Every installed voice that has an installer and a benchmark, scored
+/// stage by stage against the original engine (needs Wine, see
+/// oracle/run.sh): `oracle/out/dashboard.md`, one row per voice, and each
+/// voice's report in `oracle/out/compare/<voice>.txt`.
+fn compare_all() -> Result<(), String> {
+    use std::fmt::Write;
+    let dir = oracle::oracle_dir().ok_or("no oracle folder")?;
+    let pct = |a: usize, b: usize| if b == 0 { "—".to_string() } else { format!("{:.1}%", 100.0 * a as f64 / b as f64) };
+    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
+    let mut table = String::from(
+        "| voice | bench | FON sounds identical | CAT half-phones identical (original FON) | decoder requests bit-exact | replay inside pieces | replay samples ±2 | replay samples bit-exact |\n|---|---|---|---|---|---|---|---|\n",
+    );
+    let mut voices = engines::all_voices();
+    voices.sort_by(|a, b| a.name.cmp(&b.name));
+    for v in &voices {
+        let Some(code) = oracle::bench_for(&v.mother_tongue) else { continue };
+        if quoquendo::catalog::installer_for(&v.name).is_none() {
+            continue;
+        }
+        let bench = dir.join(format!("bench-{code}.txt"));
+        let texts: Vec<String> = std::fs::read_to_string(&bench)
+            .map_err(|e| format!("{}: {e}", bench.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        eprintln!("{}: {} sentences of bench-{code}", v.name, texts.len());
+        let row = (|| -> Result<String, String> {
+            let voice = quoquendo::Voice::open(v)?;
+            let refs = oracle::run_many(&v.name, &texts)?;
+            let out = dir.join("out/compare").join(&v.name);
+            let (report, t) = pipeline::compare(&refs, &voice, Some(&out))?;
+            let _ = std::fs::write(dir.join(format!("out/compare/{}.txt", v.name)), &report);
+            Ok(format!(
+                "{} | {} | — | {:.1} dB | {:.1}% | {:.1}% |",
+                pct(t.same_phones, t.phones),
+                pct(t.same_halves, t.halves),
+                mean(&t.inside_snr),
+                100.0 * mean(&t.replay_close),
+                100.0 * mean(&t.replay_exact)
+            ))
+        })()
+        .unwrap_or_else(|e| format!("failed: {} | | | | | |", e.replace('|', "/").replace('\n', " ")));
+        let _ = writeln!(table, "| {} | {code} | {row}", v.name);
+        // written after every voice, so a long run can be watched
+        let _ = std::fs::create_dir_all(dir.join("out"));
+        std::fs::write(dir.join("out/dashboard.md"), &table).map_err(|e| e.to_string())?;
+    }
+    println!("{table}");
+    Ok(())
+}
+
 /// QQ_CHECK_MARKS=<trace.join>: our pitch marks against the original's
 /// (oracle/loqref.c LOQ_TRACE_JOIN "M" lines).
 fn check_marks(trace: &str, voice: Option<&str>) -> Result<(), String> {
@@ -384,6 +442,9 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
     if let Some(path) = &opts.install {
         let store = install::voice_store().unwrap_or_default();
         return Some(done(install::install_voice(path).map(|names| println!("installed {} into {}", names.join(", "), store.display()))));
+    }
+    if opts.compare_all {
+        return Some(done(compare_all()));
     }
     if opts.selftest {
         return Some(selftest());

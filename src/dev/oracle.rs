@@ -309,6 +309,29 @@ impl Reference {
     }
 }
 
+/// The benchmark for a voice's MotherTongue: `oracle/bench-<code>.txt`.
+pub fn bench_for(mother_tongue: &str) -> Option<&'static str> {
+    Some(match mother_tongue {
+        "Italian" => "it",
+        "EnglishUs" => "en",
+        "EnglishGb" => "en-gb",
+        "EnglishAu" => "en-au",
+        "SpanishEs" => "es",
+        t if t.starts_with("Spanish") => "es-am",
+        "French" => "fr",
+        "German" => "de",
+        "PortuguesePt" => "pt-pt",
+        "PortugueseBr" => "pt-br",
+        "Greek" => "el",
+        "Swedish" => "sv",
+        "Danish" => "da",
+        "Dutch" => "nl",
+        "Polish" => "pl",
+        "Russian" => "ru",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

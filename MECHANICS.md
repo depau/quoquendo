@@ -651,3 +651,11 @@ when a speed/pitch change asks for it.
   sqrt() rounding on the x87 against libm; they decide a few pitch marks.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
   and pitch controls, Gilded phrases.
+- Four voices have no LTTS7 language module in any installer of the pack:
+  Jordi (Catalan), Empar (Valencian), Carmela (Galician), LinLin (Chinese).
+  The original refuses them too: with the voice unpacked into a full engine,
+  `ttsLoadPersona` fails with 12 "Invalid function or API parameter" (Jordi,
+  LinLin). The Loquendo 6 pack's installers carry LTTS6 modules for Catalan
+  (`LoqCatalan6.1.dll`, `Catalan6.1.phd`/`.lex`) and Mandarin
+  (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from; none for
+  Galician or Valencian was found.

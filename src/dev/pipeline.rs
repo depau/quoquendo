@@ -249,6 +249,8 @@ pub struct Totals {
     pub replay_snr: Vec<f64>,
     pub inside_snr: Vec<f64>,
     pub replay_close: Vec<f64>,
+    /// share of the replay's samples identical to the original's
+    pub replay_exact: Vec<f64>,
     pub orig_s: f64,
     pub ours_s: f64,
 }
@@ -324,12 +326,15 @@ pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&st
         let (snr, close) = audio_match(&r.audio, &replay);
         tot.replay_snr.push(snr);
         tot.replay_close.push(close);
+        let exact = r.audio.iter().zip(&replay).filter(|(a, b)| a == b).count() as f64 / r.audio.len().max(replay.len()).max(1) as f64;
+        tot.replay_exact.push(exact);
         let inside = pieces_match(&orig_plan, db, &r.audio);
         tot.inside_snr.push(inside);
         let _ = writeln!(
             rep,
-            "  SIG  original pieces through our decoder: inside pieces {inside:.1} dB (median); whole file {snr:.1} dB, {:.1}% of samples within ±2 (join timing differs)",
-            close * 100.0
+            "  SIG  original pieces through our decoder: inside pieces {inside:.1} dB (median); whole file {snr:.1} dB, {:.1}% of samples within ±2, {:.1}% identical",
+            close * 100.0,
+            exact * 100.0
         );
         // all of ours
         let ours = synth::render(&synth::select_all(db, &ours_t), db, settings)?;
