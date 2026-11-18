@@ -994,6 +994,8 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
         /// first and last half-phone: (start, end) in the unit, F0, voicing
         first: Option<(usize, usize, u32, Voicing)>,
         last: Option<(usize, usize, u32, Voicing)>,
+        /// the first half's marks as a previous join left them
+        first_marks: Option<Vec<usize>>,
     }
     let mut units: Vec<Unit> = Vec::new();
     for phrase in plan {
@@ -1011,10 +1013,10 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
                     }
                 }
             }
-            units.push(Unit { buf: bank.read(from - pre, pre + len + m), pre, len, first: halves.first().copied(), last: halves.last().copied() });
+            units.push(Unit { buf: bank.read(from - pre, pre + len + m), pre, len, first: halves.first().copied(), last: halves.last().copied(), first_marks: None });
         }
         let len = phrase.pause_ms as usize * rate as usize / 1000;
-        units.push(Unit { buf: vec![0; len + 4 * m], pre: 0, len, first: None, last: None });
+        units.push(Unit { buf: vec![0; len + 4 * m], pre: 0, len, first: None, last: None, first_marks: None });
     }
     let voiced_joins = std::env::var_os("QQ_NO_VOICED_JOIN").is_none();
     for k in 1..units.len() {
@@ -1032,9 +1034,20 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
                     let marks = pitch_marks(&s, len, rate, f0, Voicing::Voiced);
                     JoinHalf { buf: v, pre: m, len, post: m, marks }
                 };
-                let ja = make(&a.buf, a.pre + ha.0 - m, ha.1 - ha.0, ha.2);
+                let mut ja = make(&a.buf, a.pre + ha.0 - m, ha.1 - ha.0, ha.2);
+                // a one-half unit keeps the marks its previous join gave it
+                if ha.0 == 0 {
+                    if let Some(mk) = a.first_marks.clone() {
+                        ja.marks = mk;
+                    }
+                }
                 let jb = make(&b.buf, b.pre - m, hb.1 - hb.0, hb.2);
-                if let Some((na, nb)) = voiced_join(&ja, &jb) {
+                if std::env::var_os("QQ_DEBUG_JOIN").is_some() {
+                    let per = |h: &JoinHalf| h.marks.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+                    eprintln!("join A{:?} B{:?} -> {:?}", per(&ja), per(&jb), voiced_join(&ja, &jb).map(|(x, y, _)| (x.len(), y.len())));
+                }
+                if let Some((na, nb, nb_marks)) = voiced_join(&ja, &jb) {
+                    b.first_marks = Some(nb_marks);
                     let mut abuf = a.buf[..a.pre + ha.0].to_vec();
                     abuf.extend_from_slice(&na);
                     abuf.extend(std::iter::repeat(0).take(m));

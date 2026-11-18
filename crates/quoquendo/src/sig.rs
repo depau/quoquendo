@@ -216,9 +216,10 @@ pub struct JoinHalf {
 /// x = periods before / all, kept in [0.2, 0.5]; changes of ±1 sample
 /// dropped; undone if they average over 10%), loudness eased with a gain
 /// ramp (never under 0.5), then the periods overlap-added back with the
-/// cross-fade. Returns the two halves' new samples (core only), or None
+/// cross-fade. Returns the two halves' new samples (core only) and the
+/// second half's new marks (the engine keeps them for its next join), or None
 /// when the engine would leave them alone.
-pub fn voiced_join(a: &JoinHalf, b: &JoinHalf) -> Option<(Vec<i16>, Vec<i16>)> {
+pub fn voiced_join(a: &JoinHalf, b: &JoinHalf) -> Option<(Vec<i16>, Vec<i16>, Vec<usize>)> {
     let na = a.marks.len().checked_sub(1)?;
     let nb = b.marks.len().checked_sub(1)?;
     let total = na + nb;
@@ -328,7 +329,8 @@ pub fn voiced_join(a: &JoinHalf, b: &JoinHalf) -> Option<(Vec<i16>, Vec<i16>)> {
     if mb > out.len() || ma < m0 {
         return None;
     }
-    Some((out[m0..ma].to_vec(), out[ma..mb].to_vec()))
+    let b_marks = marks[na..].iter().map(|&v| (v - ma as i64) as usize).collect();
+    Some((out[m0..ma].to_vec(), out[ma..mb].to_vec(), b_marks))
 }
 
 #[cfg(test)]
@@ -347,9 +349,9 @@ mod tests {
             let len = *marks.last().unwrap();
             JoinHalf { buf: vec![1000; len + 128], pre: 64, len, post: 64, marks }
         };
-        let (a, b) = voiced_join(&half(&[274, 267, 269, 278, 290]), &half(&[345, 335])).unwrap();
+        let (a, b, _) = voiced_join(&half(&[274, 267, 269, 278, 290]), &half(&[345, 335])).unwrap();
         assert_eq!((a.len(), b.len()), (1444, 652));
-        let (a, b) = voiced_join(&half(&[225, 225, 225, 227]), &half(&[222, 221, 221, 198])).unwrap();
+        let (a, b, _) = voiced_join(&half(&[225, 225, 225, 227]), &half(&[222, 221, 221, 198])).unwrap();
         assert_eq!((a.len(), b.len()), (897, 864));
     }
 }
