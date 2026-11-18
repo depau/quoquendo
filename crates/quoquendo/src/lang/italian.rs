@@ -1819,6 +1819,14 @@ impl Italian {
     }
 }
 
+impl Italian {
+    fn participle(&self, _rev: &mut Vec<u8>) -> Option<u16> {
+        // 0x10001290 (participles, class `-`) is not ported yet: its words
+        // fall through to the -ano/-ino lists and the stress table
+        None
+    }
+}
+
 // --- LesConfiniProsodici (0x1000c080), LesGradiAccentuali (0x1000b6b0) ---------
 
 /// A word's class is one of `set`.

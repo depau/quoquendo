@@ -774,6 +774,67 @@
    "group": "output",
    "value": "floor(pending input x out/in) - 16 per call",
    "source": "0x10028c00 (floor 0x10069b40, minus 0x10)"
+  },
+  {
+   "name": "Italian module function table",
+   "group": "fon",
+   "value": {
+    "address": "0x10031ff8",
+    "pairs": 19
+   },
+   "source": "LTTS7Italian.dll export Italian 0x1000b640 walks 19 (name, function) pairs at 0x10031ff8"
+  },
+  {
+   "name": "Italian character classes",
+   "group": "fon",
+   "value": "8 bytes per character: lower, upper, flags (0x10 vowel, 0x20 upper, 0x80 accented, 0x100 punctuation)",
+   "source": "LTTS7Italian.dll 0x10030ed8"
+  },
+  {
+   "name": "Italian stress endings table",
+   "group": "fon",
+   "value": "0x44a entries of {reversed ending, exception list, code: bits 0-5 default, 6-11 listed, 12-15 length}",
+   "source": "LTTS7Italian.dll 0x10028078, searched by 0x100010c0/0x100011c0, exceptions 0x10001000"
+  },
+  {
+   "name": "Italian word forms table",
+   "group": "fon",
+   "value": "0x675 entries, same layout",
+   "source": "LTTS7Italian.dll 0x10066668, 0x1000c4d0"
+  },
+  {
+   "name": "Italian function words",
+   "group": "fon",
+   "value": "0x17b entries {word, class, subclass, information}",
+   "source": "LTTS7Italian.dll 0x1006b3e8, LesAnalizza 0x1000cdf0"
+  },
+  {
+   "name": "Italian homographs",
+   "group": "fon",
+   "value": "0x3b entries {word, rule 1-13, stress if rule holds, otherwise}",
+   "source": "LTTS7Italian.dll 0x1002bb78, 0x10002430"
+  },
+  {
+   "name": "Italian whole-word exceptions",
+   "group": "fon",
+   "value": "0x1ea74 bytes of sorted 'word=phones'",
+   "source": "LTTS7Italian.dll 0x1006c138, FonTrasParola 0x1000f210 via 0x1000dc90 and LTTS7Util ELQSearchCompactString 0x100289f0"
+  },
+  {
+   "name": "Italian phone symbols",
+   "group": "fon",
+   "value": "61 entries {symbol, code}",
+   "source": "LTTS7Italian.dll 0x100318c0"
+  },
+  {
+   "name": "Italian added pause",
+   "group": "fon",
+   "value": {
+    "min_words_each_side": 2,
+    "min_letters_before": 15,
+    "min_letters_after": 20
+   },
+   "source": "LTTS7Italian.dll 0x1000b970, LesConfiniProsodici 0x1000c080 sets boundary 0x0a"
   }
  ]
 }
