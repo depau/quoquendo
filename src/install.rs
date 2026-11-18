@@ -1,14 +1,24 @@
 //! Where the app finds voices: its own voice folder (filled from Loquendo's
 //! installers), the reference engine's Wine prefix, the usual install places.
 
-use quoquendo::loquendo::{discover_voices, read_ini, resolve_data_dir, VoiceDescriptor};
+use quoquendo::loquendo::{discover_voices, resolve_data_dir, VoiceDescriptor};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+static STORE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// `--store <dir>`: keep and find voices in this LTTS7 root only.
+pub fn set_store(dir: PathBuf) {
+    let _ = STORE.set(dir);
+}
 
 /// Where voices unpacked from their installers are kept:
 /// `<data home>/quoquendo/LTTS7` (`$XDG_DATA_HOME`, `%APPDATA%` or
 /// `~/.local/share`), laid out like an installed engine (`data/`, `bin/`).
 pub fn voice_store() -> Option<PathBuf> {
+    if let Some(s) = STORE.get() {
+        return Some(s.clone());
+    }
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
@@ -25,108 +35,68 @@ pub fn is_installer_path(path: &Path) -> bool {
     path.is_dir() && resolve_data_dir(path).is_none() && fs::read_dir(path).map(|r| r.flatten().any(|e| is_exe(&e.path()))).unwrap_or(false)
 }
 
-fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(to)?;
-    for e in fs::read_dir(from)?.flatten() {
-        let (src, dst) = (e.path(), to.join(e.file_name()));
-        if src.is_dir() {
-            copy_tree(&src, &dst)?;
-        } else {
-            fs::copy(&src, &dst)?;
-        }
-    }
-    Ok(())
+fn is_exe(p: &Path) -> bool {
+    p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"))
 }
 
-/// Take a voice straight from Loquendo's own installer (Inno Setup 5.2.3)
-/// into `voice_store()`: its `.vcf`, its `voices/<Voice>/` folder (`.sde`,
-/// recordings `.bin`, `.vde`, Gilded lists) and its library
-/// `bin/LTTS7<Voice>.dll` (the phone table, `phoneset`). Nothing is run: the
-/// installer is only read (`quoquendo::inno`). A folder installs
-/// every installer in it. Returns the voices installed.
-pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
+/// Unpack a Loquendo voice installer (Inno Setup or Wise), or every
+/// installer in a folder, into the LTTS7 tree at `root` (`quoquendo::pack`:
+/// read, never run). Records which installer brought each voice in
+/// `<root>/installers.json`. Returns the voices unpacked.
+pub fn unpack(path: &Path, root: &Path) -> Result<Vec<String>, String> {
     if path.is_dir() {
-        let mut all = Vec::new();
         let mut exes: Vec<PathBuf> = fs::read_dir(path)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("{}: {e}", path.display()))?
             .flatten()
             .map(|e| e.path())
-            .filter(|p| is_installer_path(p))
+            .filter(|p| is_exe(p))
             .collect();
         exes.sort();
+        let mut all = Vec::new();
         for exe in exes {
-            match install_voice(&exe) {
+            match unpack(&exe, root) {
                 Ok(v) => all.extend(v),
-                Err(e) => eprintln!("{}: {e}", exe.display()),
+                Err(e) => eprintln!("{e}"),
             }
         }
         return Ok(all);
     }
-    let store = voice_store().ok_or("no folder to keep voices in (HOME is not set)")?;
-    let tmp = std::env::temp_dir().join(format!("quoquendo-install-{}", std::process::id()));
-    let exe = fs::read(path).map_err(|e| e.to_string())?;
-    let files = quoquendo::inno::files(&exe, |p| p.split('/').any(|c| c == "data" || c == "bin"))?;
+    let exe = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let unpacked = quoquendo::pack::unpack_installer(&exe).map_err(|e| format!("{}: {e}", path.display()))?;
     drop(exe);
-    let result = (|| {
-        for (rel, data) in files {
-            let dst = tmp.join(rel);
-            fs::create_dir_all(dst.parent().unwrap()).map_err(|e| e.to_string())?;
-            fs::write(&dst, data).map_err(|e| e.to_string())?;
-        }
-        let data = tmp.join("pf/Loquendo/LTTS7/data");
-        let mut names = Vec::new();
-        for e in fs::read_dir(&data).map_err(|_| "this installer holds no Loquendo voice".to_string())?.flatten() {
-            let vcf = e.path();
-            if vcf.extension().and_then(|x| x.to_str()) != Some("vcf") {
-                continue;
-            }
-            let cv = read_ini(&vcf);
-            let (Some(name), Some(rel)) = (cv.get("BaseVoice"), cv.get("VoicePath")) else {
-                continue;
-            };
-            let dir = data.join(rel);
-            if !dir.is_dir() {
-                continue;
-            }
-            let lib = quoquendo::phoneset::find_voice_library(&dir.join(format!("{name}.sde")), name);
-            let io = |e: std::io::Error| e.to_string();
-            copy_tree(&dir, &store.join("data").join(rel)).map_err(io)?;
-            fs::copy(&vcf, store.join("data").join(e.file_name())).map_err(io)?;
-            if let Some(lib) = lib {
-                fs::create_dir_all(store.join("bin")).map_err(io)?;
-                fs::copy(&lib, store.join("bin").join(lib.file_name().unwrap())).map_err(io)?;
-            }
-            // the voice's language folder (`languages/English/EnglishUs.dbl`,
-            // `.gpr`, `.lde`…): the one holding `<MotherTongue>.lde`
-            let tongue = VoiceDescriptor::from_files(&vcf, &dir.join(format!("{name}.vde"))).mother_tongue.to_lowercase();
-            for lang in fs::read_dir(data.join("languages")).into_iter().flatten().flatten() {
-                let has = fs::read_dir(lang.path())
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .any(|f| f.file_name().to_string_lossy().to_lowercase() == format!("{tongue}.lde"));
-                if has {
-                    copy_tree(&lang.path(), &store.join("data/languages").join(lang.file_name())).map_err(io)?;
-                }
-            }
-            names.push(name.clone());
-        }
-        if names.is_empty() {
-            return Err("this installer holds no Loquendo voice".into());
-        }
-        Ok(names)
-    })();
-    let _ = fs::remove_dir_all(&tmp);
-    result
+    let io = |p: &Path, e: std::io::Error| format!("{}: {e}", p.display());
+    for (rel, data) in &unpacked.files {
+        let dst = root.join(rel);
+        fs::create_dir_all(dst.parent().unwrap()).map_err(|e| io(&dst, e))?;
+        fs::write(&dst, data).map_err(|e| io(&dst, e))?;
+    }
+    let index = root.join("installers.json");
+    let mut map: serde_json::Map<String, serde_json::Value> =
+        fs::read(&index).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    for v in &unpacked.voices {
+        map.insert(v.clone(), file.clone().into());
+    }
+    let body = serde_json::to_vec_pretty(&map).map_err(|e| e.to_string())?;
+    fs::write(&index, body).map_err(|e| io(&index, e))?;
+    Ok(unpacked.voices)
+}
+
+/// Take voices straight from Loquendo's own installers into `voice_store()`.
+pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
+    let store = voice_store().ok_or("no folder to keep voices in (HOME is not set)")?;
+    unpack(path, &store)
 }
 
 /// Every voice the app can use: the ones taken from installers
 /// (`voice_store()`) first, then any other installation found.
 pub fn all_voices() -> Vec<VoiceDescriptor> {
     let mut out: Vec<VoiceDescriptor> = Vec::new();
-    // QQ_DATA_DIR=<LTTS7 folder or its data folder>: only that installation
-    if let Some(dir) = std::env::var_os("QQ_DATA_DIR").and_then(|d| resolve_data_dir(Path::new(&d))) {
-        return discover_voices(&dir);
+    // QQ_DATA_DIR=<LTTS7 folder or its data folder>, or --store <LTTS7
+    // folder>: only that installation
+    let only = std::env::var_os("QQ_DATA_DIR").map(PathBuf::from).or_else(|| STORE.get().cloned());
+    if let Some(dir) = only {
+        return resolve_data_dir(&dir).map(|d| discover_voices(&d)).unwrap_or_default();
     }
     let dirs = [voice_store().and_then(|s| resolve_data_dir(&s)), resolve_data_dir_auto()];
     for d in dirs.into_iter().flatten() {

@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use g2p::{analyse, Language, Token};
-use loquendo::{discover_voices, VoiceDatabase, VoiceDescriptor};
+use loquendo::{discover_voices, VoiceDescriptor};
 use synth::Settings;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,6 +36,8 @@ struct LaunchOptions {
     /// `--learn-lexicon <word file>`: the original's pronunciation of every word
     learn_lexicon: Option<PathBuf>,
     install: Option<PathBuf>,
+    /// `--unpack <installer|folder> <LTTS7 out dir>`
+    unpack: Option<(PathBuf, PathBuf)>,
 }
 
 fn parse_args() -> LaunchOptions {
@@ -50,6 +52,7 @@ fn parse_args() -> LaunchOptions {
         fon_list: None,
         learn_lexicon: None,
         install: None,
+        unpack: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -87,6 +90,14 @@ fn parse_args() -> LaunchOptions {
             opts.install = args.next().map(PathBuf::from);
         } else if a == "--fon-list" {
             opts.fon_list = args.next().map(PathBuf::from);
+        } else if a == "--unpack" {
+            if let (Some(from), Some(to)) = (args.next(), args.next()) {
+                opts.unpack = Some((from.into(), to.into()));
+            }
+        } else if a == "--store" {
+            if let Some(dir) = args.next() {
+                install::set_store(dir.into());
+            }
         }
     }
     opts
@@ -113,17 +124,23 @@ fn selftest() -> i32 {
         );
         println!("  vocal_dbs={:?}", v.vocal_dbs);
 
-        let sde = v.voice_path.join(format!("{}.sde", v.name));
-        g2p::load_lexicon(v.language(), &v.mother_tongue);
-        let db = match loquendo::load_sde(&sde) {
-            Ok(db) => db,
+        let voice = match quoquendo::Voice::open(v) {
+            Ok(voice) => voice,
             Err(e) => {
                 println!("  FAIL inventory: {e}");
                 failures += 1;
                 continue;
             }
         };
-        println!("  language files: {} dictionary words", quoquendo::load_language_files(v, &db));
+        let db = &voice.db;
+        println!(
+            "  language files: {} dictionary words, {} lexicon words",
+            voice.frontend.dictionary_len(),
+            voice.frontend.lexicon_len()
+        );
+        if let Some(tongue) = &voice.language_missing {
+            println!("  language data missing: needs {tongue}");
+        }
         println!(
             "  inventory: declared {} units / {} takes; parsed {} units / {} takes",
             db.declared_units,
@@ -141,7 +158,7 @@ fn selftest() -> i32 {
 
         let text = sample_text(v);
         println!("  text: {text}");
-        let tokens = analyse(&text, lang);
+        let tokens = analyse(&text, &voice.frontend);
         let words = tokens.iter().filter(|t| matches!(t, Token::Word { .. })).count();
         let symbols: Vec<String> = tokens.iter().flat_map(|t| t.symbols().iter().cloned()).collect();
         println!("  phonemes: {} words, {} symbols", words, symbols.len());
@@ -228,8 +245,8 @@ fn sample_text(v: &VoiceDescriptor) -> String {
     text
 }
 
-/// The installed voice called `name` (Roberto when none), with its index.
-fn find_voice(name: Option<&str>) -> Result<(VoiceDescriptor, VoiceDatabase), String> {
+/// The installed voice called `name` (Roberto when none), loaded.
+fn find_voice(name: Option<&str>) -> Result<quoquendo::Voice, String> {
     let voices = install::all_voices();
     if voices.is_empty() {
         return Err("no voices found: install one with --install <installer.exe>".into());
@@ -238,27 +255,23 @@ fn find_voice(name: Option<&str>) -> Result<(VoiceDescriptor, VoiceDatabase), St
         Some(name) => voices.iter().find(|v| v.name.eq_ignore_ascii_case(name)),
         None => voices.iter().find(|v| v.name == "Roberto").or(voices.first()),
     }
-    .ok_or("voice not found")?
-    .clone();
-    let db = loquendo::load_sde(&v.voice_path.join(format!("{}.sde", v.name)))?;
-    g2p::load_lexicon(v.language(), &v.mother_tongue);
-    quoquendo::load_language_files(&v, &db);
-    Ok((v, db))
+    .ok_or("voice not found")?;
+    quoquendo::Voice::open(v)
 }
 
 /// Speak one text with one voice into a WAV file, without a window.
 fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::path::Path) -> Result<(), String> {
-    let (v, db) = find_voice(voice)?;
-    let run = pipeline::run(text, v.language(), &v.name, &db, stages, None)?;
+    let v = find_voice(voice)?;
+    let name = &v.descriptor.name;
+    let run = pipeline::run(text, &v.frontend, name, &v.db, stages, None)?;
     eprintln!("{}", synth::format_transcription(&run.targets));
     for m in run.plan.iter().flat_map(|p| &p.missing) {
-        eprintln!("never recorded by {}: {m}", v.name);
+        eprintln!("never recorded by {name}: {m}");
     }
-    let speech = synth::render(&run.plan, &db, Settings { volume: 1.0, join: stages.sig })?;
+    let speech = synth::render(&run.plan, &v.db, Settings { volume: 1.0, join: stages.sig })?;
     std::fs::write(out, synth::to_wav_bytes(&speech)).map_err(|e| format!("{}: {e}", out.display()))?;
     eprintln!(
-        "{}: {:.2} s from {} pieces → {}",
-        v.name,
+        "{name}: {:.2} s from {} pieces → {}",
         speech.duration_s(),
         run.plan.iter().map(|p| p.pieces.len()).sum::<usize>(),
         out.display()
@@ -268,14 +281,14 @@ fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::pa
 
 /// Score every stage against the original engine (needs Wine, see oracle/run.sh).
 fn compare(what: &str, voice: Option<&str>) -> Result<(), String> {
-    let (v, db) = find_voice(voice)?;
+    let v = find_voice(voice)?;
     let texts: Vec<String> = match std::fs::read_to_string(what) {
         Ok(t) => t.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect(),
         Err(_) => vec![what.to_string()],
     };
     let out = oracle::oracle_dir().map(|d| d.join("out/compare"));
-    let refs = oracle::run_many(&v.name, &texts)?;
-    let (report, _) = pipeline::compare(&refs, &v, &db, out.as_deref())?;
+    let refs = oracle::run_many(&v.descriptor.name, &texts)?;
+    let (report, _) = pipeline::compare(&refs, &v, out.as_deref())?;
     println!("{report}");
     if let Some(o) = out {
         println!("listen: {}/<n>-original.wav, -replay.wav, -ours.wav", o.display());
@@ -302,8 +315,8 @@ fn main() -> eframe::Result<()> {
     // developer check: QQ_CHECK_MARKS=<trace.join> compares our pitch marks
     // with the original's (oracle/loqref.c LOQ_TRACE_JOIN "M" lines)
     if let Ok(trace) = std::env::var("QQ_CHECK_MARKS") {
-        let (v, db) = find_voice(opts.voice.as_deref()).unwrap();
-        let _ = v;
+        let v = find_voice(opts.voice.as_deref()).unwrap();
+        let db = &v.db;
         let bank = db.audio.as_ref().unwrap();
         let tab = db.tables.as_ref().unwrap();
         let mut at = std::collections::HashMap::new();
@@ -338,6 +351,18 @@ fn main() -> eframe::Result<()> {
         println!("{ok} of {n} half-phones with the same marks");
         return Ok(());
     }
+    if let Some((from, to)) = &opts.unpack {
+        match install::unpack(from, to) {
+            Ok(names) => {
+                println!("unpacked {} into {}", names.join(", "), to.display());
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    }
     if let Some(path) = &opts.install {
         match install::install_voice(path) {
             Ok(names) => {
@@ -363,7 +388,7 @@ fn main() -> eframe::Result<()> {
     }
     if let Some(file) = &opts.learn_lexicon {
         let run = || -> Result<(), String> {
-            let (v, _) = find_voice(opts.voice.as_deref())?;
+            let v = find_voice(opts.voice.as_deref())?.descriptor;
             let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
             let words: Vec<String> = text.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty()).collect();
             let pairs = oracle::transcribe_words(&v.name, &words)?;
@@ -382,11 +407,13 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     if let Some(list) = &opts.fon_list {
-        let lang = find_voice(opts.voice.as_deref()).map(|(v, _)| v.language()).unwrap_or(Language::Italian);
+        let fe = find_voice(opts.voice.as_deref())
+            .map(|v| v.frontend)
+            .unwrap_or_else(|_| g2p::Frontend::rules(Language::Italian));
         let text = std::fs::read_to_string(list).unwrap_or_default();
         let mut out = String::new();
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
-            let phrases = synth::from_tokens(&analyse(line, lang));
+            let phrases = synth::from_tokens(&analyse(line, &fe));
             let words: Vec<String> = phrases.iter().flat_map(|p| &p.phones).fold(Vec::new(), |mut w: Vec<String>, t| {
                 if t.word_start || w.is_empty() {
                     w.push(t.sym.clone());
@@ -444,7 +471,7 @@ struct Quoquendo {
     data_dir: Option<PathBuf>,
     voices: Vec<VoiceDescriptor>,
     selected: usize,
-    db: Option<VoiceDatabase>,
+    voice: Option<quoquendo::Voice>,
     db_error: Option<String>,
     extras: Vec<(String, usize, usize)>,
 
@@ -479,7 +506,7 @@ impl Quoquendo {
             data_dir: None,
             voices: Vec::new(),
             selected: 0,
-            db: None,
+            voice: None,
             db_error: None,
             extras: Vec::new(),
             language_override: None,
@@ -571,41 +598,20 @@ impl Quoquendo {
         self.plan.clear();
         self.targets.clear();
 
-        let dir = v.voice_path.clone();
-        let main = dir.join(format!("{}.sde", v.name));
-        let sde = if main.is_file() {
-            main
-        } else {
-            match std::fs::read_dir(&dir).ok().and_then(|mut e| {
-                e.find(|f| {
-                    f.as_ref()
-                        .map(|f| f.path().extension().and_then(|x| x.to_str()) == Some("sde"))
-                        .unwrap_or(false)
-                })
-                .and_then(|r| r.ok())
-                .map(|f| f.path())
-            }) {
-                Some(p) => p,
-                None => {
-                    self.db_error = Some(format!("no .sde inventory in {}", dir.display()));
-                    self.db = None;
-                    return;
-                }
-            }
-        };
-        match loquendo::load_sde(&sde) {
-            Ok(db) => {
-                g2p::load_lexicon(v.language(), &v.mother_tongue);
-                quoquendo::load_language_files(&v, &db);
-                self.extras = loquendo::load_extras(&dir).sets;
-                self.db = Some(db);
-                self.db_error = None;
+        match quoquendo::Voice::open(&v) {
+            Ok(voice) => {
+                self.extras = loquendo::load_extras(&v.voice_path).sets;
+                self.db_error = voice
+                    .language_missing
+                    .as_ref()
+                    .map(|t| format!("needs {t} language data: add any {t} voice installer"));
+                self.voice = Some(voice);
                 self.text = sample_text(&v);
                 self.run_pipeline();
                 self.render_audio();
             }
             Err(e) => {
-                self.db = None;
+                self.voice = None;
                 self.db_error = Some(e);
             }
         }
@@ -614,6 +620,14 @@ impl Quoquendo {
     fn language(&self) -> Language {
         self.language_override
             .unwrap_or_else(|| self.voices.get(self.selected).map(|v| v.language()).unwrap_or(Language::Generic))
+    }
+
+    /// The voice's own front end, or the rules of the language picked instead.
+    fn frontend(&self) -> g2p::Frontend {
+        match (&self.voice, self.language_override) {
+            (Some(v), None) => v.frontend.clone(),
+            _ => g2p::Frontend::rules(self.language()),
+        }
     }
 
     /// Run the original engine on `texts` in the background (it takes a few
@@ -635,9 +649,9 @@ impl Quoquendo {
         match handle.join().unwrap_or_else(|_| Err("the original engine's run crashed".into())) {
             Ok(refs) => {
                 if then_compare {
-                    if let (Some(db), Some(v)) = (&self.db, self.voices.get(self.selected)) {
+                    if let Some(v) = &self.voice {
                         let out = oracle::oracle_dir().map(|d| d.join("out/compare"));
-                        self.report = Some(match pipeline::compare(&refs, v, db, out.as_deref()) {
+                        self.report = Some(match pipeline::compare(&refs, v, out.as_deref()) {
                             Ok((r, _)) => r,
                             Err(e) => e,
                         });
@@ -655,7 +669,8 @@ impl Quoquendo {
 
     fn run_pipeline(&mut self) {
         self.speech = None;
-        let Some(db) = &self.db else {
+        let fe = self.frontend();
+        let Some(db) = self.voice.as_ref().map(|v| &v.db) else {
             self.plan.clear();
             self.status = "No voice inventory loaded.".into();
             return;
@@ -671,7 +686,7 @@ impl Quoquendo {
             None => None,
         };
         let voice = self.voices.get(self.selected).map(|v| v.name.clone()).unwrap_or_default();
-        match pipeline::run(&self.text, self.language(), &voice, db, &self.stages, reference) {
+        match pipeline::run(&self.text, &fe, &voice, db, &self.stages, reference) {
             Ok(run) => {
                 self.targets = run.targets;
                 self.plan = run.plan;
@@ -690,22 +705,22 @@ impl Quoquendo {
     }
 
     fn render_audio(&mut self) {
-        let Some(db) = self.db.take() else {
+        let Some(v) = self.voice.take() else {
             self.error = Some("Load a voice before synthesising.".into());
             return;
         };
-        match synth::render(&self.plan, &db, self.settings) {
+        match synth::render(&self.plan, &v.db, self.settings) {
             Ok(speech) => {
                 self.status = format!("{:.2} s of speech at {} Hz", speech.duration_s(), speech.rate);
                 self.speech = Some(speech);
             }
             Err(e) => self.error = Some(e),
         }
-        self.db = Some(db);
+        self.voice = Some(v);
     }
 
     fn speak(&mut self) {
-        if self.db.is_none() {
+        if self.voice.is_none() {
             self.error = Some("Load a voice before playing.".into());
             return;
         }
@@ -733,7 +748,7 @@ impl Quoquendo {
     }
 
     fn save_wav(&mut self) {
-        if self.db.is_none() {
+        if self.voice.is_none() {
             self.error = Some("Load a voice before saving.".into());
             return;
         }
@@ -842,7 +857,7 @@ impl eframe::App for Quoquendo {
                 }
             }
 
-            if let Some(db) = &self.db {
+            if let Some(db) = self.voice.as_ref().map(|v| &v.db) {
                 ui.separator();
                 ui.heading("Voice inventory");
                 egui::Grid::new("dbtable").num_columns(2).show(ui, |ui| {
@@ -1041,7 +1056,7 @@ impl eframe::App for Quoquendo {
             egui::ScrollArea::vertical().max_height(120.0).id_salt("phons").show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 5.0;
-                    let db = self.db.as_ref();
+                    let db = self.voice.as_ref().map(|v| &v.db);
                     for phrase in &self.targets {
                         for (i, t) in phrase.phones.iter().enumerate() {
                             if t.word_start && i > 0 {
@@ -1070,7 +1085,7 @@ impl eframe::App for Quoquendo {
             // 3. pieces of recording
             let who = self.voices.get(self.selected).map(|v| v.name.clone()).unwrap_or_default();
             ui.label(egui::RichText::new(format!("Phonemes -> pieces of {who}'s own recordings")).strong());
-            if let Some(db) = &self.db {
+            if let Some(db) = self.voice.as_ref().map(|v| &v.db) {
                 let pieces: usize = self.plan.iter().map(|p| p.pieces.len()).sum();
                 let sounds: usize = self.plan.iter().map(|p| p.phones.len()).sum();
                 let from: std::collections::BTreeSet<u32> = self.plan.iter().flat_map(|p| p.pieces.iter().map(|x| x.unit)).collect();

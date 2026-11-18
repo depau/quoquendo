@@ -295,14 +295,8 @@ pub struct PhoneTables {
 }
 
 impl PhoneTables {
-    /// Build them as the original does, from the voice's library
-    /// (`phoneset`): nothing but the installed voice is needed.
-    pub fn load(sde: &std::path::Path, voice: &str, db: &VoiceDatabase) -> Option<PhoneTables> {
-        let lib = std::fs::read(crate::phoneset::find_voice_library(sde, voice)?).ok()?;
-        PhoneTables::from_library(&lib, db)
-    }
-
-    /// The same from the voice library's bytes (`LTTS7<Voice>.dll`).
+    /// Build them as the original does, from the voice library's bytes
+    /// (`LTTS7<Voice>.dll`, `phoneset`): nothing but the voice is needed.
     pub fn from_library(lib: &[u8], db: &VoiceDatabase) -> Option<PhoneTables> {
         use crate::phoneset::*;
         let phones = phone_table(lib)?;
@@ -1316,7 +1310,7 @@ mod tests {
 
     #[test]
     fn phrases_split_at_punctuation_only() {
-        let ph = from_tokens(&analyse("uno due, tre?", Language::Italian));
+        let ph = from_tokens(&analyse("uno due, tre?", &crate::g2p::Frontend::rules(Language::Italian)));
         assert_eq!(ph.len(), 2);
         assert!(!ph[0].full_stop && ph[1].mood == Some('I'), "comma keeps the tune open, ? makes a question");
     }

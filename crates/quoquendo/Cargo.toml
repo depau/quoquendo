@@ -6,4 +6,5 @@ description = "Loquendo 7 (LTTS7) text-to-speech for its original voice files, w
 
 [dependencies]
 lzma-rs = { version = "0.3", features = ["stream"] }
+miniz_oxide = "0.8"
 

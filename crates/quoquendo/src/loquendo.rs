@@ -334,45 +334,6 @@ pub fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|b| *b as char).collect()
 }
 
-pub fn load_sde(path: &Path) -> Result<VoiceDatabase, String> {
-    let bytes = fs::read(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-    let text = latin1(&bytes);
-    let mut db = parse_sde(&text);
-    db.size_bytes = bytes.len() as u64;
-    db.path = path.to_path_buf();
-    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-        db.tables = crate::synth::PhoneTables::load(path, stem, &db);
-    }
-    if let Some(parent) = path.parent() {
-        if let Ok(entries) = fs::read_dir(parent) {
-            let mut best: Option<(u64, PathBuf)> = None;
-            for e in entries.flatten() {
-                let p = e.path();
-                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                if name.ends_with(".bin") && name.contains(".LTTS7Codec") && name.starts_with(&format!("{stem}.")) {
-                    let size = e.metadata().map(|m| m.len()).unwrap_or(0);
-                    if best.as_ref().map(|(s, _)| size > *s).unwrap_or(true) {
-                        best = Some((size, p));
-                    }
-                }
-            }
-            if let Some((size, p)) = best {
-                db.audio_size = size;
-                if let Some(rate) = rate_from_bin_name(&p) {
-                    db.audio_rate_hz = rate;
-                }
-                match crate::codec::AudioBank::open(&p) {
-                    Ok(bank) => db.audio = Some(bank),
-                    Err(e) => db.audio_error = Some(e),
-                }
-                db.audio_path = Some(p);
-            }
-        }
-    }
-    Ok(db)
-}
-
 /// `<voice>.<rate>.<codec>.<n>.<n>.bin` — the second field is the sample rate.
 pub fn rate_from_bin_name(path: &Path) -> Option<u32> {
     let name = path.file_name()?.to_str()?;
@@ -459,6 +420,8 @@ pub struct VoiceDescriptor {
     pub mother_tongue: String,
     pub mother_tongue_aliases: String,
     pub demo_sentence: String,
+    /// the installation's `data` folder (empty for a voice loaded from bytes)
+    pub data_dir: PathBuf,
     pub voice_path: PathBuf,
     pub bin_name: String,
     pub audio_rate: u32,
@@ -476,17 +439,36 @@ impl VoiceDescriptor {
     }
     /// Fill from a `.vde` plus the `.vcf` that points at it.
     pub fn from_files(vcf: &Path, vde: &Path) -> VoiceDescriptor {
+        let mut d = VoiceDescriptor::from_ini(&read_ini(vcf), &read_ini(vde));
+        if d.name.is_empty() {
+            d.name = vde.file_stem().and_then(|s| s.to_str()).unwrap_or("voice").to_string();
+        }
+        d.voice_path = vde.parent().unwrap_or(Path::new(".")).to_path_buf();
+        if let Ok(entries) = fs::read_dir(&d.voice_path) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.ends_with(".bin") && name.contains(".LTTS7Codec") && name.starts_with(&format!("{}.", d.name)) {
+                    d.set_bin_name(&name);
+                    break;
+                }
+            }
+        }
+        d
+    }
+
+    /// Fill from the `.vcf` and `.vde` settings (`parse_ini`).
+    pub fn from_ini(cv: &HashMap<String, String>, dv: &HashMap<String, String>) -> VoiceDescriptor {
         let mut d = VoiceDescriptor {
             audio_rate: VOICE_SAMPLE_RATE,
             ..Default::default()
         };
-        let cv = read_ini(vcf);
-        let dv = read_ini(vde);
         d.name = dv
             .get("BaseVoice")
             .cloned()
             .or_else(|| cv.get("BaseVoice").cloned())
-            .unwrap_or_else(|| vde.file_stem().and_then(|s| s.to_str()).unwrap_or("voice").to_string());
+            // `"Library" = "LTTS7Katrin, Katrin"`: the voice's name is the second part
+            .or_else(|| dv.get("Library").and_then(|l| l.split(',').nth(1)).map(|n| n.trim().to_string()))
+            .unwrap_or_default();
         d.description = cv
             .get("Description")
             .cloned()
@@ -501,7 +483,6 @@ impl VoiceDescriptor {
         d.mother_tongue_aliases = dv.get("MotherTongueAliases").cloned().unwrap_or_default();
         d.demo_sentence = dv.get("DemoSentence").cloned().unwrap_or_default();
         d.gilded = dv.get("GildedTTS").map(|v| v.eq_ignore_ascii_case("yes")).unwrap_or(false);
-        d.voice_path = vde.parent().unwrap_or(Path::new(".")).to_path_buf();
         // every VocalDBName[i], in the order the configurator lists them
         for i in 0..8 {
             if let Some(name) = cv.get(&format!("VocalDBName[{i}]")) {
@@ -513,23 +494,16 @@ impl VoiceDescriptor {
         if d.vocal_dbs.is_empty() && !d.name.is_empty() {
             d.vocal_dbs.push(d.name.clone());
         }
-        if let Ok(entries) = fs::read_dir(&d.voice_path) {
-            for e in entries.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if name.ends_with(".bin") && name.contains(".LTTS7Codec") && name.starts_with(&format!("{}.", d.name)) {
-                    d.bin_name = name.clone();
-                    // <voice>.<rate>.<codec>.<count>.<n>.bin
-                    let parts: Vec<&str> = name.split('.').collect();
-                    if parts.len() > 1 {
-                        if let Ok(r) = parts[1].parse::<u32>() {
-                            d.audio_rate = r;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
         d
+    }
+
+    /// The recordings file's name, and the sample rate it carries
+    /// (`<voice>.<rate>.<codec>.<count>.<n>.bin`).
+    pub fn set_bin_name(&mut self, name: &str) {
+        self.bin_name = name.to_string();
+        if let Some(r) = name.split('.').nth(1).and_then(|r| r.parse::<u32>().ok()) {
+            self.audio_rate = r;
+        }
     }
 }
 
@@ -553,7 +527,9 @@ pub fn discover_voices(data_dir: &Path) -> Vec<VoiceDescriptor> {
                 vde = vcf.with_extension("vde");
             }
             if vde.is_file() {
-                out.push(VoiceDescriptor::from_files(&vcf, &vde));
+                let mut d = VoiceDescriptor::from_files(&vcf, &vde);
+                d.data_dir = data_dir.to_path_buf();
+                out.push(d);
             }
         }
     }
@@ -637,7 +613,8 @@ mod tests {
     fn roberto_index_ends_where_its_recordings_end() {
         const ROBERTO_FRAMES: usize = 335637;
         let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oracle/prefix/drive_c/Program Files (x86)/Loquendo/LTTS7/data");
-        let Ok(db) = load_sde(&data.join("voices/Roberto/Roberto.sde")) else { return };
+        let Ok(voice) = crate::Voice::find(&data, "Roberto") else { return };
+        let db = voice.db;
         let bank = db.audio.as_ref().expect("Roberto's recordings open");
         assert_eq!(bank.frames, ROBERTO_FRAMES);
         let last = db.units.last().unwrap();

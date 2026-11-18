@@ -17,7 +17,7 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 VOICE=$1 TEXT=$2 OUT=$3
 INSTALLERS=${LOQ_INSTALLERS:-"$HOME/Downloads/BitTorrent/text-to-speech-oddcast-voices-pack-2024/Loquendo 7"}
-LICENCE=${LOQ_LICENCE:-"$HOME/ghq/github.com/depau/loquendo-keygen/license-wineuser.reg"}
+LICENCE=${LOQ_LICENCE:-"$HERE/../license-wineuser.reg"}
 MAC=7A:8B:9C:1D:2E:3F
 
 export WINEPREFIX="$HERE/prefix" WINEDEBUG=-all USER=wineuser

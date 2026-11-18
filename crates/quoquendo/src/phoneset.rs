@@ -7,8 +7,6 @@
 //! 0, 1, 2… in order; record 0 is `{ "", 0, 0, 0xffffffff }`. It is found by
 //! that shape, not by an offset, so any voice's library works.
 
-use std::path::Path;
-
 /// One phone of the voice: its symbol and the library's feature word.
 #[derive(Clone, Debug)]
 pub struct PhoneDef {
@@ -86,29 +84,6 @@ pub fn phone_table(data: &[u8]) -> Option<Vec<PhoneDef>> {
         }
         if out.len() > 10 {
             return Some(out);
-        }
-    }
-    None
-}
-
-/// The voice library beside an installed voice: `LTTS7<Voice>.dll` in the
-/// engine's `bin` folder (data/voices/<Voice>/<Voice>.sde → bin/), or next to
-/// the voice files.
-pub fn find_voice_library(sde: &Path, voice: &str) -> Option<std::path::PathBuf> {
-    let want = format!("ltts7{}.dll", voice.to_lowercase());
-    let dir = sde.parent()?;
-    let mut dirs = vec![dir.to_path_buf()];
-    for up in dir.ancestors().skip(1).take(4) {
-        dirs.push(up.join("bin"));
-        dirs.push(up.to_path_buf());
-    }
-    for d in dirs {
-        if let Ok(entries) = std::fs::read_dir(&d) {
-            for e in entries.flatten() {
-                if e.file_name().to_string_lossy().to_lowercase() == want {
-                    return Some(e.path());
-                }
-            }
         }
     }
     None
@@ -497,7 +472,7 @@ mod tests {
     /// builds (dumped by oracle/loqref.c LOQ_DUMP_TABLES into oracle/out/tables).
     #[test]
     fn tables_match_the_original() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for voice in ["Roberto", "Allison", "Bernard"] {
             let lib = root.join(format!("oracle/prefix/drive_c/Program Files (x86)/Loquendo/LTTS7/bin/LTTS7{voice}.dll"));
             let (Ok(data), Ok(dump), Ok(sim)) = (

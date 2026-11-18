@@ -9,8 +9,8 @@
 //! stage against it.
 
 use crate::oracle::{self, Reference};
-use quoquendo::g2p::{analyse, Language};
-use quoquendo::loquendo::{VoiceDatabase, VoiceDescriptor};
+use quoquendo::g2p::{analyse, Frontend};
+use quoquendo::loquendo::VoiceDatabase;
 use quoquendo::synth::{self, JoinStyle, Phrase, Settings, Speech, TargetPhrase};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -80,14 +80,14 @@ impl Stages {
 /// FON and CAT for one text; SIG is `synth::render` on `plan`. `reference`
 /// is the original engine's result for `text` when a stage needs it (fetched
 /// here, under Wine, when not given).
-pub fn run(text: &str, lang: Language, voice: &str, db: &VoiceDatabase, stages: &Stages, reference: Option<Reference>) -> Result<Run, String> {
+pub fn run(text: &str, fe: &Frontend, voice: &str, db: &VoiceDatabase, stages: &Stages, reference: Option<Reference>) -> Result<Run, String> {
     let reference = match reference {
         Some(r) => Some(r),
         None if stages.need_original() => Some(oracle::run_many(voice, &[text.to_string()])?.remove(0)),
         None => None,
     };
     let targets = match &stages.fon {
-        Fon::Rules => synth::from_tokens(&analyse(text, lang)),
+        Fon::Rules => synth::from_tokens(&analyse(text, fe)),
         Fon::Original => reference.as_ref().unwrap().target_phrases(),
         Fon::Command(cmd) => synth::parse_transcription(&run_command(cmd, text)?),
     };
@@ -224,7 +224,8 @@ pub struct Totals {
 /// Run the original engine and ours on every text and score each stage.
 /// Writes `<n>-original.wav`, `<n>-replay.wav` (original's pieces, our
 /// decoder and joins) and `<n>-ours.wav` into `out_dir` when given.
-pub fn compare(refs: &[Reference], voice: &VoiceDescriptor, db: &VoiceDatabase, out_dir: Option<&std::path::Path>) -> Result<(String, Totals), String> {
+pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&std::path::Path>) -> Result<(String, Totals), String> {
+    let db = &voice.db;
     use std::fmt::Write;
     let texts: Vec<&String> = refs.iter().map(|r| &r.text).collect();
     let mut rep = String::new();
@@ -236,7 +237,7 @@ pub fn compare(refs: &[Reference], voice: &VoiceDescriptor, db: &VoiceDatabase, 
     for (n, (text, r)) in texts.iter().zip(refs).enumerate() {
         let _ = writeln!(rep, "\n[{n}] {text}");
         // FON
-        let ours_t = synth::from_tokens(&analyse(text, voice.language()));
+        let ours_t = synth::from_tokens(&analyse(text, &voice.frontend));
         let orig_t = r.target_phrases();
         let (wo, wq) = (words(&orig_t), words(&ours_t));
         let same = lcs(&wo, &wq);

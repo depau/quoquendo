@@ -410,58 +410,94 @@ pub struct LanguageData {
     names: HashMap<u32, String>,
 }
 
-static LANGUAGE_DATA: std::sync::RwLock<Option<HashMap<Language, std::sync::Arc<LanguageData>>>> = std::sync::RwLock::new(None);
-
-/// Read a language's dictionary and letter-to-sound model from its files
-/// (any may be missing) and use them from now on. `phones` is the voice's
-/// phone table as (symbol, engine feature word), `synth::PhoneTables`.
-/// Returns the number of dictionary words.
-pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>, phones: &[(String, u32)]) -> usize {
-    let mut dictionary = HashMap::new();
-    let mut grammar = HashMap::new();
-    if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
-        for r in rows {
-            // the German module's own query (LTTS7German.dll 0x10007720):
-            // grafemica, gradoaccentuale, grammaticale WHERE both are set
-            if let (Some(word), Some(grade), Some(class)) = (
-                r.first().and_then(|v| v.text()),
-                r.get(2).and_then(|v| v.text()),
-                r.get(3).and_then(|v| v.text()),
-            ) {
-                if !grade.is_empty() && !class.is_empty() {
-                    grammar.entry(word.to_lowercase()).or_insert((german_class(&class), grade == "DEA"));
-                }
-            }
-            let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else {
-                continue;
-            };
-            let syms: Vec<String> = pron.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect();
-            if !syms.is_empty() {
-                dictionary.entry(word.to_lowercase()).or_insert(syms);
-            }
-        }
-    }
-    let mut names = HashMap::new();
-    for (name, f) in phones {
-        names.entry(*f).or_insert_with(|| name.clone());
-    }
-    let n = dictionary.len();
-    let data = LanguageData {
-        dictionary,
-        grammar,
-        gpr: gpr.and_then(crate::gpr::Gpr::parse),
-        names,
-    };
-    LANGUAGE_DATA
-        .write()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
-        .insert(lang, std::sync::Arc::new(data));
-    n
+/// A voice's front end: its language, and that language's own data
+/// (dictionary and letter-to-sound model) and learned lexicon when it has
+/// them. One per voice: English Us/Gb/Au share a `Language` but not a
+/// dictionary.
+#[derive(Clone)]
+pub struct Frontend {
+    pub lang: Language,
+    data: Option<std::sync::Arc<LanguageData>>,
+    lexicon: Option<std::sync::Arc<Lexicon>>,
 }
 
-fn language_data(lang: Language) -> Option<std::sync::Arc<LanguageData>> {
-    LANGUAGE_DATA.read().unwrap().as_ref()?.get(&lang).cloned()
+impl Frontend {
+    /// The built-in rules alone.
+    pub fn rules(lang: Language) -> Frontend {
+        Frontend {
+            lang,
+            data: None,
+            lexicon: None,
+        }
+    }
+
+    /// Read a language's dictionary and letter-to-sound model from its
+    /// files (any may be missing). `phones` is the voice's phone table as
+    /// (symbol, engine feature word), `synth::PhoneTables`.
+    pub fn from_files(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>, phones: &[(String, u32)]) -> Frontend {
+        let mut dictionary = HashMap::new();
+        let mut grammar = HashMap::new();
+        if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
+            for r in rows {
+                // the German module's own query (LTTS7German.dll 0x10007720):
+                // grafemica, gradoaccentuale, grammaticale WHERE both are set
+                if let (Some(word), Some(grade), Some(class)) = (
+                    r.first().and_then(|v| v.text()),
+                    r.get(2).and_then(|v| v.text()),
+                    r.get(3).and_then(|v| v.text()),
+                ) {
+                    if !grade.is_empty() && !class.is_empty() {
+                        grammar.entry(word.to_lowercase()).or_insert((german_class(&class), grade == "DEA"));
+                    }
+                }
+                let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else {
+                    continue;
+                };
+                let syms: Vec<String> = pron.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect();
+                if !syms.is_empty() {
+                    dictionary.entry(word.to_lowercase()).or_insert(syms);
+                }
+            }
+        }
+        let mut names = HashMap::new();
+        for (name, f) in phones {
+            names.entry(*f).or_insert_with(|| name.clone());
+        }
+        let data = LanguageData {
+            dictionary,
+            grammar,
+            gpr: gpr.and_then(crate::gpr::Gpr::parse),
+            names,
+        };
+        Frontend {
+            lang,
+            data: Some(std::sync::Arc::new(data)),
+            lexicon: None,
+        }
+    }
+
+    /// Words in the language's dictionary.
+    pub fn dictionary_len(&self) -> usize {
+        self.data.as_ref().map(|d| d.dictionary.len()).unwrap_or(0)
+    }
+
+    /// Words in the learned lexicon.
+    pub fn lexicon_len(&self) -> usize {
+        self.lexicon.as_ref().map(|l| l.len()).unwrap_or(0)
+    }
+
+    /// Add a pronunciation lexicon learned from the original engine
+    /// (lines `word<TAB>transcription`), looked up before everything else.
+    pub fn with_lexicon(mut self, tsv_text: &str) -> Frontend {
+        let lex: Lexicon = tsv_text
+            .lines()
+            .filter_map(|l| l.split_once('\t'))
+            .filter(|(_, t)| t.chars().any(|c| c != ' ' && c != '-'))
+            .map(|(w, t)| (w.to_string(), t.to_string()))
+            .collect();
+        self.lexicon = Some(std::sync::Arc::new(lex));
+        self
+    }
 }
 
 impl LanguageData {
@@ -484,10 +520,10 @@ impl LanguageData {
     }
 }
 
-fn language_data_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
-    let data = language_data(lang)?;
+fn language_data_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
+    let data = fe.data.as_ref()?;
     let w = word.to_lowercase();
-    if lang != Language::English {
+    if fe.lang != Language::English {
         return data.dictionary.get(&w).cloned();
     }
     // English: `'s` is the stem plus its ending, without the stem's flap
@@ -640,12 +676,12 @@ fn german_class(label: &str) -> u8 {
 /// dictionary marks DEA, of at most 7 letters, except sie, mit and nicht.
 /// Words the dictionary doesn't classify fall back to `GERMAN_UNSTRESSED`
 /// (the module's own morphological analyser isn't ported).
-fn german_unstressed(word: &str) -> bool {
+fn german_unstressed(word: &str, fe: &Frontend) -> bool {
     const FUNCTION_CLASSES: [u8; 10] = [0x19, 0x1e, 0x18, 0x20, 0x21, 0x16, 0x22, 0x1f, 0x82, 0x2e];
     if matches!(word, "sie" | "mit" | "nicht") {
         return false;
     }
-    match language_data(Language::German).and_then(|d| d.grammar.get(word).copied()) {
+    match fe.data.as_ref().and_then(|d| d.grammar.get(word).copied()) {
         Some((class, dea)) => (FUNCTION_CLASSES.contains(&class) || dea) && word.chars().count() <= 7,
         None => GERMAN_UNSTRESSED.contains(&word),
     }
@@ -662,7 +698,7 @@ const GERMAN_UNSTRESSED: &[&str] = &["mein", "meine", "wegen", "für"];
 /// unreleased before another word (plain t after n/l/r), aspirated before a
 /// pause; a word starting with a vowel gets a glottal stop (Hk) inside a
 /// phrase.
-fn german_connected_speech(tokens: &mut [Token]) {
+fn german_connected_speech(tokens: &mut [Token], fe: &Frontend) {
     let words: Vec<usize> = (0..tokens.len()).filter(|&i| matches!(tokens[i], Token::Word { .. })).collect();
     // n before k/g, also across a word gap: N
     for pair in words.windows(2) {
@@ -696,7 +732,7 @@ fn german_connected_speech(tokens: &mut [Token]) {
         let next_open = joined && next.and_then(|j| tokens[j].symbols().first().map(|s| vowelish(s) || s == "h")).unwrap_or(false);
         if let Token::Word { text, symbols } = &mut tokens[i] {
             // little words keep their stress at the end of a phrase (wo der Bahnhof ist?)
-            if joined && german_unstressed(text) {
+            if joined && german_unstressed(text, fe) {
                 for s in symbols.iter_mut() {
                     *s = s.trim_start_matches('`').to_string();
                 }
@@ -893,15 +929,15 @@ fn spanish_connected_speech(tokens: &mut [Token]) {
 /// A French word the dictionary doesn't have whole: `est-ce` reads as its
 /// parts, `m'appelle` as the elided little word (`me` without its vowel) and
 /// the rest.
-fn french_compound(word: &str) -> Option<Vec<String>> {
+fn french_compound(word: &str, fe: &Frontend) -> Option<Vec<String>> {
     let word = word.trim_matches(|c| c == '-' || c == '\'');
     if let Some((a, b)) = word.split_once('-') {
-        let mut out = word_to_symbols(a, Language::French);
+        let mut out = word_to_symbols(a, fe);
         // `est-ce` `E s: the inverted ce keeps only its consonant
         out.extend(if b == "ce" {
             vec!["s".to_string()]
         } else {
-            word_to_symbols(b, Language::French)
+            word_to_symbols(b, fe)
         });
         return Some(out);
     }
@@ -918,16 +954,16 @@ fn french_compound(word: &str) -> Option<Vec<String>> {
                 *s = s.trim_start_matches('`').to_string();
             }
         }
-        out.extend(word_to_symbols(b, Language::French));
+        out.extend(word_to_symbols(b, fe));
         return Some(out);
     }
     // l' d' j' m' n' s' t' c' qu' jusqu': the full word minus its last vowel
-    let mut out = word_to_symbols(&format!("{a}e"), Language::French);
+    let mut out = word_to_symbols(&format!("{a}e"), fe);
     out.pop();
     for s in out.iter_mut() {
         *s = s.trim_start_matches('`').to_string();
     }
-    out.extend(word_to_symbols(b, Language::French));
+    out.extend(word_to_symbols(b, fe));
     Some(out)
 }
 
@@ -1004,11 +1040,6 @@ fn french_connected_speech(tokens: &mut [Token]) {
 // 635 000-word French dictionary took ~350 MB
 type Lexicon = std::collections::HashMap<String, String>;
 
-fn lexicons() -> &'static std::sync::Mutex<std::collections::HashMap<Language, std::sync::Arc<Lexicon>>> {
-    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Language, std::sync::Arc<Lexicon>>>> = std::sync::OnceLock::new();
-    L.get_or_init(Default::default)
-}
-
 static LEXICON_DIRS: std::sync::RwLock<Vec<std::path::PathBuf>> = std::sync::RwLock::new(Vec::new());
 
 /// Add a folder to look for pronunciation dictionaries in
@@ -1026,51 +1057,35 @@ pub fn lexicon_dirs() -> Vec<std::path::PathBuf> {
     LEXICON_DIRS.read().unwrap().clone()
 }
 
-/// Load the dictionary for a voice's language, if one was learned.
-/// Returns how many words it has.
-pub fn load_lexicon(lang: Language, mother_tongue: &str) -> usize {
-    // QQ_NO_LEXICON=1: measure the rules alone
+/// The learned dictionary for a `MotherTongue` (`<MotherTongue>.tsv` in the
+/// first registered folder holding one), for `Frontend::with_lexicon`.
+/// `QQ_NO_LEXICON=1` measures the rules alone.
+pub fn find_lexicon(mother_tongue: &str) -> Option<String> {
     if std::env::var_os("QQ_NO_LEXICON").is_some() {
-        return 0;
+        return None;
     }
-    let mut all = lexicons().lock().unwrap();
-    if let Some(l) = all.get(&lang) {
-        return l.len();
-    }
-    for dir in lexicon_dirs() {
-        let path = dir.join(format!("{mother_tongue}.tsv"));
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            let lex: Lexicon = text
-                .lines()
-                .filter_map(|l| l.split_once('\t'))
-                .filter(|(_, t)| t.chars().any(|c| c != ' ' && c != '-'))
-                .map(|(w, t)| (w.to_string(), t.to_string()))
-                .collect();
-            let n = lex.len();
-            all.insert(lang, std::sync::Arc::new(lex));
-            return n;
-        }
-    }
-    0
+    lexicon_dirs()
+        .into_iter()
+        .find_map(|dir| std::fs::read_to_string(dir.join(format!("{mother_tongue}.tsv"))).ok())
 }
 
-fn lexicon_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
-    let lex = lexicons().lock().unwrap().get(&lang).cloned()?;
-    let t = lex.get(&word.to_lowercase())?;
+fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
+    let t = fe.lexicon.as_ref()?.get(&word.to_lowercase())?;
     Some(t.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect())
 }
 
-pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
+pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
+    let lang = fe.lang;
     // the dictionary first: the original engine's own pronunciation
-    if let Some(p) = lexicon_lookup(word, lang) {
+    if let Some(p) = lexicon_lookup(word, fe) {
         return p;
     }
-    // then the language's own data from the installer (`load_language_data`)
-    if let Some(p) = language_data_lookup(word, lang) {
+    // then the language's own data from the installer (`Frontend::from_files`)
+    if let Some(p) = language_data_lookup(word, fe) {
         return p;
     }
     if lang == Language::French {
-        if let Some(out) = french_compound(word) {
+        if let Some(out) = french_compound(word, fe) {
             return out;
         }
         if std::env::var_os("QQ_OLD_FRENCH").is_none() {
@@ -2130,7 +2145,8 @@ pub fn italian_number(n: u64) -> String {
     words.join(" ")
 }
 
-pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
+pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
+    let lang = fe.lang;
     let mut tokens: Vec<Token> = Vec::new();
     let mut word = String::new();
 
@@ -2149,7 +2165,7 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
                             reason: "word gap".into(),
                         });
                     }
-                    let mut symbols = word_to_symbols(part, lang);
+                    let mut symbols = word_to_symbols(part, fe);
                     // number words are compounds (cento+settanta+sei): their s
                     // starts a morpheme and stays voiceless, as the original says it
                     if lang == Language::Italian && w.chars().all(|c| c.is_ascii_digit()) {
@@ -2241,7 +2257,7 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
         spanish_connected_speech(&mut tokens);
     }
     if lang == Language::German {
-        german_connected_speech(&mut tokens);
+        german_connected_speech(&mut tokens, fe);
     }
 
     // collapse runs of pauses into the strongest one
@@ -2270,7 +2286,7 @@ mod tests {
     use super::*;
 
     fn syms(w: &str, l: Language) -> String {
-        word_to_symbols(w, l).join(" ")
+        word_to_symbols(w, &Frontend::rules(l)).join(" ")
     }
 
     #[test]
@@ -2328,9 +2344,9 @@ mod tests {
     #[test]
     fn italian_uses_its_own_r() {
         // Roberto's alphabet has no `R`; Katrin's has no `tt`
-        let it = word_to_symbols("Roberto", Language::Italian);
+        let it = word_to_symbols("Roberto", &Frontend::rules(Language::Italian));
         assert!(!it.iter().any(|s| s == "R"), "Italian must not emit R");
-        let de = word_to_symbols("Katrin", Language::German);
+        let de = word_to_symbols("Katrin", &Frontend::rules(Language::German));
         assert!(de.iter().any(|s| s == "R"), "German must use R");
         assert!(!de.iter().any(|s| s == "tt"), "German must not emit tt");
     }
@@ -2345,10 +2361,10 @@ mod tests {
 
     #[test]
     fn cyrillic_and_greek_reach_the_syllabary() {
-        let ru = word_to_symbols("привет", Language::Russian);
+        let ru = word_to_symbols("привет", &Frontend::rules(Language::Russian));
         assert!(!ru.is_empty(), "Russian must produce symbols");
         assert!(ru.iter().any(|s| is_vowel(s)));
-        let el = word_to_symbols("γεια", Language::Greek);
+        let el = word_to_symbols("γεια", &Frontend::rules(Language::Greek));
         assert!(!el.is_empty(), "Greek must produce symbols");
     }
 
@@ -2362,7 +2378,7 @@ mod tests {
 
     #[test]
     fn words_and_pauses() {
-        let t = analyse("Il mio nome è Roberto.", Language::Italian);
+        let t = analyse("Il mio nome è Roberto.", &Frontend::rules(Language::Italian));
         let words: Vec<&str> = t
             .iter()
             .filter_map(|x| match x {
