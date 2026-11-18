@@ -96,7 +96,8 @@ pub type At = (u32, u16);
 
 #[derive(Default)]
 pub struct VoiceDatabase {
-    /// Header line of the `.sde`, e.g. `14,4`.
+    /// Header line of the `.sde`, e.g. `14,4`: the voice's licence bit
+    /// (byte 14, mask 4; LoqTTS7.dll 0x10002a00), unused for speech.
     pub format: String,
     pub codec_version: String,
     /// `N=<sentences>,<phones including both edge silences>`

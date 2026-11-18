@@ -94,7 +94,7 @@ Text with every byte ≥ 0x80 shifted up by 0x80 (line feeds are not). Read as
 Latin-1.
 
 ```
-14,4                         header (meaning unknown; Katrin 10,16)
+14,4                         licence bit: byte 14, mask 4 (Katrin 10,16)
 LTTSComponentVersion=7.0.0
 N=4329,89554                 sentences, phones incl. both edge silences (80896 + 2×4329)
 U=# s `o n o-i n a v: e r tt i tt a m `e n tt e-u $ `i tt e-dd a l: a-g `a b: j a @
@@ -117,6 +117,19 @@ S=I                          (after some sentences) I question, E exclamation
 - Roberto's symbols: `T$` /tʃ/, `Dg` /dʒ/, `Ts` /ts/, `Dz` /dz/, `$` /ʃ/, `Gn`,
   `Gl`, `N` (before k/g), `M` (before f/v), `tt`/`dd` plain t/d, `j`, `w`,
   `` `E `` open e, `` `Oa `` open o, `:` long consonant, `` ` `` stress.
+- The first line is a **licence bit**, not synthesis data. The loader
+  0x10049f10 keeps it (up to 79 characters) at database+0x30; a plain-text
+  `.sde` gets `332198,21119` (0x10096818). `CatGetVoiceArrayIndexes`
+  (0x1004c190) hands it to the licence check 0x10002a00, which splits it at
+  the comma: the voice is valid only if licence byte [first + 1] has the bit
+  `second` set (Roberto byte 14 mask 4, Katrin 10/16, Allison 7/16, Bernard
+  12/1); `332198,21119` skips the check. quoquendo ignores it.
+- `^` is phone id 1 in every voice's phone table (base 0x10 for Roberto,
+  0x48 for Katrin). Only Roberto's index uses it: 56 of 4 329 recorded
+  sentences label a stretch the labeller left unnamed (`b r ^ s`,
+  `k w a f: ^ r`), with its own L/R timings. Text never produces it, so it
+  only takes part as a context neighbour in CAT, through the similarity
+  table (§5).
 
 ## 4. FON — text → sounds
 
@@ -515,4 +528,4 @@ when a speed/pitch change asks for it.
 - Bit-exact Speex decoding (we are within ±1–2 LSB, 70–80 dB): it decides
   the last pitch marks and so the last SIG differences.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
-  and pitch controls, Gilded phrases, the `.sde` header pair (`14,4`/`10,16`).
+  and pitch controls, Gilded phrases.
