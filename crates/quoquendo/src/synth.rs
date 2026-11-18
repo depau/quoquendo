@@ -907,15 +907,16 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
     let gain = settings.volume / 32768.0;
     let mut out: Vec<f32> = Vec::new();
     for phrase in plan {
+        if settings.join == JoinStyle::Original {
+            out.extend(join_like_original(phrase, db, bank).into_iter().map(|v| v as f32 * gain));
+            out.extend(std::iter::repeat(0.0).take(ms(phrase.pause_ms)));
+            continue;
+        }
         let mut tail: Vec<f32> = Vec::new();
         let phrase_start = out.len();
         for piece in &phrase.pieces {
             let from = (piece.from + CUT_OFFSET) as usize;
             let len = piece.to.saturating_sub(piece.from) as usize;
-            if settings.join == JoinStyle::Original {
-                out.extend(bank.read(from, len).into_iter().map(|s| s as f32 * gain));
-                continue;
-            }
             let head = from.min(FADE + SLIDE);
             let pad = FADE + SLIDE;
             let buf: Vec<f32> = bank.read(from - head, head + len + pad).into_iter().map(|s| s as f32 * gain).collect();
@@ -964,6 +965,135 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
         out.extend(std::iter::repeat(0.0).take(ms(phrase.pause_ms)));
     }
     Ok(Speech { samples: out, rate })
+}
+
+/// Samples decoded on each side of a unit, as LoqTTS7.dll's unit fetch
+/// (0x1001f580) asks for: `(rate/10 · 400) / 20000` = 64 at 32 kHz.
+pub const UNIT_MARGIN: usize = 64;
+
+/// LoqTTS7.dll's cross-fade window (0x100241e0, type 2 at 0x100242ba): n
+/// points of `0.5 · (1 − cos(2π (i+1) / (n+1)))`.
+fn hann_window(n: usize) -> Vec<f64> {
+    (0..n).map(|i| 0.5 * (1.0 - (std::f64::consts::TAU * (i + 1) as f64 / (n + 1) as f64).cos())).collect()
+}
+
+/// One phrase joined the way the original does with plain-copy units
+/// (algorithm 1, CONCATENAZIONE). Every unit is decoded with `UNIT_MARGIN`
+/// samples on each side; at each join (0x10024660 → 0x100244a0) the previous
+/// unit's last `m − 1` samples and its margin are cross-faded with the next
+/// unit's margin and its first `m − 1` samples (m = 64; a Hann window of
+/// 2·(2m − 1) points, falling half on the previous unit), the sum clamped
+/// and truncated to 16 bits, and written into both units; then the units'
+/// own samples are played one after another.
+fn join_like_original(phrase: &Phrase, db: &VoiceDatabase, bank: &crate::codec::AudioBank) -> Vec<i16> {
+    use crate::sig::{pitch_marks, voiced_join, JoinHalf, Voicing};
+    let m = UNIT_MARGIN;
+    // the first and last half-phone of every piece: (start, end) in the
+    // piece's samples, F0 and voicing (the unit info the marks use)
+    let halves = |p: &Piece| -> Vec<(usize, usize, u32, Voicing)> {
+        let u = &db.units[p.unit as usize];
+        let mut v = Vec::new();
+        for ph in u.phones.iter().filter(|ph| ph.timed) {
+            let voicing = db.tables.as_ref().map(|t| Voicing::of_features(t.features[t.id(&ph.sym) as usize])).unwrap_or(Voicing::Other);
+            for (a, b, f0) in [(ph.start, ph.mid, ph.pitch_l), (ph.mid, ph.end, ph.pitch_r)] {
+                if a >= p.from && b <= p.to && b > a {
+                    v.push(((a - p.from) as usize, (b - p.from) as usize, f0 as u32, voicing));
+                }
+            }
+        }
+        v
+    };
+    let mut piece_halves: Vec<Vec<(usize, usize, u32, Voicing)>> = phrase.pieces.iter().map(halves).collect();
+    let voiced_joins = std::env::var_os("QQ_NO_VOICED_JOIN").is_none();
+    let mut units: Vec<(Vec<i16>, usize, usize)> = phrase
+        .pieces
+        .iter()
+        .map(|p| {
+            let from = (p.from + CUT_OFFSET) as usize;
+            let len = p.to.saturating_sub(p.from) as usize;
+            let pre = m.min(from);
+            (bank.read(from - pre, pre + len + m), pre, len)
+        })
+        .collect();
+    let edges = std::env::var_os("QQ_JOIN_EDGES").is_some();
+    for k in 0..units.len() + 1 {
+        // phrase edges join with silence when QQ_JOIN_EDGES is set (experiment)
+        if (k == 0 || k == units.len()) && !edges {
+            continue;
+        }
+        let silent = |n: usize| (vec![0i16; n], 0usize, n);
+        let (mut a, mut b) = if k == 0 {
+            (silent(m), units[0].clone())
+        } else if k == units.len() {
+            (units[k - 1].clone(), silent(m))
+        } else {
+            (units[k - 1].clone(), units[k].clone())
+        };
+        // two voiced half-phones: the pitch-synchronous join (0x10024660)
+        if voiced_joins && k > 0 && k < units.len() {
+            let (ha, hb) = (piece_halves[k - 1].last().copied(), piece_halves[k].first().copied());
+            if let (Some(ha), Some(hb)) = (ha, hb) {
+                if ha.3 == Voicing::Voiced && hb.3 == Voicing::Voiced {
+                    let rate = bank.rate;
+                    let make = |buf: &[i16], from: usize, len: usize, f0: u32| {
+                        let b: Vec<i16> = buf[from..(from + len + 2 * m).min(buf.len())].to_vec();
+                        let s = |i: isize| *b.get((i + m as isize) as usize).unwrap_or(&0) as i32;
+                        let marks = pitch_marks(&s, len, rate, f0, Voicing::Voiced);
+                        JoinHalf { buf: b, pre: m, len, post: m, marks }
+                    };
+                    // the halves' samples with their margins (the pieces carry `m` on each side)
+                    let a_from = a.1 + ha.0 - m;
+                    let ja = make(&a.0, a_from, ha.1 - ha.0, ha.2);
+                    let jb = make(&b.0, b.1 - m, hb.1 - hb.0, hb.2);
+                    if std::env::var_os("QQ_DEBUG_JOIN").is_some() {
+                        let per = |h: &JoinHalf| h.marks.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+                        eprintln!("join A{:?} B{:?} -> {:?}", per(&ja), per(&jb), voiced_join(&ja, &jb).map(|(x, y)| (x.len(), y.len())));
+                    }
+                    if let Some((na, nb)) = voiced_join(&ja, &jb) {
+                        let mut abuf = a.0[..a.1 + ha.0].to_vec();
+                        abuf.extend_from_slice(&na);
+                        let alen = ha.0 + na.len();
+                        abuf.extend(std::iter::repeat(0).take(m));
+                        let mut bbuf = vec![0i16; m];
+                        bbuf.extend_from_slice(&nb);
+                        bbuf.extend_from_slice(&b.0[b.1 + hb.1..]);
+                        let blen = nb.len() + (b.2 - hb.1);
+                        units[k - 1] = (abuf, a.1, alen);
+                        units[k] = (bbuf, m, blen);
+                        // the halves' boundaries move with them
+                        if let Some(l) = piece_halves.get_mut(k - 1).and_then(|v| v.last_mut()) {
+                            l.1 = alen;
+                        }
+                        continue;
+                    }
+                    continue;
+                }
+            }
+        }
+        let start = (a.1 + a.2 + 1).saturating_sub(b.1);
+        let n = a.0.len().saturating_sub(start);
+        if n == 0 || 2 * n > 1000 || n > b.0.len() {
+            continue;
+        }
+        let w = hann_window(2 * n);
+        for i in 0..n {
+            let v = a.0[start + i] as f64 * w[n + i] + b.0[i] as f64 * w[i];
+            let v = v.clamp(-32768.0, 32767.0) as i16;
+            a.0[start + i] = v;
+            b.0[i] = v;
+        }
+        if k > 0 {
+            units[k - 1] = a;
+        }
+        if k < units.len() {
+            units[k] = b;
+        }
+    }
+    let mut out = Vec::new();
+    for (buf, pre, len) in &units {
+        out.extend_from_slice(&buf[*pre..pre + len]);
+    }
+    out
 }
 
 /// A 16-bit mono PCM WAV of the rendered speech.

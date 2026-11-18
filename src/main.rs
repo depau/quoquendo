@@ -305,6 +305,45 @@ fn main() -> eframe::Result<()> {
         g2p::add_lexicon_dir(exe);
     }
 
+    // developer check: QQ_CHECK_MARKS=<trace.join> compares our pitch marks
+    // with the original's (oracle/loqref.c LOQ_TRACE_JOIN "M" lines)
+    if let Ok(trace) = std::env::var("QQ_CHECK_MARKS") {
+        let (v, db) = find_voice(opts.voice.as_deref()).unwrap();
+        let _ = v;
+        let bank = db.audio.as_ref().unwrap();
+        let tab = db.tables.as_ref().unwrap();
+        let mut at = std::collections::HashMap::new();
+        for u in &db.units {
+            for p in u.phones.iter().filter(|p| p.timed) {
+                at.insert(p.tick_l, (p.sym.clone(), p.len_l));
+                at.insert(p.tick_r, (p.sym.clone(), p.len_r));
+            }
+        }
+        let (mut ok, mut n) = (0, 0);
+        for line in std::fs::read_to_string(trace).unwrap().lines().filter(|l| l.starts_with('M')) {
+            let kv: std::collections::HashMap<&str, &str> = line.split(' ').filter_map(|f| f.split_once('=')).collect();
+            let t0: u64 = kv["t0"].parse().unwrap();
+            let t1: u64 = kv["t1"].parse().unwrap();
+            let f0: u32 = kv["f0"].parse().unwrap();
+            let theirs: Vec<i64> = line.split(" marks ").nth(1).unwrap_or("").split(' ').filter_map(|x| x.parse().ok()).collect();
+            let Some((sym, _)) = at.get(&t0) else { continue };
+            let voicing = quoquendo::sig::Voicing::of_features(tab.features[tab.id(sym) as usize]);
+            let start = loquendo::ticks_to_samples(t0, 32000) as usize + synth::CUT_OFFSET as usize;
+            let len = (loquendo::ticks_to_samples(t1, 32000) - loquendo::ticks_to_samples(t0, 32000)) as usize;
+            let buf = bank.read(start - 64, len + 64 + 600);
+            let s = |i: isize| *buf.get((i + 64) as usize).unwrap_or(&0) as i32;
+            let ours: Vec<i64> = quoquendo::sig::pitch_marks(&s, len, 32000, f0, voicing).iter().map(|&m| m as i64).collect();
+            let rel: Vec<i64> = theirs.iter().map(|m| m - theirs[0]).collect();
+            n += 1;
+            if ours == rel {
+                ok += 1;
+            } else {
+                println!("{sym} {voicing:?} f0={f0} len={len}\n  theirs {rel:?}\n  ours   {ours:?}");
+            }
+        }
+        println!("{ok} of {n} half-phones with the same marks");
+        return Ok(());
+    }
     if let Some(path) = &opts.install {
         match install::install_voice(path) {
             Ok(names) => {

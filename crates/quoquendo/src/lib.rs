@@ -23,6 +23,7 @@ pub mod loquendo;
 pub mod phoneset;
 pub mod phonetics;
 pub mod sqlite;
+pub mod sig;
 pub mod synth;
 
 use std::path::Path;

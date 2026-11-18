@@ -77,6 +77,45 @@ __asm__(".globl _hook_pros\n_hook_pros:\n"
         " movl %edx, _pros_edx\n popl _pros_ret\n call *_real_pros\n"
         " pushl _pros_ret\n pushl %eax\n pushl %eax\n call _log_pros\n"
         " addl $4, %esp\n popl %eax\n ret\n");
+/* LOQ_TRACE_JOIN=1: log every voiced join (0x1001f8a3 -> 0x10024660, the
+ * current unit in EDX, the previous one on the stack, caller cleans) to
+ * <prefix>.join: each unit's start/pre/len/post/voiced, pitch marks, and the
+ * lengths after the join, plus a checksum of the samples it outputs. */
+FILE *joinlog;
+void *real_join;
+unsigned join_a, join_b, join_ret;
+static void log_unit(const char *tag, unsigned char *u) {
+    short *buf = **(short ***)(u + 8);
+    unsigned len = *(unsigned *)(u + 0xc), post = *(unsigned *)(u + 0x10), pre = *(unsigned *)(u + 0x14);
+    unsigned nm = *(unsigned *)(u + 0x41c);
+    long long sum = 0;
+    for (unsigned i = 0; i < pre + len + post && buf; i++) sum += (long long)buf[i] * (long long)(i + 1);
+    fprintf(joinlog, "%s start=%u pre=%u len=%u post=%u voiced=%u base=%d sum=%lld marks", tag, *(unsigned *)(u + 0x18), pre, len, post,
+            u[0x640], *(int *)(u + 0x1c), sum);
+    for (unsigned i = 0; i < nm && i < 256; i++) fprintf(joinlog, " %d", *(int *)(u + 0x20 + 4 * i));
+    fprintf(joinlog, "\n");
+}
+void __cdecl join_pre(void) { log_unit("A", (unsigned char *)join_a); log_unit("B", (unsigned char *)join_b); }
+void __cdecl join_post(void) { log_unit("A'", (unsigned char *)join_a); log_unit("B'", (unsigned char *)join_b); fflush(joinlog); }
+/* and every unit's pitch marks (0x1001fbd1 -> 0x1001e3a0, cdecl engine,
+ * unit info): its ticks, F0 (+0x140), voicing (+0x150) and the marks */
+typedef void (__cdecl *fn_marks)(unsigned char *, unsigned char *);
+static fn_marks real_marks;
+static void __cdecl hook_marks(unsigned char *e, unsigned char *info) {
+    real_marks(e, info);
+    unsigned n = *(unsigned *)(e + 0x1528);
+    fprintf(joinlog, "M t0=%u t1=%u f0=%u voc=%c algo=%u margin=%u marks", *(unsigned *)(e + 0x155c), *(unsigned *)(e + 0x1564),
+            *(unsigned *)(info + 0x140), info[0x150] ? info[0x150] : '-', *(unsigned *)(info + 0xc), *(unsigned *)(e + 0x25c));
+    for (unsigned i = 0; i < n && i < 256; i++) fprintf(joinlog, " %u", *(unsigned *)(e + 0x1128 + 4 * i));
+    fprintf(joinlog, "\n");
+}
+void hook_join(void);
+__asm__(".globl _hook_join\n_hook_join:\n"
+        " movl %edx, _join_b\n movl 4(%esp), %eax\n movl %eax, _join_a\n"
+        " pushl %ecx\n pushl %edx\n call _join_pre\n popl %edx\n popl %ecx\n"
+        " popl _join_ret\n call *_real_join\n pushl _join_ret\n"
+        " pushl %eax\n call _join_post\n popl %eax\n ret\n");
+
 static void *redirect(HMODULE dll, unsigned site, void *to) {
     unsigned char *at = (unsigned char *)dll + (site - 0x10000000);
     DWORD old;
@@ -195,6 +234,12 @@ int main(int argc, char **argv) {
         real_ctx = (fn6)redirect(dll, 0x10046c9d, (void *)hook_ctx);
         real_factor = (fn6)redirect(dll, 0x10046d2f, (void *)hook_factor);
         real_pros = redirect(dll, 0x10046d65, (void *)hook_pros);
+    }
+    if (getenv("LOQ_TRACE_JOIN")) {
+        snprintf(path, sizeof path, "%s.join", argv[4]);
+        joinlog = fopen(path, "wb");
+        real_join = redirect(dll, 0x1001f8a3, (void *)hook_join);
+        real_marks = (fn_marks)redirect(dll, 0x1001fbd1, (void *)hook_marks);
     }
     CHECK(ttsLoadPersona(reader, argv[2], NULL, NULL));
     CHECK(ttsSetTextEncoding(reader, 65001));
