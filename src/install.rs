@@ -115,6 +115,10 @@ pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
 /// (`voice_store()`) first, then any other installation found.
 pub fn all_voices() -> Vec<VoiceDescriptor> {
     let mut out: Vec<VoiceDescriptor> = Vec::new();
+    // QQ_DATA_DIR=<LTTS7 folder or its data folder>: only that installation
+    if let Some(dir) = std::env::var_os("QQ_DATA_DIR").and_then(|d| resolve_data_dir(Path::new(&d))) {
+        return discover_voices(&dir);
+    }
     let dirs = [voice_store().and_then(|s| resolve_data_dir(&s)), resolve_data_dir_auto()];
     for d in dirs.into_iter().flatten() {
         for v in discover_voices(&d) {
