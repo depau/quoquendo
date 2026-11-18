@@ -524,13 +524,56 @@ mod web {
         });
     }
 
-    /// Unpack an installer here (the page pauses while it runs) and store it.
-    pub fn import_installer(file: String, bytes: Vec<u8>, tx: Tx) {
-        let unpacked = quoquendo::pack::unpack_installer(&bytes);
+    /// Unpack an installer in a Web Worker (`src/bin/qq_unpack_worker.rs`)
+    /// so the page keeps drawing, then store it.
+    async fn unpack_in_worker(bytes: Vec<u8>) -> Result<Vec<(String, Vec<u8>)>, String> {
+        // the next message (or error) from the worker
+        fn next(worker: &web_sys::Worker) -> js_sys::Promise {
+            js_sys::Promise::new(&mut |resolve, reject| {
+                let on_message = wasm_bindgen::closure::Closure::once_into_js(move |e: web_sys::MessageEvent| {
+                    let _ = resolve.call1(&JsValue::NULL, &e.data());
+                });
+                let on_error = wasm_bindgen::closure::Closure::once_into_js(move |e: JsValue| {
+                    let _ = reject.call1(&JsValue::NULL, &e);
+                });
+                worker.set_onmessage(Some(on_message.unchecked_ref()));
+                worker.set_onerror(Some(on_error.unchecked_ref()));
+            })
+        }
+        let worker = web_sys::Worker::new("./qq_unpack_worker_loader.js").map_err(js)?;
+        let failed = |e: JsValue| format!("the unpacking worker failed: {}", js(e));
+        // it says "ready" once its module has loaded and listens
+        let ready = JsFuture::from(next(&worker)).await;
+        if let Err(e) = ready {
+            worker.terminate();
+            return Err(failed(e));
+        }
+        let reply = next(&worker);
+        let array = js_sys::Uint8Array::from(bytes.as_slice());
         drop(bytes);
+        worker
+            .post_message_with_transfer(&array, &js_sys::Array::of1(&array.buffer()))
+            .map_err(js)?;
+        let result = JsFuture::from(reply).await;
+        worker.terminate();
+        let msg = result.map_err(failed)?;
+        if let Some(e) = js_sys::Reflect::get(&msg, &"error".into()).ok().and_then(|e| e.as_string()) {
+            return Err(e);
+        }
+        let files: js_sys::Array = js_sys::Reflect::get(&msg, &"files".into()).map_err(js)?.unchecked_into();
+        Ok(files
+            .iter()
+            .map(|pair| {
+                let pair: js_sys::Array = pair.unchecked_into();
+                (pair.get(0).as_string().unwrap_or_default(), js_sys::Uint8Array::new(&pair.get(1)).to_vec())
+            })
+            .collect())
+    }
+
+    pub fn import_installer(file: String, bytes: Vec<u8>, tx: Tx) {
         spawn_local(async move {
-            let result = match unpacked {
-                Ok(u) => store(u.files, &tx, &file).await,
+            let result = match unpack_in_worker(bytes).await {
+                Ok(files) => store(files, &tx, &file).await,
                 Err(e) => Err(e),
             };
             let _ = tx.send(match result {

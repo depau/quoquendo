@@ -92,9 +92,6 @@ pub struct App {
     voice: Option<quoquendo::Voice>,
     loading: Option<String>,
     downloads: Vec<Download>,
-    /// an installer waiting to be unpacked on the next frame, so the
-    /// "Unpacking…" message shows before the page pauses
-    unpack_next: Option<(String, Vec<u8>, u8)>,
     unpacking: Option<String>,
     confirm_delete: Option<String>,
     filter: String,
@@ -168,7 +165,6 @@ impl App {
             voice: None,
             loading: None,
             downloads: Vec::new(),
-            unpack_next: None,
             unpacking: None,
             confirm_delete: None,
             filter: String::new(),
@@ -318,8 +314,9 @@ impl App {
                     if let Some(d) = self.downloads.iter_mut().find(|d| d.installer.file == file) {
                         d.state = DownloadState::Unpacking;
                     }
-                    self.status = format!("Unpacking {file}… (the page may pause for a few seconds)");
-                    self.unpack_next = Some((file, bytes, 2));
+                    self.status = format!("Unpacking {file}…");
+                    self.unpacking = Some(file.clone());
+                    store::import_installer(file, bytes, self.tx.clone());
                 }
                 StoreEvent::Installed(voices) => {
                     self.unpacking = None;
@@ -361,15 +358,7 @@ impl App {
                 store::download(d.installer, catalog::effective_mirror(&self.mirror_url), self.tx.clone());
             }
         }
-        if let Some((file, bytes, wait)) = self.unpack_next.take() {
-            if wait > 0 {
-                self.unpack_next = Some((file, bytes, wait - 1));
-            } else {
-                self.unpacking = Some(file.clone());
-                store::import_installer(file, bytes, self.tx.clone());
-            }
-        }
-        if self.unpack_next.is_some() || self.unpacking.is_some() || self.loading.is_some() || !self.downloads.is_empty() || self.player.is_playing() {
+        if self.unpacking.is_some() || self.loading.is_some() || !self.downloads.is_empty() || self.player.is_playing() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
     }
@@ -530,7 +519,7 @@ impl App {
     fn status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if self.unpacking.is_some() || self.loading.is_some() || self.unpack_next.is_some() {
+                if self.unpacking.is_some() || self.loading.is_some() {
                     ui.spinner();
                 }
                 match &self.error {
@@ -778,7 +767,7 @@ impl App {
                 .color(MUTED),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(self.unpacking.is_none() && self.unpack_next.is_none(), egui::Button::new("Import installer .exe…")).clicked() {
+                if ui.add_enabled(self.unpacking.is_none(), egui::Button::new("Import installer .exe…")).clicked() {
                     store::pick_installer(self.tx.clone());
                 }
                 if let Some(u) = &self.unpacking {
