@@ -71,6 +71,47 @@ impl Voice {
     }
 }
 
+/// The contents of a voice's files, for loading it without a filesystem
+/// (a browser, a server holding them in memory). Only `sde` and `bin` are
+/// required; without `library` the picker falls back to its approximation,
+/// without `dbl`/`gpr` the front end uses its own rules.
+#[derive(Default)]
+pub struct VoiceFiles {
+    /// `<Voice>.vde` (voice description, INI text)
+    pub vde: Vec<u8>,
+    /// `<Voice>.sde` (recordings index)
+    pub sde: Vec<u8>,
+    /// `<Voice>.<rate>.LTTS7Codec210.<…>.bin` (recordings)
+    pub bin: Vec<u8>,
+    /// `LTTS7<Voice>.dll` (its phone table is read as data, never run)
+    pub library: Option<Vec<u8>>,
+    /// `<MotherTongue>.dbl` and `.gpr` from `languages/<Language>/`
+    pub dbl: Option<Vec<u8>>,
+    pub gpr: Option<Vec<u8>>,
+}
+
+impl Voice {
+    /// Load a voice from its files' bytes.
+    pub fn from_bytes(files: VoiceFiles) -> Result<Voice, String> {
+        let ini = loquendo::parse_ini(&loquendo::latin1(&files.vde));
+        let descriptor = VoiceDescriptor {
+            name: ini.get("BaseVoice").cloned().unwrap_or_default(),
+            description: ini.get("BaseDescription").cloned().unwrap_or_default(),
+            mother_tongue: ini.get("MotherTongue").cloned().unwrap_or_default(),
+            mother_tongue_aliases: ini.get("MotherTongueAliases").cloned().unwrap_or_default(),
+            gender: ini.get("Gender").cloned().unwrap_or_default(),
+            ..Default::default()
+        };
+        let mut db = loquendo::parse_sde(&loquendo::latin1(&files.sde));
+        db.audio = Some(codec::AudioBank::parse(files.bin)?);
+        db.tables = files.library.as_deref().and_then(|l| synth::PhoneTables::from_library(l, &db));
+        if let Some(t) = &db.tables {
+            g2p::load_language_data(descriptor.language(), files.dbl.as_deref(), files.gpr.as_deref(), &t.phone_features());
+        }
+        Ok(Voice { descriptor, db })
+    }
+}
+
 /// Read the voice's language files beside it (`data/languages/*/<MotherTongue>.dbl`
 /// and `.gpr`, installed with the voice) into the front end.
 pub fn load_language_files(descriptor: &VoiceDescriptor, db: &VoiceDatabase) -> usize {
@@ -92,4 +133,28 @@ pub fn load_language_files(descriptor: &VoiceDescriptor, db: &VoiceDatabase) -> 
         return 0;
     }
     g2p::load_language_data(descriptor.language(), dbl.as_deref(), gpr.as_deref(), &tables.phone_features())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Loading from bytes speaks exactly like loading from the folder.
+    #[test]
+    fn bytes_and_folder_say_the_same() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oracle/prefix/drive_c/Program Files (x86)/Loquendo/LTTS7");
+        let v = root.join("data/voices/Roberto");
+        let Ok(sde) = std::fs::read(v.join("Roberto.sde")) else { return };
+        let files = VoiceFiles {
+            vde: std::fs::read(v.join("Roberto.vde")).unwrap(),
+            sde,
+            bin: std::fs::read(v.join("Roberto.32000.LTTS7Codec210.44000.10.bin")).unwrap(),
+            library: std::fs::read(root.join("bin/LTTS7Roberto.dll")).ok(),
+            ..Default::default()
+        };
+        let a = Voice::from_bytes(files).unwrap().say("Binario tre.").unwrap();
+        let b = Voice::find(&root.join("data"), "Roberto").unwrap().say("Binario tre.").unwrap();
+        assert!(!a.samples.is_empty());
+        assert_eq!(a.samples, b.samples);
+    }
 }

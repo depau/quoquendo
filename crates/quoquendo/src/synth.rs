@@ -284,9 +284,14 @@ impl PhoneTables {
     /// Build them as the original does, from the voice's library
     /// (`phoneset`): nothing but the installed voice is needed.
     pub fn load(sde: &std::path::Path, voice: &str, db: &VoiceDatabase) -> Option<PhoneTables> {
+        let lib = std::fs::read(crate::phoneset::find_voice_library(sde, voice)?).ok()?;
+        PhoneTables::from_library(&lib, db)
+    }
+
+    /// The same from the voice library's bytes (`LTTS7<Voice>.dll`).
+    pub fn from_library(lib: &[u8], db: &VoiceDatabase) -> Option<PhoneTables> {
         use crate::phoneset::*;
-        let lib = std::fs::read(find_voice_library(sde, voice)?).ok()?;
-        let phones = phone_table(&lib)?;
+        let phones = phone_table(lib)?;
         let features: Vec<u32> = phones.iter().map(|p| engine_features(p.base)).collect();
         let class = features.iter().map(|&f| weight_class(f)).collect();
         let sim = features.iter().flat_map(|&a| features.iter().map(move |&c| similarity(a, c))).collect();

@@ -51,7 +51,8 @@ impl AudioBank {
         AudioBank::parse(data).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    fn parse(data: Vec<u8>) -> Result<AudioBank, String> {
+    /// The recordings from a `.bin` file's bytes.
+    pub fn parse(data: Vec<u8>) -> Result<AudioBank, String> {
         if data.len() < 64 {
             return Err("too short".into());
         }
