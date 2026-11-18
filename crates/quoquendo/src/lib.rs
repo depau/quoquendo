@@ -17,6 +17,7 @@
 //! ```
 
 pub mod codec;
+pub mod french;
 pub mod g2p;
 pub mod gpr;
 pub mod loquendo;

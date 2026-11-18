@@ -618,6 +618,21 @@ fn french_compound(word: &str) -> Option<Vec<String>> {
         return Some(out);
     }
     let (a, b) = word.split_once('\'')?;
+    // jusqu', lorsqu', puisqu', quoiqu': the word itself (stress kept) and k
+    if a.ends_with("qu") && a.len() > 3 {
+        // `lorsque` minus its e; only jusqu' keeps its stress
+        let mut out = crate::french::transcribe(&format!("{a}e"));
+        if out.last().map(|s| s.trim_start_matches('`') == "HEh").unwrap_or(false) {
+            out.pop();
+        }
+        if a != "jusqu" {
+            for s in out.iter_mut() {
+                *s = s.trim_start_matches('`').to_string();
+            }
+        }
+        out.extend(word_to_symbols(b, Language::French));
+        return Some(out);
+    }
     // l' d' j' m' n' s' t' c' qu' jusqu': the full word minus its last vowel
     let mut out = word_to_symbols(&format!("{a}e"), Language::French);
     out.pop();
@@ -763,6 +778,9 @@ pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
     if lang == Language::French {
         if let Some(out) = french_compound(word) {
             return out;
+        }
+        if std::env::var_os("QQ_OLD_FRENCH").is_none() {
+            return crate::french::transcribe(word);
         }
     }
     let raw = bare_word(word);
