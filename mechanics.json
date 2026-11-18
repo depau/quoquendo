@@ -489,7 +489,7 @@
    "name": "files a voice needs",
    "group": "voice files",
    "value": "data/<Voice>.vcf, data/voices/<Voice>/ (.sde .bin .vde), bin/LTTS7<Voice>.dll",
-   "source": "innoextract listing of the installers; phoneset.rs, loquendo.rs"
+   "source": "inno.rs file entries of the installers; phoneset.rs, loquendo.rs"
   },
   {
    "name": "unit margin",
@@ -545,6 +545,27 @@
    "group": "FON",
    "value": "EnglishUs.gpr context rules, 27 letters, 80 classes",
    "source": "LTTS7GPR.dll 0x10001710 (loader), 0x10001220 (rule match)"
+  },
+  {
+   "name": "installer file location entry size",
+   "group": "installer",
+   "value": 70,
+   "unit": "bytes",
+   "source": "inno.rs; every file of the Katrin and Raffaele installers compared byte for byte with innoextract"
+  },
+  {
+   "name": "installer header piece size",
+   "group": "installer",
+   "value": 4096,
+   "unit": "bytes, each after a 4-byte CRC",
+   "source": "inno.rs; every file of the Katrin and Raffaele installers compared byte for byte with innoextract"
+  },
+  {
+   "name": "installer x86 call filter block",
+   "group": "installer",
+   "value": "0x10000",
+   "unit": "bytes",
+   "source": "inno.rs; every file of the Katrin and Raffaele installers compared byte for byte with innoextract"
   }
  ]
 }

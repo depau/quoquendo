@@ -27,7 +27,7 @@ the FON result. The root package is the app (egui window, command line,
 installer unpacking, and the Wine reference harness under `oracle/`).
 
 **What a voice needs**, all from its own installer (`<Voice> - <Language>.exe`,
-Inno Setup 5.2.3; `quoquendo --install` unpacks it with `innoextract`):
+Inno Setup 5.2.3; `quoquendo --install` reads it with `inno.rs`, §7):
 `data/<Voice>.vcf`, `data/voices/<Voice>/` (`.sde` index, `.bin` recordings,
 `.vde`), `bin/LTTS7<Voice>.dll` (its phone table, read as data, §5) and
 `data/languages/<Language>/` (`<MotherTongue>.dbl` dictionary and, for
@@ -368,8 +368,22 @@ piece up to ±5 ms to the best waveform match and cross-fades over 5 ms.
   (`$XDG_DATA_HOME`, `%APPDATA%` on Windows). Only the voice's files are kept:
   `data/<Voice>.vcf`, `data/voices/<Voice>/` (`.sde` index, `.bin`
   recordings, `.vde`, Gilded lists) and `bin/LTTS7<Voice>.dll` (its phone
-  table). The installer is only read, with the `innoextract` program; nothing
-  is run. Typing an installer's path in the window's folder box does the same.
+  table). The installer is only read (`inno.rs`, no other program); nothing
+  is run. Its layout: the loader's offset table (magic `rDlPtS` CD E6 D7 7B
+  0B 2A; header offset at +32, data offset at +36); at the header, the
+  64-byte version string then two blocks (CRC, stored size, compressed flag;
+  4 KiB pieces each after a CRC; LZMA with a 5-byte properties header and
+  no end marker): the setup entries, and the file locations (70 bytes each:
+  chunk start +8, offset in the chunk +12, size +20, compressed size +28,
+  flags +68, bit 4 = x86 calls filtered, bit 7 = compressed). File entries
+  are source, destination, font and six condition strings, two Windows
+  versions (20 bytes), then location, attributes, external size,
+  permissions, options, type (23 bytes). Chunks start with `zlb` 1A; the
+  call filter makes E8/E9 operands with a 00/FF high byte absolute in each
+  64 KiB block, undone by subtracting the position after the operand. All
+  files of Katrin's and Raffaele's installers come out byte for byte as
+  innoextract writes them. `VoiceFiles::from_installer` loads a voice
+  straight from the installer's bytes. Typing an installer's path in the window's folder box does the same.
   Voices from there and from any other installation found are listed together.
 
 - `quoquendo --say "testo" [--voice Roberto] [--out file.wav]
@@ -472,9 +486,8 @@ when a speed/pitch change asks for it.
   stress (97.6% held out); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
-- Reading the installers natively (Inno Setup 5.2.3 headers + LZMA) instead
-  of calling `innoextract`; needed for a browser build (the library already
-  loads everything from bytes, `Voice::from_bytes`).
+- A browser build: everything is Rust on bytes (installers included) except
+  the Speex decoder, C, which needs a WASI/Emscripten sysroot or a Rust port.
 - Bit-exact Speex decoding (we are within ±1–2 LSB, 70–80 dB): it decides
   the last pitch marks and so the last SIG differences.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed

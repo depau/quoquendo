@@ -9,8 +9,8 @@ data. How each stage works, and where every number comes from, is in
 ## Getting a voice
 
 The voices' installers (`<Voice> - <Language>.exe`, e.g. `Raffaele - Italian.exe`
-for Roberto) are all it needs. With [innoextract](https://constexpr.org/innoextract/)
-installed:
+for Roberto) are all it needs; quoquendo reads them itself (nothing is run,
+no other program is needed):
 
 ```sh
 quoquendo --install "Raffaele - Italian.exe"     # or a folder of installers
@@ -43,13 +43,14 @@ std::fs::write("out.wav", quoquendo::synth::to_wav_bytes(&speech)).unwrap();
 
 `Voice::from_bytes(VoiceFiles { vde, sde, bin, library, dbl, gpr })` loads a
 voice from its files' contents, without touching a filesystem (a server
-holding them in memory, a browser). `voice.transcribe(text)` gives the
+holding them in memory, a browser), and `VoiceFiles::from_installer(&exe_bytes)`
+takes them straight out of the installer. `voice.transcribe(text)` gives the
 pronunciation the engine will use, in the voices' own notation.
 
 ## Other platforms
 
-The library has no dependencies beyond a C compiler for the bundled Speex
-decoder (`crates/quoquendo/speex`, BSD). For the browser
+The library needs `lzma-rs` (pure Rust, for the installers) and a C
+compiler for the bundled Speex decoder (`crates/quoquendo/speex`, BSD). For the browser
 (`wasm32-unknown-unknown`) what is left is that C code: either compile it
 with a WASI/Emscripten sysroot or port the decoder to Rust; everything else
 is plain Rust working on bytes. The app uses eframe, which also targets the

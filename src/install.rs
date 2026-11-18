@@ -42,7 +42,7 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
 /// into `voice_store()`: its `.vcf`, its `voices/<Voice>/` folder (`.sde`,
 /// recordings `.bin`, `.vde`, Gilded lists) and its library
 /// `bin/LTTS7<Voice>.dll` (the phone table, `phoneset`). Nothing is run: the
-/// installer is only read, by the `innoextract` program. A folder installs
+/// installer is only read (`quoquendo::inno`). A folder installs
 /// every installer in it. Returns the voices installed.
 pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
     if path.is_dir() {
@@ -59,16 +59,14 @@ pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
     }
     let store = voice_store().ok_or("no folder to keep voices in (HOME is not set)")?;
     let tmp = std::env::temp_dir().join(format!("quoquendo-install-{}", std::process::id()));
-    let out = std::process::Command::new("innoextract")
-        .args(["-s", "-d"])
-        .arg(&tmp)
-        .args(["-I", "data", "-I", "bin"])
-        .arg(path)
-        .output()
-        .map_err(|e| format!("reading voice installers needs the innoextract program ({e})"))?;
+    let exe = fs::read(path).map_err(|e| e.to_string())?;
+    let files = quoquendo::inno::files(&exe, |p| p.split('/').any(|c| c == "data" || c == "bin"))?;
+    drop(exe);
     let result = (|| {
-        if !out.status.success() {
-            return Err(format!("innoextract: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        for (rel, data) in files {
+            let dst = tmp.join(rel);
+            fs::create_dir_all(dst.parent().unwrap()).map_err(|e| e.to_string())?;
+            fs::write(&dst, data).map_err(|e| e.to_string())?;
         }
         let data = tmp.join("pf/Loquendo/LTTS7/data");
         let mut names = Vec::new();

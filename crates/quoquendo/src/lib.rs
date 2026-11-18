@@ -21,6 +21,7 @@ pub mod french;
 pub mod g2p;
 pub mod german;
 pub mod gpr;
+pub mod inno;
 pub mod loquendo;
 pub mod phoneset;
 pub mod phonetics;
@@ -94,12 +95,49 @@ pub struct VoiceFiles {
     pub gpr: Option<Vec<u8>>,
 }
 
+impl VoiceFiles {
+    /// A voice's files straight from its Loquendo installer
+    /// (`<Voice> - <Language>.exe`, Inno Setup 5.2.3), read not run.
+    pub fn from_installer(exe: &[u8]) -> Result<VoiceFiles, String> {
+        let low = |p: &str| p.to_lowercase();
+        let files = inno::files(exe, |p| {
+            let p = low(p);
+            p.contains("/data/") && !p.contains("/gilded") || p.contains("/bin/ltts7")
+        })?;
+        let ends = |suffix: &str| files.iter().find(|(p, _)| low(p).ends_with(&low(suffix))).map(|(_, d)| d.clone());
+        let vcf = files.iter().find(|(p, _)| low(p).ends_with(".vcf")).ok_or("this installer holds no Loquendo voice")?;
+        let name = loquendo::parse_ini(&loquendo::latin1(&vcf.1)).get("BaseVoice").cloned().ok_or("the voice file names no voice")?;
+        let vde = ends(&format!("/{name}/{name}.vde")).ok_or("the voice has no .vde")?;
+        let tongue = loquendo::parse_ini(&loquendo::latin1(&vde)).get("MotherTongue").cloned().unwrap_or_default();
+        // the recordings: the biggest .bin in the voice's folder
+        let bin = files
+            .iter()
+            .filter(|(p, _)| low(p).contains(&format!("/voices/{}/", low(&name))) && low(p).ends_with(".bin"))
+            .max_by_key(|(_, d)| d.len())
+            .map(|(_, d)| d.clone())
+            .ok_or("the voice has no recordings")?;
+        Ok(VoiceFiles {
+            sde: ends(&format!("/{name}/{name}.sde")).ok_or("the voice has no .sde")?,
+            vde,
+            bin,
+            library: ends(&format!("/bin/LTTS7{name}.dll")),
+            dbl: ends(&format!("/{tongue}.dbl")),
+            gpr: ends(&format!("/{tongue}.gpr")),
+        })
+    }
+}
+
 impl Voice {
     /// Load a voice from its files' bytes.
     pub fn from_bytes(files: VoiceFiles) -> Result<Voice, String> {
         let ini = loquendo::parse_ini(&loquendo::latin1(&files.vde));
         let descriptor = VoiceDescriptor {
-            name: ini.get("BaseVoice").cloned().unwrap_or_default(),
+            // `"Library" = "LTTS7Katrin, Katrin"`: the voice's name is the second part
+            name: ini
+                .get("BaseVoice")
+                .cloned()
+                .or_else(|| ini.get("Library").and_then(|l| l.split(',').nth(1)).map(|n| n.trim().to_string()))
+                .unwrap_or_default(),
             description: ini.get("BaseDescription").cloned().unwrap_or_default(),
             mother_tongue: ini.get("MotherTongue").cloned().unwrap_or_default(),
             mother_tongue_aliases: ini.get("MotherTongueAliases").cloned().unwrap_or_default(),
@@ -158,6 +196,23 @@ mod tests {
         };
         let a = Voice::from_bytes(files).unwrap().say("Binario tre.").unwrap();
         let b = Voice::find(&root.join("data"), "Roberto").unwrap().say("Binario tre.").unwrap();
+        assert!(!a.samples.is_empty());
+        assert_eq!(a.samples, b.samples);
+    }
+
+    /// QQ_INSTALLER=<Voice - Language.exe> QQ_DATA_DIR=<its installed LTTS7>:
+    /// the voice read from inside its installer says what the installed one says.
+    #[test]
+    fn installer_and_folder_say_the_same() {
+        let (Some(exe), Some(dir)) = (std::env::var_os("QQ_INSTALLER"), std::env::var_os("QQ_DATA_DIR")) else { return };
+        let files = VoiceFiles::from_installer(&std::fs::read(exe).unwrap()).unwrap();
+        let a = Voice::from_bytes(files).unwrap();
+        let name = a.descriptor.name.clone();
+        let a = a.say("Zwei, drei.").unwrap();
+        let dir = loquendo::resolve_data_dir(Path::new(&dir)).unwrap();
+        let v = Voice::find(&dir, &name).unwrap();
+        load_language_files(&v.descriptor, &v.db);
+        let b = v.say("Zwei, drei.").unwrap();
         assert!(!a.samples.is_empty());
         assert_eq!(a.samples, b.samples);
     }
