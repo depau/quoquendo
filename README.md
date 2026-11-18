@@ -59,6 +59,24 @@ web; its file and audio parts would need web counterparts.
 ## How close it is
 
 Measured against the original engine run under Wine (`oracle/`, a developer
-tool only), on benchmark sentences: pronunciation 97–100% of sounds
-identical, piece picking 94–98% of half-sounds identical, joining 57–70% of
-samples within ±2 of the original's output. See MECHANICS.md §5, §6, §9.
+tool only, not needed to use quoquendo), on the benchmark sentences in
+`oracle/bench-*.txt`, without any dictionary made by running the original:
+
+| voice | language | sounds identical | half-sounds picked identically | samples within ±2 |
+|---|---|---|---|---|
+| Roberto | Italian | 96.6% | 99.3% | 60.1% |
+| Allison | US English | 97.7% | 98.6% | 56.8% |
+| Bernard | French | 97.9% | 99.8% | 70.1% |
+| Jorge | Spanish | 99.8% | 98.9% | 69.7% |
+| Katrin | German | 100% (97.6% on unseen sentences) | 98.2% | 65.2% |
+
+See MECHANICS.md §4–§6 and §9.
+
+## Voices, names and licences
+
+No voice data, Loquendo library or dictionary is included here or needed to
+build: quoquendo reads the files of voices you already have, from their
+installers or an existing installation. Loquendo and the voice names belong
+to their owners; this project is not affiliated with or endorsed by them.
+The bundled Speex decoder is Xiph.Org's, under its BSD licence
+(`crates/quoquendo/speex`).
