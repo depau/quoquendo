@@ -47,7 +47,12 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
 pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
     if path.is_dir() {
         let mut all = Vec::new();
-        let mut exes: Vec<PathBuf> = fs::read_dir(path).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).filter(|p| is_installer_path(p)).collect();
+        let mut exes: Vec<PathBuf> = fs::read_dir(path)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| is_installer_path(p))
+            .collect();
         exes.sort();
         for exe in exes {
             match install_voice(&exe) {
@@ -76,7 +81,9 @@ pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
                 continue;
             }
             let cv = read_ini(&vcf);
-            let (Some(name), Some(rel)) = (cv.get("BaseVoice"), cv.get("VoicePath")) else { continue };
+            let (Some(name), Some(rel)) = (cv.get("BaseVoice"), cv.get("VoicePath")) else {
+                continue;
+            };
             let dir = data.join(rel);
             if !dir.is_dir() {
                 continue;
@@ -93,7 +100,11 @@ pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
             // `.gpr`, `.lde`…): the one holding `<MotherTongue>.lde`
             let tongue = VoiceDescriptor::from_files(&vcf, &dir.join(format!("{name}.vde"))).mother_tongue.to_lowercase();
             for lang in fs::read_dir(data.join("languages")).into_iter().flatten().flatten() {
-                let has = fs::read_dir(lang.path()).into_iter().flatten().flatten().any(|f| f.file_name().to_string_lossy().to_lowercase() == format!("{tongue}.lde"));
+                let has = fs::read_dir(lang.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .any(|f| f.file_name().to_string_lossy().to_lowercase() == format!("{tongue}.lde"));
                 if has {
                     copy_tree(&lang.path(), &store.join("data/languages").join(lang.file_name())).map_err(io)?;
                 }
@@ -142,9 +153,7 @@ pub fn engine_candidates() -> Vec<PathBuf> {
     if let Some(dir) = crate::oracle::oracle_dir() {
         push(dir.join("prefix/drive_c/Program Files (x86)/Loquendo/LTTS7"));
     }
-    push(PathBuf::from(
-        "/tmp/loq-ev/wp/drive_c/Program Files (x86)/Loquendo/LTTS7",
-    ));
+    push(PathBuf::from("/tmp/loq-ev/wp/drive_c/Program Files (x86)/Loquendo/LTTS7"));
     if let Ok(home) = std::env::var("HOME") {
         for rel in [
             ".wine/drive_c/Program Files (x86)/Loquendo/LTTS7",
@@ -175,4 +184,3 @@ pub fn resolve_data_dir_auto() -> Option<PathBuf> {
     }
     None
 }
-

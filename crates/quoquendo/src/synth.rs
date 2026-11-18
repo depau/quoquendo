@@ -48,7 +48,10 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { volume: 1.0, join: JoinStyle::Original }
+        Settings {
+            volume: 1.0,
+            join: JoinStyle::Original,
+        }
     }
 }
 
@@ -112,7 +115,10 @@ pub fn from_tokens(tokens: &[Token]) -> Vec<TargetPhrase> {
         match t {
             Token::Word { symbols, .. } => {
                 for (i, s) in symbols.iter().enumerate() {
-                    cur.push(Target { sym: s.clone(), word_start: i == 0 });
+                    cur.push(Target {
+                        sym: s.clone(),
+                        word_start: i == 0,
+                    });
                 }
             }
             Token::Pause { ms, reason } if reason != "word gap" => {
@@ -134,7 +140,12 @@ pub fn from_tokens(tokens: &[Token]) -> Vec<TargetPhrase> {
         }
     }
     if !cur.is_empty() {
-        out.push(TargetPhrase { phones: cur, pause_ms: crate::g2p::LONG_PAUSE_MS, full_stop: true, mood: None });
+        out.push(TargetPhrase {
+            phones: cur,
+            pause_ms: crate::g2p::LONG_PAUSE_MS,
+            full_stop: true,
+            mood: None,
+        });
     }
     out
 }
@@ -189,13 +200,21 @@ pub fn parse_transcription(text: &str) -> Vec<TargetPhrase> {
         let mut first = true;
         for part in tok.split('-') {
             if !part.is_empty() {
-                cur.push(Target { sym: part.to_string(), word_start: !first || cur.is_empty() });
+                cur.push(Target {
+                    sym: part.to_string(),
+                    word_start: !first || cur.is_empty(),
+                });
             }
             first = false;
         }
     }
     if !cur.is_empty() {
-        out.push(TargetPhrase { phones: cur, pause_ms: crate::g2p::LONG_PAUSE_MS, full_stop: true, mood: None });
+        out.push(TargetPhrase {
+            phones: cur,
+            pause_ms: crate::g2p::LONG_PAUSE_MS,
+            full_stop: true,
+            mood: None,
+        });
     }
     out
 }
@@ -233,7 +252,6 @@ impl Half {
         Some(Half { unit: self.unit, phone, side })
     }
 }
-
 
 // --- the original engine's own piece picking (LoqTTS7.dll, MECHANICS.md §5) ---
 
@@ -296,11 +314,20 @@ impl PhoneTables {
         let class = features.iter().map(|&f| weight_class(f)).collect();
         let sim = features.iter().flat_map(|&a| features.iter().map(move |&c| similarity(a, c))).collect();
         let index = phones.iter().enumerate().map(|(i, p)| (p.name.clone(), i as u8)).collect();
-        let mut t = PhoneTables { index, features, class, sim, unit_ids: Vec::new(), unit_classes: Vec::new() };
+        let mut t = PhoneTables {
+            index,
+            features,
+            class,
+            sim,
+            unit_ids: Vec::new(),
+            unit_classes: Vec::new(),
+        };
         for u in &db.units {
             let ids: Vec<u8> = u.phones.iter().map(|p| t.id(&p.sym)).collect();
             // a `-` in the `U=` line ends a word (`s `o n o-i n…`)
-            let word_end: Vec<bool> = (0..u.phones.len()).map(|j| u.phones.get(j + 1).map(|p| p.word_start).unwrap_or(false)).collect();
+            let word_end: Vec<bool> = (0..u.phones.len())
+                .map(|j| u.phones.get(j + 1).map(|p| p.word_start).unwrap_or(false))
+                .collect();
             t.unit_classes.push(t.label(&ids, &word_end, u.mood.unwrap_or('D')));
             t.unit_ids.push(ids);
         }
@@ -423,7 +450,8 @@ fn phone_distance(a: u32, b: u32) -> i64 {
         0x142 => 3,
         _ => 5,
     };
-    if a & 3 == 2 && b & 3 == 2 && a & 0x1e3 != 0xc2 && b & 0x1e3 != 0xc2 && (a ^ b) & 0x10 == 0 && kind(a) == kind(b) && manner(a & 0x1e3) == manner(b & 0x1e3) {
+    if a & 3 == 2 && b & 3 == 2 && a & 0x1e3 != 0xc2 && b & 0x1e3 != 0xc2 && (a ^ b) & 0x10 == 0 && kind(a) == kind(b) && manner(a & 0x1e3) == manner(b & 0x1e3)
+    {
         return 2;
     }
     1000
@@ -508,7 +536,11 @@ fn prosody_original(tab: &PhoneTables, db: &VoiceDatabase, w: &Wanted, prev: Opt
     };
     let half_tick = |x: Half| {
         let p = &db.units[x.unit as usize].phones[x.phone as usize];
-        if x.side == 0 { p.tick_l } else { p.tick_r }
+        if x.side == 0 {
+            p.tick_l
+        } else {
+            p.tick_r
+        }
     };
     let half_pitch = |x: Half| {
         let p = &db.units[x.unit as usize].phones[x.phone as usize];
@@ -517,7 +549,11 @@ fn prosody_original(tab: &PhoneTables, db: &VoiceDatabase, w: &Wanted, prev: Opt
     let before = if h.side == 1 {
         Some(Half { side: 0, ..h })
     } else if pos > 0 && db.units[h.unit as usize].phones[pos - 1].timed {
-        Some(Half { unit: h.unit, phone: h.phone - 1, side: 1 })
+        Some(Half {
+            unit: h.unit,
+            phone: h.phone - 1,
+            side: 1,
+        })
     } else {
         None
     };
@@ -714,7 +750,11 @@ fn context_score(u: &crate::loquendo::Unit, j: usize, t: &[&Target], i: usize, s
             &u.phones[k as usize].sym
         }
     };
-    let (right_w, left_w): (&[i64], &[i64]) = if side == 0 { (&[6, 3, 1], &[10, 4, 2, 1]) } else { (&[10, 6, 3, 1], &[6, 3, 1]) };
+    let (right_w, left_w): (&[i64], &[i64]) = if side == 0 {
+        (&[6, 3, 1], &[10, 4, 2, 1])
+    } else {
+        (&[10, 6, 3, 1], &[6, 3, 1])
+    };
     let mut score = 1i64;
     for (dir, weights) in [(1isize, right_w), (-1isize, left_w)] {
         for step in 1..=t.len() as isize + 1 {
@@ -737,7 +777,10 @@ fn prosody_score(prev: Option<Half>, h: Half, db: &VoiceDatabase) -> i64 {
     let Some(prev) = prev else { return 0 };
     let pp = &db.units[prev.unit as usize].phones[prev.phone as usize];
     let p = &db.units[h.unit as usize].phones[h.phone as usize];
-    let (f_prev, f) = (if prev.side == 0 { pp.pitch_l } else { pp.pitch_r } as i64, if h.side == 0 { p.pitch_l } else { p.pitch_r } as i64);
+    let (f_prev, f) = (
+        if prev.side == 0 { pp.pitch_l } else { pp.pitch_r } as i64,
+        if h.side == 0 { p.pitch_l } else { p.pitch_r } as i64,
+    );
     let mut s = 0;
     let d = (f_prev - f).abs();
     if f_prev > 0 && f > 0 && d < 100 {
@@ -753,7 +796,6 @@ fn prosody_score(prev: Option<Half>, h: Half, db: &VoiceDatabase) -> i64 {
     s
 }
 
-
 /// The original's picking (LoqTTS7.dll 0x10047ec0 → 0x10046de0 →
 /// 0x10046b20): walk the wanted half-phones left to right; at each, score
 /// every recorded instance of the phone (context + prosody, ×1.5 for a
@@ -762,7 +804,11 @@ fn prosody_score(prev: Option<Half>, h: Half, db: &VoiceDatabase) -> i64 {
 /// also take the next phone's left half when the recording has that phone
 /// next, so most joins fall in mid-phone.
 pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: Option<char>, pause_ms: u32) -> Phrase {
-    let mut phrase = Phrase { pause_ms, mood, ..Default::default() };
+    let mut phrase = Phrase {
+        pause_ms,
+        mood,
+        ..Default::default()
+    };
     let level_of = |sym: &str| (0..3).find(|&l| db.singles[l].contains_key(relax(sym, l)));
     let t: Vec<&Target> = t
         .iter()
@@ -786,7 +832,14 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
         let inner: Vec<&str> = u.phones.iter().filter(|p| p.timed).map(|p| p.sym.as_str()).collect();
         if inner == wanted && u.mood == mood && u.phones.last().map(|p| p.sym.as_str()) == Some(edge) {
             let (a, b) = (&u.phones[1], &u.phones[u.phones.len() - 2]);
-            phrase.pieces.push(Piece { covers: phrase.phones.clone(), unit: ui as u32, from: a.start, to: b.end, pitch: a.pitch_l, hard: false });
+            phrase.pieces.push(Piece {
+                covers: phrase.phones.clone(),
+                unit: ui as u32,
+                from: a.start,
+                to: b.end,
+                pitch: a.pitch_l,
+                hard: false,
+            });
             return phrase;
         }
     }
@@ -795,7 +848,14 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
     // oracle/loqref.c LOQ_TRACE_CAT (units named by their first phone's index)
     let trace = std::env::var_os("QQ_TRACE_CAT").is_some();
     let unit_first: Vec<usize> = if trace {
-        db.units.iter().scan(0, |acc, u| { let at = *acc; *acc += u.phones.len(); Some(at) }).collect()
+        db.units
+            .iter()
+            .scan(0, |acc, u| {
+                let at = *acc;
+                *acc += u.phones.len();
+                Some(at)
+            })
+            .collect()
     } else {
         Vec::new()
     };
@@ -841,7 +901,11 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 };
                 let pros = prosody_original(tab, db, w, prev, h, i);
                 if trace {
-                    eprintln!("F {k} {} {phone} {factor} {}", unit_first[unit as usize], if takes_two(tab, db, w, h, i) { 2 } else { 1 });
+                    eprintln!(
+                        "F {k} {} {phone} {factor} {}",
+                        unit_first[unit as usize],
+                        if takes_two(tab, db, w, h, i) { 2 } else { 1 }
+                    );
                     eprintln!("P {phone} {pros}");
                 }
                 score = (score + pros) * factor;
@@ -884,7 +948,7 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 let wanted = tab.features[w.id(i) as usize];
                 let voiceless = wanted & 3 != 1 && wanted & 0x10 != 0;
                 let ends = uid.len() <= pos + 1;
-                let next_ti = (k + 1) / 2;
+                let next_ti = k.div_ceil(2);
                 let next_is_wanted = !ends && uid[pos + 1] == w.id(next_ti) && !matches!(uid[pos + 1], 2 | 3);
                 let weaker = ends
                     || tab.class[uid[pos] as usize] <= tab.class[uid[pos + 1] as usize] + 1
@@ -914,7 +978,14 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
             }
         } else {
             let pitch = if h.side == 0 { p.pitch_l } else { p.pitch_r };
-            phrase.pieces.push(Piece { covers: vec![sym.clone()], unit: h.unit, from, to, pitch, hard: h.side == 0 && k > 0 });
+            phrase.pieces.push(Piece {
+                covers: vec![sym.clone()],
+                unit: h.unit,
+                from,
+                to,
+                pitch,
+                hard: h.side == 0 && k > 0,
+            });
         }
     }
     phrase
@@ -991,7 +1062,7 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
                 out[j] *= w;
             }
         }
-        out.extend(std::iter::repeat(0.0).take(ms(phrase.pause_ms)));
+        out.extend(std::iter::repeat_n(0.0, ms(phrase.pause_ms)));
     }
     Ok(Speech { samples: out, rate })
 }
@@ -1036,17 +1107,35 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
             let u = &db.units[p.unit as usize];
             let mut halves = Vec::new();
             for ph in u.phones.iter().filter(|ph| ph.timed) {
-                let voicing = db.tables.as_ref().map(|t| Voicing::of_features(t.features[t.id(&ph.sym) as usize])).unwrap_or(Voicing::Other);
+                let voicing = db
+                    .tables
+                    .as_ref()
+                    .map(|t| Voicing::of_features(t.features[t.id(&ph.sym) as usize]))
+                    .unwrap_or(Voicing::Other);
                 for (a, b, f0) in [(ph.start, ph.mid, ph.pitch_l), (ph.mid, ph.end, ph.pitch_r)] {
                     if a >= p.from && b <= p.to && b > a {
                         halves.push(((a - p.from) as usize, (b - p.from) as usize, f0 as u32, voicing));
                     }
                 }
             }
-            units.push(Unit { buf: bank.read(from - pre, pre + len + m), pre, len, first: halves.first().copied(), last: halves.last().copied(), first_marks: None });
+            units.push(Unit {
+                buf: bank.read(from - pre, pre + len + m),
+                pre,
+                len,
+                first: halves.first().copied(),
+                last: halves.last().copied(),
+                first_marks: None,
+            });
         }
         let len = phrase.pause_ms as usize * rate as usize / 1000;
-        units.push(Unit { buf: vec![0; len + 4 * m], pre: 0, len, first: None, last: None, first_marks: None });
+        units.push(Unit {
+            buf: vec![0; len + 4 * m],
+            pre: 0,
+            len,
+            first: None,
+            last: None,
+            first_marks: None,
+        });
     }
     let voiced_joins = std::env::var_os("QQ_NO_VOICED_JOIN").is_none();
     for k in 1..units.len() {
@@ -1062,7 +1151,13 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
                     let v: Vec<i16> = buf[from..(from + len + 2 * m).min(buf.len())].to_vec();
                     let s = |i: isize| *v.get((i + m as isize) as usize).unwrap_or(&0) as i32;
                     let marks = pitch_marks(&s, len, rate, f0, Voicing::Voiced);
-                    JoinHalf { buf: v, pre: m, len, post: m, marks }
+                    JoinHalf {
+                        buf: v,
+                        pre: m,
+                        len,
+                        post: m,
+                        marks,
+                    }
                 };
                 let mut ja = make(&a.buf, a.pre + ha.0 - m, ha.1 - ha.0, ha.2);
                 // a one-half unit keeps the marks its previous join gave it
@@ -1074,13 +1169,18 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
                 let jb = make(&b.buf, b.pre - m, hb.1 - hb.0, hb.2);
                 if std::env::var_os("QQ_DEBUG_JOIN").is_some() {
                     let per = |h: &JoinHalf| h.marks.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
-                    eprintln!("join A{:?} B{:?} -> {:?}", per(&ja), per(&jb), voiced_join(&ja, &jb).map(|(x, y, _)| (x.len(), y.len())));
+                    eprintln!(
+                        "join A{:?} B{:?} -> {:?}",
+                        per(&ja),
+                        per(&jb),
+                        voiced_join(&ja, &jb).map(|(x, y, _)| (x.len(), y.len()))
+                    );
                 }
                 if let Some((na, nb, nb_marks)) = voiced_join(&ja, &jb) {
                     b.first_marks = Some(nb_marks);
                     let mut abuf = a.buf[..a.pre + ha.0].to_vec();
                     abuf.extend_from_slice(&na);
-                    abuf.extend(std::iter::repeat(0).take(m));
+                    abuf.extend(std::iter::repeat_n(0, m));
                     a.len = ha.0 + na.len();
                     a.buf = abuf;
                     if let Some(l) = a.last.as_mut() {
@@ -1180,7 +1280,12 @@ mod tests {
     }
 
     fn targets(syms: &[&str]) -> Vec<Target> {
-        syms.iter().map(|s| Target { sym: s.to_string(), word_start: false }).collect()
+        syms.iter()
+            .map(|s| Target {
+                sym: s.to_string(),
+                word_start: false,
+            })
+            .collect()
     }
 
     #[test]

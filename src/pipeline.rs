@@ -8,9 +8,9 @@
 //! and `compare`, which runs the original engine beside ours and scores each
 //! stage against it.
 
+use crate::oracle::{self, Reference};
 use quoquendo::g2p::{analyse, Language};
 use quoquendo::loquendo::{VoiceDatabase, VoiceDescriptor};
-use crate::oracle::{self, Reference};
 use quoquendo::synth::{self, JoinStyle, Phrase, Settings, Speech, TargetPhrase};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,7 +40,11 @@ pub struct Stages {
 
 impl Default for Stages {
     fn default() -> Self {
-        Stages { fon: Fon::Rules, cat: Cat::Builtin, sig: JoinStyle::Original }
+        Stages {
+            fon: Fon::Rules,
+            cat: Cat::Builtin,
+            sig: JoinStyle::Original,
+        }
     }
 }
 
@@ -185,9 +189,7 @@ fn pieces_match(plan: &[Phrase], db: &VoiceDatabase, orig: &[i16]) -> f64 {
             let lo = cursor.saturating_sub(2000);
             let hi = (cursor + 2000).min(orig.len().saturating_sub(len));
             // the exact spot has (almost) no difference at all
-            let best = (lo..hi.max(lo)).min_by_key(|&off| {
-                probe.iter().zip(&orig[off + m0..]).map(|(a, b)| (*a as i64 - *b as i64).pow(2)).sum::<i64>()
-            });
+            let best = (lo..hi.max(lo)).min_by_key(|&off| probe.iter().zip(&orig[off + m0..]).map(|(a, b)| (*a as i64 - *b as i64).pow(2)).sum::<i64>());
             if let Some(off) = best {
                 let (snr, _) = audio_match(&orig[off + m0..off + m1], &ours[m0..m1]);
                 scores.push(snr);
@@ -227,7 +229,10 @@ pub fn compare(refs: &[Reference], voice: &VoiceDescriptor, db: &VoiceDatabase, 
     let texts: Vec<&String> = refs.iter().map(|r| &r.text).collect();
     let mut rep = String::new();
     let mut tot = Totals::default();
-    let settings = Settings { volume: 1.0, join: JoinStyle::Original };
+    let settings = Settings {
+        volume: 1.0,
+        join: JoinStyle::Original,
+    };
     for (n, (text, r)) in texts.iter().zip(refs).enumerate() {
         let _ = writeln!(rep, "\n[{n}] {text}");
         // FON
@@ -301,7 +306,12 @@ pub fn compare(refs: &[Reference], voice: &VoiceDescriptor, db: &VoiceDatabase, 
         let _ = writeln!(rep, "  ALL  original {os:.2} s, ours {qs:.2} s");
         if let Some(dir) = out_dir {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            let wav = |samples: Vec<i16>| synth::to_wav_bytes(&Speech { samples: samples.iter().map(|s| *s as f32 / 32768.0).collect(), rate: 32000 });
+            let wav = |samples: Vec<i16>| {
+                synth::to_wav_bytes(&Speech {
+                    samples: samples.iter().map(|s| *s as f32 / 32768.0).collect(),
+                    rate: 32000,
+                })
+            };
             let _ = std::fs::write(dir.join(format!("{n}-original.wav")), wav(r.audio.clone()));
             let _ = std::fs::write(dir.join(format!("{n}-replay.wav")), wav(replay));
             let _ = std::fs::write(dir.join(format!("{n}-ours.wav")), synth::to_wav_bytes(&ours));
@@ -340,4 +350,3 @@ mod tests {
         assert!(snr > 50.0 && close == 1.0);
     }
 }
-

@@ -3,7 +3,7 @@
 //! Three formats matter and all three are described in MECHANICS.md:
 //!  * `.vde` / `.vcf` / `.lde`  plain INI-style descriptor files
 //!  * `.sde`  the voice's unit inventory, a text file with every byte >= 0x80
-//!            moved up by 0x80 (so `#` is 0xA3, space is 0xA0, `@` is 0xC0)
+//!    moved up by 0x80 (so `#` is 0xA3, space is 0xA0, `@` is 0xC0)
 //!  * `<voice>.<rate>.<codec>.<count>.<n>.bin`  the recorded unit database
 
 use std::collections::HashMap;
@@ -177,7 +177,13 @@ impl VoiceDatabase {
             e.1 += 1;
         }
         self.mean_duration = sums.into_iter().map(|(k, (s, n))| (k, (s / n as f64) as f32)).collect();
-        let mut pitches: Vec<u16> = self.units.iter().flat_map(|u| u.phones.iter()).flat_map(|p| [p.pitch_l, p.pitch_r]).filter(|p| *p > 0).collect();
+        let mut pitches: Vec<u16> = self
+            .units
+            .iter()
+            .flat_map(|u| u.phones.iter())
+            .flat_map(|p| [p.pitch_l, p.pitch_r])
+            .filter(|p| *p > 0)
+            .collect();
         pitches.sort_unstable();
         self.median_pitch = pitches.get(pitches.len() / 2).copied().unwrap_or(100) as f32;
         for (ui, u) in self.units.iter().enumerate() {
@@ -262,11 +268,7 @@ pub fn parse_sde(text: &str) -> VoiceDatabase {
                     });
                 }
             }
-            db.units.push(Unit {
-                symbols,
-                phones,
-                mood: None,
-            });
+            db.units.push(Unit { symbols, phones, mood: None });
             next_phone = 1;
         } else if let Some(m) = line.strip_prefix("S=") {
             if let Some(u) = db.units.last_mut() {
@@ -393,10 +395,7 @@ pub fn load_extras(voice_dir: &Path) -> VoiceExtras {
             .map(|e| e.path())
             .filter(|p| {
                 p.extension().and_then(|e| e.to_str()) == Some("sde")
-                    && p.file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(|s| !s.eq_ignore_ascii_case(""))
-                        .unwrap_or(false)
+                    && p.file_stem().and_then(|s| s.to_str()).map(|s| !s.eq_ignore_ascii_case("")).unwrap_or(false)
             })
             .filter(|p| {
                 // skip the voice's own main inventory, which the app already has
@@ -404,10 +403,7 @@ pub fn load_extras(voice_dir: &Path) -> VoiceExtras {
                     .and_then(|s| s.to_str())
                     .map(|s| s.chars().all(|c| c.is_alphanumeric()))
                     .unwrap_or(false)
-                    || p.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.contains("Gilded"))
-                        .unwrap_or(false)
+                    || p.file_name().and_then(|n| n.to_str()).map(|n| n.contains("Gilded")).unwrap_or(false)
             })
             .collect();
         paths.sort();
@@ -415,11 +411,7 @@ pub fn load_extras(voice_dir: &Path) -> VoiceExtras {
             let Ok(bytes) = fs::read(&p) else { continue };
             let text = latin1(&bytes);
             let db = parse_sde(&text);
-            let name = p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("extras")
-                .to_string();
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("extras").to_string();
             extras.sets.push((name, db.units.len(), db.instance_count()));
         }
     }
@@ -451,9 +443,7 @@ pub fn from_latin1(s: &str) -> String {
 }
 
 pub fn read_ini(path: &Path) -> HashMap<String, String> {
-    fs::read(path)
-        .map(|b| parse_ini(&latin1(&b)))
-        .unwrap_or_default()
+    fs::read(path).map(|b| parse_ini(&latin1(&b))).unwrap_or_default()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -495,12 +485,7 @@ impl VoiceDescriptor {
             .get("BaseVoice")
             .cloned()
             .or_else(|| cv.get("BaseVoice").cloned())
-            .unwrap_or_else(|| {
-                vde.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("voice")
-                    .to_string()
-            });
+            .unwrap_or_else(|| vde.file_stem().and_then(|s| s.to_str()).unwrap_or("voice").to_string());
         d.description = cv
             .get("Description")
             .cloned()
@@ -514,10 +499,7 @@ impl VoiceDescriptor {
         d.mother_tongue = dv.get("MotherTongue").cloned().unwrap_or_default();
         d.mother_tongue_aliases = dv.get("MotherTongueAliases").cloned().unwrap_or_default();
         d.demo_sentence = dv.get("DemoSentence").cloned().unwrap_or_default();
-        d.gilded = dv
-            .get("GildedTTS")
-            .map(|v| v.eq_ignore_ascii_case("yes"))
-            .unwrap_or(false);
+        d.gilded = dv.get("GildedTTS").map(|v| v.eq_ignore_ascii_case("yes")).unwrap_or(false);
         d.voice_path = vde.parent().unwrap_or(Path::new(".")).to_path_buf();
         // every VocalDBName[i], in the order the configurator lists them
         for i in 0..8 {
@@ -580,22 +562,12 @@ pub fn discover_voices(data_dir: &Path) -> Vec<VoiceDescriptor> {
 /// Locate the `data` folder that holds `*.vcf` / `voices/` for a path the
 /// person gives us: the LTTS7 root, its `data` folder, or a voice folder.
 pub fn resolve_data_dir(path: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![
-        path.to_path_buf(),
-        path.join("data"),
-        path.join("LTTS7/data"),
-        path.join("Loquendo/LTTS7/data"),
-    ];
+    let mut candidates = vec![path.to_path_buf(), path.join("data"), path.join("LTTS7/data"), path.join("Loquendo/LTTS7/data")];
     if let Some(parent) = path.parent() {
         candidates.push(parent.to_path_buf());
         candidates.push(parent.join("data"));
     }
-    for c in candidates {
-        if c.join("voices").is_dir() {
-            return Some(c);
-        }
-    }
-    None
+    candidates.into_iter().find(|c| c.join("voices").is_dir())
 }
 
 /// The same resolution starting from any path the person typed.

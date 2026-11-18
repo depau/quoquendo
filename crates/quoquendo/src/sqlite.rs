@@ -160,7 +160,9 @@ pub fn read_table(data: &[u8], name: &str) -> Result<Vec<Vec<Value>>, String> {
     // sqlite_schema rows: type, name, tbl_name, rootpage, sql
     let root = schema
         .iter()
-        .find(|r| r.first().and_then(Value::text).as_deref() == Some("table") && r.get(1).and_then(Value::text).map(|n| n.eq_ignore_ascii_case(name)).unwrap_or(false))
+        .find(|r| {
+            r.first().and_then(Value::text).as_deref() == Some("table") && r.get(1).and_then(Value::text).map(|n| n.eq_ignore_ascii_case(name)).unwrap_or(false)
+        })
         .and_then(|r| match r.get(3) {
             Some(Value::Int(p)) => Some(*p as u32),
             _ => None,

@@ -91,7 +91,12 @@ impl Gpr {
             }
             rules.push(list);
         }
-        Some(Gpr { alphabet, classes, default, rules })
+        Some(Gpr {
+            alphabet,
+            classes,
+            default,
+            rules,
+        })
     }
 
     /// The phones of a lower-case word, as engine feature words.

@@ -12,7 +12,9 @@ const PREFIXES: &[&str] = &["be", "ge", "ver", "zer", "er", "ent", "emp"];
 
 /// Words that keep their stress as a compound's first part (Haupt|bahn|hof,
 /// Ab|stand); the parts after it lose theirs.
-const HEADS: &[&str] = &["außer", "haupt", "bahn", "ab", "auf", "aus", "ein", "vor", "zug", "rat", "post", "fahr", "flug", "bus", "stadt"];
+const HEADS: &[&str] = &[
+    "außer", "haupt", "bahn", "ab", "auf", "aus", "ein", "vor", "zug", "rat", "post", "fahr", "flug", "bus", "stadt",
+];
 
 /// Loanwords and names whose stress the rules can't see, as Katrin says them.
 const EXCEPTIONS: &[(&str, &str)] = &[("berlin", "b E AR l `i: n"), ("minuten", "m I n `u: t Hn"), ("minute", "m I n `u: t HEh")];
@@ -64,7 +66,13 @@ fn transcribe_part(word: &str) -> Vec<String> {
     if n == 0 {
         return Vec::new();
     }
-    let at = |i: isize| -> char { if i < 0 || i as usize >= n { '#' } else { w[i as usize] } };
+    let at = |i: isize| -> char {
+        if i < 0 || i as usize >= n {
+            '#'
+        } else {
+            w[i as usize]
+        }
+    };
     let s: String = w.iter().collect();
     // the unstressed prefix, if any (only before a consonant-vowel root)
     let prefix = PREFIXES
@@ -81,12 +89,37 @@ fn transcribe_part(word: &str) -> Vec<String> {
                 return false;
             }
             (!is_v(r1[0]) && r1.len() > 1 && is_v(r1[1]))
-                || ["sp", "st", "sch", "pr", "tr", "br", "fr", "gr", "kl", "bl", "pl", "fl", "gl", "dr", "kr"].iter().any(|c| r.starts_with(c))
+                || ["sp", "st", "sch", "pr", "tr", "br", "fr", "gr", "kl", "bl", "pl", "fl", "gl", "dr", "kr"]
+                    .iter()
+                    .any(|c| r.starts_with(c))
         })
         .map(|p| p.len())
         .unwrap_or(0);
     // short in these whatever their spelling suggests
-    let short_word = matches!(s.as_str(), "ab" | "an" | "am" | "das" | "dass" | "des" | "es" | "hat" | "im" | "in" | "ist" | "bin" | "mit" | "ob" | "um" | "von" | "man" | "bis" | "was" | "weg" | "ich" | "un");
+    let short_word = matches!(
+        s.as_str(),
+        "ab" | "an"
+            | "am"
+            | "das"
+            | "dass"
+            | "des"
+            | "es"
+            | "hat"
+            | "im"
+            | "in"
+            | "ist"
+            | "bin"
+            | "mit"
+            | "ob"
+            | "um"
+            | "von"
+            | "man"
+            | "bis"
+            | "was"
+            | "weg"
+            | "ich"
+            | "un"
+    );
     let mut out: Vec<(String, bool)> = Vec::new(); // (phone, is a full vowel nucleus)
     let mut ier: Option<usize> = None; // a stressed -ier- (spazieren, Papier)
     let mut i = 0usize;
@@ -140,12 +173,15 @@ fn transcribe_part(word: &str) -> Vec<String> {
                 };
                 let doubled = n1 == c;
                 let lengthened = n1 == 'h' && !is_v(n2) || doubled;
-                let k = if doubled { i + 2 } else if n1 == 'h' { i + 2 } else { i + 1 };
+                let k = if doubled || n1 == 'h' { i + 2 } else { i + 1 };
                 let cons = cons_after(k);
                 // an e in an unstressed ending: -e, -en, -el, -er, -es, -et
                 let tail: String = w[i..].iter().collect();
                 let ig = c == 'i' && n1 == 'g' && out.iter().any(|(_, v)| *v) && matches!(&tail[2..], "" | "e" | "en" | "er" | "es" | "em");
-                let ending_e = c == 'e' && i > 0 && out.iter().any(|(_, v)| *v) && matches!(tail.as_str(), "e" | "en" | "el" | "er" | "es" | "et" | "em" | "ern" | "ens" | "eln");
+                let ending_e = c == 'e'
+                    && i > 0
+                    && out.iter().any(|(_, v)| *v)
+                    && matches!(tail.as_str(), "e" | "en" | "el" | "er" | "es" | "et" | "em" | "ern" | "ens" | "eln");
                 if ig && tail == "ig" {
                     out.push(("I".into(), true));
                     out.push(("c".into(), false));
@@ -224,7 +260,10 @@ fn transcribe_part(word: &str) -> Vec<String> {
                 push(&mut out, "s");
                 step = 3;
             } else if c == 'c' && n1 == 'h' {
-                let back = out.last().map(|(s, _)| matches!(s.trim_end_matches(':'), "a" | "o" | "u" | "Oa" | "U" | "HAU")).unwrap_or(false);
+                let back = out
+                    .last()
+                    .map(|(s, _)| matches!(s.trim_end_matches(':'), "a" | "o" | "u" | "Oa" | "U" | "HAU"))
+                    .unwrap_or(false);
                 push(&mut out, if back { "x" } else { "c" });
                 step = 2;
             } else if c == 'd' && n1 == 't' {
@@ -346,7 +385,17 @@ fn transcribe_part(word: &str) -> Vec<String> {
 mod tests {
     #[test]
     fn says_german_words() {
-        for (w, want) in [("schön", "$ `OE: n"), ("kinder", "k `I n d AR"), ("hamburg", "h `a m b U AR g"), ("reise", "R `HAI z HEh"), ("bahnhof", "b `a: n h o: f"), ("geben", "g `e: b Hm"), ("zwanzig", "Ts v `a n Ts I c"), ("katrin", "k `a: t R I n"), ("spaziergang", "$ p a Ts `i: AR g a N")] {
+        for (w, want) in [
+            ("schön", "$ `OE: n"),
+            ("kinder", "k `I n d AR"),
+            ("hamburg", "h `a m b U AR g"),
+            ("reise", "R `HAI z HEh"),
+            ("bahnhof", "b `a: n h o: f"),
+            ("geben", "g `e: b Hm"),
+            ("zwanzig", "Ts v `a n Ts I c"),
+            ("katrin", "k `a: t R I n"),
+            ("spaziergang", "$ p a Ts `i: AR g a N"),
+        ] {
             assert_eq!(super::transcribe(w).join(" "), want, "{w}");
         }
     }

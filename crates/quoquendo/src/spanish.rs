@@ -26,7 +26,13 @@ pub fn transcribe(word: &str) -> Vec<String> {
     if n == 0 {
         return Vec::new();
     }
-    let at = |i: isize| -> char { if i < 0 || i as usize >= n { '#' } else { w[i as usize] } };
+    let at = |i: isize| -> char {
+        if i < 0 || i as usize >= n {
+            '#'
+        } else {
+            w[i as usize]
+        }
+    };
     // syllable nuclei: vowels, with unaccented i/u next to another vowel gliding
     let mut out: Vec<(String, bool, bool)> = Vec::new(); // (phone, is nucleus, written accent)
     let mut i = 0usize;
@@ -127,7 +133,7 @@ pub fn transcribe(word: &str) -> Vec<String> {
         None
     } else {
         let last = *w.last().unwrap();
-        let ends_open = vowel(last) || matches!(last, 'n' | 's') || (last == 'y' && false);
+        let ends_open = vowel(last) || matches!(last, 'n' | 's');
         if ends_open && nuclei.len() >= 2 {
             Some(nuclei[nuclei.len() - 2])
         } else {
@@ -144,7 +150,13 @@ pub fn transcribe(word: &str) -> Vec<String> {
 mod tests {
     #[test]
     fn says_spanish_words() {
-        for (w, want) in [("destino", "dd e s tt `i n o"), ("llamo", "Gl `a m o"), ("ciudad", "Th j u dd `a dd"), ("país", "p a `i s"), ("españa", "e s p `a Gn a")] {
+        for (w, want) in [
+            ("destino", "dd e s tt `i n o"),
+            ("llamo", "Gl `a m o"),
+            ("ciudad", "Th j u dd `a dd"),
+            ("país", "p a `i s"),
+            ("españa", "e s p `a Gn a"),
+        ] {
             assert_eq!(super::transcribe(w).join(" "), want, "{w}");
         }
     }

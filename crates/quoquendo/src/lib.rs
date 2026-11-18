@@ -25,9 +25,9 @@ pub mod inno;
 pub mod loquendo;
 pub mod phoneset;
 pub mod phonetics;
-pub mod sqlite;
 pub mod sig;
 pub mod spanish;
+pub mod sqlite;
 pub mod synth;
 
 use std::path::Path;
@@ -47,7 +47,10 @@ impl Voice {
         let db = loquendo::load_sde(&descriptor.voice_path.join(format!("{}.sde", descriptor.name)))?;
         g2p::load_lexicon(descriptor.language(), &descriptor.mother_tongue);
         load_language_files(descriptor, &db);
-        Ok(Voice { descriptor: descriptor.clone(), db })
+        Ok(Voice {
+            descriptor: descriptor.clone(),
+            db,
+        })
     }
 
     /// Load the voice called `name` from an LTTS7 `data` folder.
@@ -66,7 +69,13 @@ impl Voice {
 
     /// Speak `text` the way the original engine does.
     pub fn say(&self, text: &str) -> Result<Speech, String> {
-        self.say_with(text, Settings { volume: 1.0, join: JoinStyle::Original })
+        self.say_with(
+            text,
+            Settings {
+                volume: 1.0,
+                join: JoinStyle::Original,
+            },
+        )
     }
 
     /// Speak `text` with other settings (volume, smoothed joins).
@@ -105,8 +114,14 @@ impl VoiceFiles {
             p.contains("/data/") && !p.contains("/gilded") || p.contains("/bin/ltts7")
         })?;
         let ends = |suffix: &str| files.iter().find(|(p, _)| low(p).ends_with(&low(suffix))).map(|(_, d)| d.clone());
-        let vcf = files.iter().find(|(p, _)| low(p).ends_with(".vcf")).ok_or("this installer holds no Loquendo voice")?;
-        let name = loquendo::parse_ini(&loquendo::latin1(&vcf.1)).get("BaseVoice").cloned().ok_or("the voice file names no voice")?;
+        let vcf = files
+            .iter()
+            .find(|(p, _)| low(p).ends_with(".vcf"))
+            .ok_or("this installer holds no Loquendo voice")?;
+        let name = loquendo::parse_ini(&loquendo::latin1(&vcf.1))
+            .get("BaseVoice")
+            .cloned()
+            .ok_or("the voice file names no voice")?;
         let vde = ends(&format!("/{name}/{name}.vde")).ok_or("the voice has no .vde")?;
         let tongue = loquendo::parse_ini(&loquendo::latin1(&vde)).get("MotherTongue").cloned().unwrap_or_default();
         // the recordings: the biggest .bin in the voice's folder
@@ -158,7 +173,9 @@ impl Voice {
 /// and `.gpr`, installed with the voice) into the front end.
 pub fn load_language_files(descriptor: &VoiceDescriptor, db: &VoiceDatabase) -> usize {
     let Some(tables) = &db.tables else { return 0 };
-    let Some(data) = descriptor.voice_path.parent().and_then(|p| p.parent()) else { return 0 };
+    let Some(data) = descriptor.voice_path.parent().and_then(|p| p.parent()) else {
+        return 0;
+    };
     let find = |ext: &str| -> Option<Vec<u8>> {
         let want = format!("{}.{ext}", descriptor.mother_tongue).to_lowercase();
         for dir in std::fs::read_dir(data.join("languages")).ok()?.flatten() {
@@ -204,7 +221,9 @@ mod tests {
     /// the voice read from inside its installer says what the installed one says.
     #[test]
     fn installer_and_folder_say_the_same() {
-        let (Some(exe), Some(dir)) = (std::env::var_os("QQ_INSTALLER"), std::env::var_os("QQ_DATA_DIR")) else { return };
+        let (Some(exe), Some(dir)) = (std::env::var_os("QQ_INSTALLER"), std::env::var_os("QQ_DATA_DIR")) else {
+            return;
+        };
         let files = VoiceFiles::from_installer(&std::fs::read(exe).unwrap()).unwrap();
         let a = Voice::from_bytes(files).unwrap();
         let name = a.descriptor.name.clone();

@@ -41,8 +41,7 @@ fn base_phone(symbol: &str) -> String {
 }
 
 const VOWELS: [&str; 23] = [
-    "a", "A", "e", "E", "i", "I", "o", "O", "u", "U", "y", "OE", "Oe", "AR", "Oa", "Ou", "AI",
-    "AU", "OI", "EI", "HOI", "Eh", "Ey",
+    "a", "A", "e", "E", "i", "I", "o", "O", "u", "U", "y", "OE", "Oe", "AR", "Oa", "Ou", "AI", "AU", "OI", "EI", "HOI", "Eh", "Ey",
 ];
 
 pub fn is_vowel(symbol: &str) -> bool {

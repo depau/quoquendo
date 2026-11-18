@@ -6,7 +6,7 @@
 /oracle/out
 /lexicons
 /oracle/loqref.exe
-# Craft Anything's own records
+# investigation tool records
 /agent-session.jsonl
 /build-activity.log
 /capture

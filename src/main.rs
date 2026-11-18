@@ -106,12 +106,7 @@ fn selftest() -> i32 {
     for v in &voices {
         let lang = v.language();
         println!("\n--- {} ---", v.name);
-        println!(
-            "  MotherTongue={:?} aliases={:?} -> {}",
-            v.mother_tongue,
-            v.mother_tongue_aliases,
-            lang.label()
-        );
+        println!("  MotherTongue={:?} aliases={:?} -> {}", v.mother_tongue, v.mother_tongue_aliases, lang.label());
         println!(
             "  gender={} base_speed={} base_pitch={} rate={} gilded={}",
             v.gender, v.base_speed, v.base_pitch, v.audio_rate, v.gilded
@@ -147,14 +142,8 @@ fn selftest() -> i32 {
         let text = sample_text(v);
         println!("  text: {text}");
         let tokens = analyse(&text, lang);
-        let words = tokens
-            .iter()
-            .filter(|t| matches!(t, Token::Word { .. }))
-            .count();
-        let symbols: Vec<String> = tokens
-            .iter()
-            .flat_map(|t| t.symbols().iter().cloned())
-            .collect();
+        let words = tokens.iter().filter(|t| matches!(t, Token::Word { .. })).count();
+        let symbols: Vec<String> = tokens.iter().flat_map(|t| t.symbols().iter().cloned()).collect();
         println!("  phonemes: {} words, {} symbols", words, symbols.len());
         println!("  first phonemes: {:?}", &symbols[..symbols.len().min(18)]);
 
@@ -166,8 +155,7 @@ fn selftest() -> i32 {
             known * 100 / symbols.len().max(1)
         );
         if known < symbols.len() {
-            let mut missing: Vec<&String> =
-                symbols.iter().filter(|s| !db.knows_symbol(s)).collect();
+            let mut missing: Vec<&String> = symbols.iter().filter(|s| !db.knows_symbol(s)).collect();
             missing.sort();
             missing.dedup();
             println!("  missing: {:?}", missing);
@@ -181,7 +169,12 @@ fn selftest() -> i32 {
         let plan = synth::select_all(&db, &synth::from_tokens(&tokens));
         let pieces: usize = plan.iter().map(|p| p.pieces.len()).sum();
         let missing: Vec<&String> = plan.iter().flat_map(|p| &p.missing).collect();
-        println!("  units: {} recorded pieces for {} sounds; never recorded: {:?}", pieces, symbols.len(), missing);
+        println!(
+            "  units: {} recorded pieces for {} sounds; never recorded: {:?}",
+            pieces,
+            symbols.len(),
+            missing
+        );
         let speech = match synth::render(&plan, &db, Settings::default()) {
             Ok(s) => s,
             Err(e) => {
@@ -193,10 +186,7 @@ fn selftest() -> i32 {
         let out = std::env::temp_dir().join(format!("quoquendo-{}.wav", v.name));
         let _ = std::fs::write(&out, synth::to_wav_bytes(&speech));
         println!("  wrote {}", out.display());
-        let peak = speech
-            .samples
-            .iter()
-            .fold(0.0f32, |m, s| m.max(s.abs()));
+        let peak = speech.samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         println!(
             "  audio: {:.2} s @ {} Hz, {} samples, peak {:.3}",
             speech.duration_s(),
@@ -224,7 +214,11 @@ fn selftest() -> i32 {
 /// warning, the benchmark for "does it sound like the stations".
 fn sample_text(v: &VoiceDescriptor) -> String {
     let demo = v.demo_sentence.trim();
-    let mut text = if demo.is_empty() { v.language().sample_sentence().to_string() } else { demo.to_string() };
+    let mut text = if demo.is_empty() {
+        v.language().sample_sentence().to_string()
+    } else {
+        demo.to_string()
+    };
     if v.language() == Language::Italian {
         if !text.ends_with(['.', '!', '?']) {
             text.push('.');
@@ -442,11 +436,7 @@ fn main() -> eframe::Result<()> {
     }
 
     let app = Quoquendo::new(opts.screenshot.clone());
-    eframe::run_native(
-        "quoquendo",
-        native,
-        Box::new(|cc| Ok(Box::new(app.with_ctx(cc)))),
-    )
+    eframe::run_native("quoquendo", native, Box::new(|cc| Ok(Box::new(app.with_ctx(cc)))))
 }
 
 struct Quoquendo {
@@ -731,18 +721,13 @@ impl Quoquendo {
                 Ok(sink) => {
                     sink.append(rodio::Decoder::new(std::io::Cursor::new(bytes)).unwrap());
                     sink.play();
-                    self.out = Some(RodioOut {
-                        _stream: stream,
-                        sink,
-                    });
+                    self.out = Some(RodioOut { _stream: stream, sink });
                     self.status = "Playing.".into();
                 }
                 Err(e) => self.error = Some(format!("audio sink: {e}")),
             },
             Err(e) => {
-                self.error = Some(format!(
-                    "no audio output device ({e}) — use Save WAV instead"
-                ));
+                self.error = Some(format!("no audio output device ({e}) — use Save WAV instead"));
             }
         }
     }
@@ -803,9 +788,7 @@ impl eframe::App for Quoquendo {
                         .desired_width(420.0)
                         .hint_text("LTTS7 folder, or a voice installer .exe to add"),
                 );
-                if ui.button("Load").clicked()
-                    || (edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                {
+                if ui.button("Load").clicked() || (edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                     self.load_engine();
                 }
             });
@@ -819,14 +802,7 @@ impl eframe::App for Quoquendo {
                 let names: Vec<String> = self
                     .voices
                     .iter()
-                    .map(|v| {
-                        format!(
-                            "{} — {} ({})",
-                            v.name,
-                            v.language().label(),
-                            if v.gender.is_empty() { "?" } else { &v.gender }
-                        )
-                    })
+                    .map(|v| format!("{} — {} ({})", v.name, v.language().label(), if v.gender.is_empty() { "?" } else { &v.gender }))
                     .collect();
                 let mut chosen = self.selected;
                 let mut changed = false;
@@ -852,30 +828,15 @@ impl eframe::App for Quoquendo {
                             ui.label(val);
                             ui.end_row();
                         };
-                        row(
-                            "Language",
-                            format!(
-                                "{} (from the voice)",
-                                v.language().label()
-                            ),
-                        );
-                        row(
-                            "MotherTongue",
-                            loquendo::from_latin1(&v.mother_tongue),
-                        );
-                        row(
-                            "Description",
-                            loquendo::from_latin1(&v.description),
-                        );
+                        row("Language", format!("{} (from the voice)", v.language().label()));
+                        row("MotherTongue", loquendo::from_latin1(&v.mother_tongue));
+                        row("Description", loquendo::from_latin1(&v.description));
                         row("Gender / Age", format!("{} / {}", v.gender, v.age));
                         row("Library", v.library.clone());
                         row("BaseSpeed", v.base_speed.to_string());
                         row("BasePitch", v.base_pitch.to_string());
                         row("Sample rate", format!("{} Hz", v.audio_rate));
-                        row(
-                            "Gilded",
-                            if v.gilded { "yes".into() } else { "no".to_string() },
-                        );
+                        row("Gilded", if v.gilded { "yes".into() } else { "no".to_string() });
                         row("Recordings file", v.bin_name.clone());
                     });
                 }
@@ -890,10 +851,7 @@ impl eframe::App for Quoquendo {
                         ui.label(val);
                         ui.end_row();
                     };
-                    row(
-                        "File",
-                        db.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
-                    );
+                    row("File", db.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default());
                     row("Format", db.format.clone());
                     row("Recorded sentences", db.units.len().to_string());
                     row(
@@ -925,10 +883,7 @@ impl eframe::App for Quoquendo {
                                 ),
                             );
                         }
-                        None => row(
-                            "Recordings",
-                            db.audio_error.clone().unwrap_or_else(|| "not found".into()),
-                        ),
+                        None => row("Recordings", db.audio_error.clone().unwrap_or_else(|| "not found".into())),
                     }
                 });
                 if !self.extras.is_empty() {
@@ -1044,16 +999,14 @@ impl eframe::App for Quoquendo {
             ui.horizontal(|ui| {
                 ui.label("Language");
                 let mut lang = self.language();
-                egui::ComboBox::from_id_salt("lang")
-                    .selected_text(lang.label())
-                    .show_ui(ui, |ui| {
-                        for l in Language::ALL {
-                            if ui.selectable_value(&mut lang, l, l.label()).clicked() {
-                                self.language_override = Some(l);
-                                self.run_pipeline();
-                            }
+                egui::ComboBox::from_id_salt("lang").selected_text(lang.label()).show_ui(ui, |ui| {
+                    for l in Language::ALL {
+                        if ui.selectable_value(&mut lang, l, l.label()).clicked() {
+                            self.language_override = Some(l);
+                            self.run_pipeline();
                         }
-                    });
+                    }
+                });
                 if self.language_override.is_some() && ui.button("use voice's own").clicked() {
                     self.language_override = None;
                     self.run_pipeline();
@@ -1085,35 +1038,32 @@ impl eframe::App for Quoquendo {
                 pipeline::Fon::Command(_) => "command",
             };
             ui.label(egui::RichText::new(format!("Text -> phonemes ({fon_name})")).strong());
-            egui::ScrollArea::vertical()
-                .max_height(120.0)
-                .id_salt("phons")
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 5.0;
-                        let db = self.db.as_ref();
-                        for phrase in &self.targets {
-                            for (i, t) in phrase.phones.iter().enumerate() {
-                                if t.word_start && i > 0 {
-                                    ui.label(egui::RichText::new("|").weak());
-                                }
-                                let known = db.map(|d| d.knows_symbol(&t.sym)).unwrap_or(false);
-                                let colour = if known {
-                                    egui::Color32::from_rgb(120, 200, 130)
-                                } else {
-                                    egui::Color32::from_rgb(225, 120, 120)
-                                };
-                                ui.label(egui::RichText::new(&t.sym).monospace().color(colour));
+            egui::ScrollArea::vertical().max_height(120.0).id_salt("phons").show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 5.0;
+                    let db = self.db.as_ref();
+                    for phrase in &self.targets {
+                        for (i, t) in phrase.phones.iter().enumerate() {
+                            if t.word_start && i > 0 {
+                                ui.label(egui::RichText::new("|").weak());
                             }
-                            let tune = match phrase.mood {
-                                Some('I') => " ?",
-                                Some('E') => " !",
-                                _ => "",
+                            let known = db.map(|d| d.knows_symbol(&t.sym)).unwrap_or(false);
+                            let colour = if known {
+                                egui::Color32::from_rgb(120, 200, 130)
+                            } else {
+                                egui::Color32::from_rgb(225, 120, 120)
                             };
-                            ui.label(egui::RichText::new(format!("· {} ms{tune} ·", phrase.pause_ms)).weak().small());
+                            ui.label(egui::RichText::new(&t.sym).monospace().color(colour));
                         }
-                    });
+                        let tune = match phrase.mood {
+                            Some('I') => " ?",
+                            Some('E') => " !",
+                            _ => "",
+                        };
+                        ui.label(egui::RichText::new(format!("· {} ms{tune} ·", phrase.pause_ms)).weak().small());
+                    }
                 });
+            });
 
             ui.separator();
 
@@ -1123,8 +1073,7 @@ impl eframe::App for Quoquendo {
             if let Some(db) = &self.db {
                 let pieces: usize = self.plan.iter().map(|p| p.pieces.len()).sum();
                 let sounds: usize = self.plan.iter().map(|p| p.phones.len()).sum();
-                let from: std::collections::BTreeSet<u32> =
-                    self.plan.iter().flat_map(|p| p.pieces.iter().map(|x| x.unit)).collect();
+                let from: std::collections::BTreeSet<u32> = self.plan.iter().flat_map(|p| p.pieces.iter().map(|x| x.unit)).collect();
                 ui.label(format!(
                     "{sounds} sounds from {pieces} pieces of {} recorded sentences (out of {})",
                     from.len(),
@@ -1134,49 +1083,47 @@ impl eframe::App for Quoquendo {
                 if !missing.is_empty() {
                     ui.colored_label(
                         egui::Color32::from_rgb(230, 170, 90),
-                        format!("never recorded by this voice, skipped: {}", missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")),
+                        format!(
+                            "never recorded by this voice, skipped: {}",
+                            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                        ),
                     );
                 }
                 let rate = db.audio_rate() as f32;
-                egui::ScrollArea::vertical()
-                    .max_height(230.0)
-                    .id_salt("units")
-                    .show(ui, |ui| {
-                        egui::Grid::new("ugrid").num_columns(5).striped(true).show(ui, |ui| {
-                            for h in ["sounds", "sentence", "at", "length", "pitch"] {
-                                ui.label(egui::RichText::new(h).weak());
+                egui::ScrollArea::vertical().max_height(230.0).id_salt("units").show(ui, |ui| {
+                    egui::Grid::new("ugrid").num_columns(5).striped(true).show(ui, |ui| {
+                        for h in ["sounds", "sentence", "at", "length", "pitch"] {
+                            ui.label(egui::RichText::new(h).weak());
+                        }
+                        ui.end_row();
+                        for phrase in &self.plan {
+                            for p in &phrase.pieces {
+                                let u = &db.units[p.unit as usize];
+                                ui.label(egui::RichText::new(p.covers.join(" ")).monospace().color(if p.hard {
+                                    egui::Color32::from_rgb(230, 170, 90)
+                                } else {
+                                    egui::Color32::from_rgb(120, 200, 130)
+                                }));
+                                let said: String = u.symbols[1..u.symbols.len().saturating_sub(1)].join(" ");
+                                let said: String = said.chars().take(34).collect();
+                                ui.label(egui::RichText::new(format!("#{} {said}", p.unit)).monospace().weak());
+                                ui.label(format!("{:.2} s", p.from as f32 / rate));
+                                ui.label(format!("{:.0} ms", (p.to - p.from) as f32 * 1000.0 / rate));
+                                ui.label(format!("{} Hz", p.pitch));
+                                ui.end_row();
                             }
-                            ui.end_row();
-                            for phrase in &self.plan {
-                                for p in &phrase.pieces {
-                                    let u = &db.units[p.unit as usize];
-                                    ui.label(egui::RichText::new(p.covers.join(" ")).monospace().color(
-                                        if p.hard {
-                                            egui::Color32::from_rgb(230, 170, 90)
-                                        } else {
-                                            egui::Color32::from_rgb(120, 200, 130)
-                                        },
-                                    ));
-                                    let said: String = u.symbols[1..u.symbols.len().saturating_sub(1)].join(" ");
-                                    let said: String = said.chars().take(34).collect();
-                                    ui.label(egui::RichText::new(format!("#{} {said}", p.unit)).monospace().weak());
-                                    ui.label(format!("{:.2} s", p.from as f32 / rate));
-                                    ui.label(format!("{:.0} ms", (p.to - p.from) as f32 * 1000.0 / rate));
-                                    ui.label(format!("{} Hz", p.pitch));
-                                    ui.end_row();
-                                }
-                                if phrase.pause_ms > 0 {
-                                    let tune = match phrase.mood {
-                                        Some('I') => "question ",
-                                        Some('E') => "exclamation ",
-                                        _ => "",
-                                    };
-                                    ui.label(egui::RichText::new(format!("· {tune}pause {} ms ·", phrase.pause_ms)).weak().small());
-                                    ui.end_row();
-                                }
+                            if phrase.pause_ms > 0 {
+                                let tune = match phrase.mood {
+                                    Some('I') => "question ",
+                                    Some('E') => "exclamation ",
+                                    _ => "",
+                                };
+                                ui.label(egui::RichText::new(format!("· {tune}pause {} ms ·", phrase.pause_ms)).weak().small());
+                                ui.end_row();
                             }
-                        });
+                        }
                     });
+                });
             }
 
             ui.separator();
@@ -1190,8 +1137,7 @@ impl eframe::App for Quoquendo {
                     ui.label(egui::RichText::new("press Render or Speak").weak());
                 }
             });
-            let (rect, _) =
-                ui.allocate_exact_size(egui::vec2(ui.available_width(), 90.0), egui::Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 90.0), egui::Sense::hover());
             let painter = ui.painter_at(rect);
             painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(24, 26, 30));
             if let Some(s) = &self.speech {
@@ -1223,11 +1169,7 @@ impl eframe::App for Quoquendo {
                     let _ = std::fs::create_dir_all(dir);
                 }
                 let (w, h) = (shot.size[0], shot.size[1]);
-                let pixels: Vec<u8> = shot
-                    .pixels
-                    .iter()
-                    .flat_map(|c| [c.r(), c.g(), c.b(), c.a()])
-                    .collect();
+                let pixels: Vec<u8> = shot.pixels.iter().flat_map(|c| [c.r(), c.g(), c.b(), c.a()]).collect();
                 match image::save_buffer(&path, &pixels, w as u32, h as u32, image::ColorType::Rgba8) {
                     Ok(_) => {
                         self.status = format!("screenshot → {}", path.display());

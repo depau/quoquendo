@@ -137,7 +137,15 @@ pub fn engine_features(p: u32) -> u32 {
         } else {
             1
         };
-        for (m, v) in [(0x2001, 0x1c1), (0x4001, 0x181), (0x8001, 0x141), (0x10001, 0x101), (0x20001, 0xc1), (0x40001, 0x81), (0x80001, 0x41)] {
+        for (m, v) in [
+            (0x2001, 0x1c1),
+            (0x4001, 0x181),
+            (0x8001, 0x141),
+            (0x10001, 0x101),
+            (0x20001, 0xc1),
+            (0x40001, 0x81),
+            (0x80001, 0x41),
+        ] {
             if has(m) {
                 u |= v;
                 break;
@@ -253,7 +261,11 @@ pub fn engine_features(p: u32) -> u32 {
         }
     } else if has(0x404) && (has(0x80004) || has(0x100004)) {
         let u = if has(0x80004) { u | 0x101002 } else { u | 0x100e02 };
-        if has(0x8000_0004) { u } else { u | 0xc }
+        if has(0x8000_0004) {
+            u
+        } else {
+            u | 0xc
+        }
     } else {
         u | 0x1e02
     };
@@ -261,7 +273,13 @@ pub fn engine_features(p: u32) -> u32 {
     if !has(0x1000004) {
         v |= 0x10;
     }
-    for (m, add) in [(0x8000004, 0x20002), (0x1000_0004, 0x2002), (0x2000_0004, 0x4002), (0x4000_0004, 0x2000_0000), (0x4000004, 4)] {
+    for (m, add) in [
+        (0x8000004, 0x20002),
+        (0x1000_0004, 0x2002),
+        (0x2000_0004, 0x4002),
+        (0x4000_0004, 0x2000_0000),
+        (0x4000004, 4),
+    ] {
         if has(m) {
             v |= add;
         }
@@ -322,9 +340,17 @@ pub fn weight_class(e: u32) -> u8 {
             } else if e & 0x8000_0000 != 0 {
                 5
             } else if e & 0x1e03 == 0x1002 {
-                if c != 4 { 9 } else { 7 }
+                if c != 4 {
+                    9
+                } else {
+                    7
+                }
             } else if e & 0x1e03 == 0x1e02 && trill(e) {
-                if c == 4 { 7 } else { 9 }
+                if c == 4 {
+                    7
+                } else {
+                    9
+                }
             } else {
                 6
             }
@@ -343,9 +369,7 @@ pub fn weight_class(e: u32) -> u8 {
                 2
             } else if e & 0x1e03 == 0xc02 {
                 5
-            } else if e & 0x1e03 == 0x1002 {
-                7
-            } else if e & 0x20002 == 0x20002 {
+            } else if e & 0x1e03 == 0x1002 || e & 0x20002 == 0x20002 {
                 7
             } else {
                 3
@@ -359,7 +383,11 @@ pub fn weight_class(e: u32) -> u8 {
             }
         }
         0x1e2 => {
-            if stop_like(e) { 3 } else { 2 }
+            if stop_like(e) {
+                3
+            } else {
+                2
+            }
         }
         0x102 | 0x82 | 0x62 => 2,
         _ => 5,

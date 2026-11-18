@@ -6,7 +6,9 @@
 /// LoqTTS7.dll's cross-fade window (0x100241e0, type 2 at 0x100242ba): n
 /// points of `0.5 · (1 − cos(2π (i+1) / (n+1)))`.
 pub fn hann_window(n: usize) -> Vec<f64> {
-    (0..n).map(|i| 0.5 * (1.0 - (std::f64::consts::TAU * (i + 1) as f64 / (n + 1) as f64).cos())).collect()
+    (0..n)
+        .map(|i| 0.5 * (1.0 - (std::f64::consts::TAU * (i + 1) as f64 / (n + 1) as f64).cos()))
+        .collect()
 }
 
 /// The engine's rounding of a sample (`modf`, +1 when the fraction is at
@@ -134,7 +136,11 @@ pub fn pitch_marks(s: &dyn Fn(isize) -> i32, len: usize, rate: u32, f0: u32, voi
                         let corr = if energy != 0 { corr_max * 10 / energy } else { 0 };
                         let height = if top != 0 { peak * 10 / top } else { 0 };
                         let distance = if cur != 0 { (off_period.unsigned_abs() as u32 * 10 / cur) as i32 } else { 0 };
-                        let score = if marks.len() == 1 { ((height * 3 - distance) + corr) * 2 } else { (height - distance) * 3 + corr * 4 };
+                        let score = if marks.len() == 1 {
+                            ((height * 3 - distance) + corr) * 2
+                        } else {
+                            (height - distance) * 3 + corr * 4
+                        };
                         if best_score < score {
                             best = i;
                             best_score = score;
@@ -145,7 +151,7 @@ pub fn pitch_marks(s: &dyn Fn(isize) -> i32, len: usize, rate: u32, f0: u32, voi
                     i += 1;
                 }
                 let next = if best == 0 { last + period } else { best };
-                if next == 0 || len_u <= (cur * 3 >> 2) + next {
+                if next == 0 || len_u <= ((cur * 3) >> 2) + next {
                     break;
                 }
                 marks.push(next as usize);
@@ -197,7 +203,11 @@ fn autocorrelation_period(s: &dyn Fn(isize) -> i32, len: u32) -> u32 {
         }
         lag += 1;
     }
-    if best_lag != 0 { best_lag } else { 0x96 }
+    if best_lag != 0 {
+        best_lag
+    } else {
+        0x96
+    }
 }
 
 /// One half-phone at a join: its samples with `pre` before and `post`
@@ -245,10 +255,18 @@ pub fn voiced_join(a: &JoinHalf, b: &JoinHalf) -> Option<(Vec<i16>, Vec<i16>, Ve
                 return None;
             }
             let samples: Vec<f64> = (0..count).map(|i| *h.buf.get(from + i).unwrap_or(&0) as f64).collect();
-            frames.push(Frame { samples, period: (m1 - m0) as i32, pre: h.pre, post: h.post });
+            frames.push(Frame {
+                samples,
+                period: (m1 - m0) as i32,
+                pre: h.pre,
+                post: h.post,
+            });
         }
     }
-    let energy: Vec<f32> = frames.iter().map(|f| (f.samples.iter().map(|v| v * v).sum::<f64>().sqrt() / f.samples.len() as f64) as f32).collect();
+    let energy: Vec<f32> = frames
+        .iter()
+        .map(|f| (f.samples.iter().map(|v| v * v).sum::<f64>().sqrt() / f.samples.len() as f64) as f32)
+        .collect();
     let mean_a = energy[..na].iter().sum::<f32>() / na as f32;
     let mean_b = energy[na..].iter().sum::<f32>() / nb as f32;
     let mut gain = vec![1.0f32; total];
@@ -302,7 +320,13 @@ pub fn voiced_join(a: &JoinHalf, b: &JoinHalf) -> Option<(Vec<i16>, Vec<i16>, Ve
         let samples: Vec<i16> = f
             .samples
             .iter()
-            .map(|&v| if p == 0 { round_sample(v) } else { round_sample((v as f32 * gain[p]).min(32767.0) as f64) })
+            .map(|&v| {
+                if p == 0 {
+                    round_sample(v)
+                } else {
+                    round_sample((v as f32 * gain[p]).min(32767.0) as f64)
+                }
+            })
             .collect();
         if p == 0 {
             out.extend_from_slice(&samples);
@@ -347,7 +371,13 @@ mod tests {
                 marks.push(marks.last().unwrap() + p);
             }
             let len = *marks.last().unwrap();
-            JoinHalf { buf: vec![1000; len + 128], pre: 64, len, post: 64, marks }
+            JoinHalf {
+                buf: vec![1000; len + 128],
+                pre: 64,
+                len,
+                post: 64,
+                marks,
+            }
         };
         let (a, b, _) = voiced_join(&half(&[274, 267, 269, 278, 290]), &half(&[345, 335])).unwrap();
         assert_eq!((a.len(), b.len()), (1444, 652));

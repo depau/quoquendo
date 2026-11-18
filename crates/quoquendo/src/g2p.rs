@@ -122,45 +122,19 @@ impl Language {
 
     pub fn sample_sentence(self) -> &'static str {
         match self {
-            Language::Italian => {
-                "Il mio nome è Roberto: sono una voce maschile e la mia madrelingua è l'italiano."
-            }
-            Language::German => {
-                "Ich heiße Katrin. Ich bin die weibliche Stimme von Loquendo, meine Muttersprache ist Deutsch."
-            }
-            Language::English => {
-                "Hello. I am a Loquendo voice, and this is the text you asked me to read aloud."
-            }
-            Language::French => {
-                "Bonjour. Je suis une voix de Loquendo, et voici le texte que vous m'avez donné."
-            }
-            Language::Spanish => {
-                "Hola. Soy una voz de Loquendo y este es el texto que me has pedido leer."
-            }
-            Language::Portuguese => {
-                "Olá. Eu sou uma voz do Loquendo e este é o texto que você pediu para eu ler."
-            }
-            Language::Catalan => {
-                "Hola. Sóc una veu de Loquendo i aquest és el text que m'has demanat llegir."
-            }
-            Language::Dutch => {
-                "Hallo. Ik ben een stem van Loquendo en dit is de tekst die je mij hebt gegeven."
-            }
-            Language::Swedish => {
-                "Hej. Jag är en röst från Loquendo och detta är texten du bad mig läsa."
-            }
-            Language::Danish => {
-                "Hej. Jeg er en stemme fra Loquendo, og dette er teksten du bad mig læse."
-            }
-            Language::Norwegian => {
-                "Hei. Jeg er en stemme fra Loquendo, og dette er teksten du ba meg lese."
-            }
-            Language::Finnish => {
-                "Hei. Olen Loquendo-ääni, ja tämä on teksti, jonka pyysit minua lukemaan."
-            }
-            Language::Polish => {
-                "Dzień dobry. Jestem głosem Loquendo i to jest tekst, który mam przeczytać."
-            }
+            Language::Italian => "Il mio nome è Roberto: sono una voce maschile e la mia madrelingua è l'italiano.",
+            Language::German => "Ich heiße Katrin. Ich bin die weibliche Stimme von Loquendo, meine Muttersprache ist Deutsch.",
+            Language::English => "Hello. I am a Loquendo voice, and this is the text you asked me to read aloud.",
+            Language::French => "Bonjour. Je suis une voix de Loquendo, et voici le texte que vous m'avez donné.",
+            Language::Spanish => "Hola. Soy una voz de Loquendo y este es el texto que me has pedido leer.",
+            Language::Portuguese => "Olá. Eu sou uma voz do Loquendo e este é o texto que você pediu para eu ler.",
+            Language::Catalan => "Hola. Sóc una veu de Loquendo i aquest és el text que m'has demanat llegir.",
+            Language::Dutch => "Hallo. Ik ben een stem van Loquendo en dit is de tekst die je mij hebt gegeven.",
+            Language::Swedish => "Hej. Jag är en röst från Loquendo och detta är texten du bad mig läsa.",
+            Language::Danish => "Hej. Jeg er en stemme fra Loquendo, og dette er teksten du bad mig læse.",
+            Language::Norwegian => "Hei. Jeg er en stemme fra Loquendo, og dette er teksten du ba meg lese.",
+            Language::Finnish => "Hei. Olen Loquendo-ääni, ja tämä on teksti, jonka pyysit minua lukemaan.",
+            Language::Polish => "Dzień dobry. Jestem głosem Loquendo i to jest tekst, który mam przeczytać.",
             Language::Russian => "Привет. Я голос Loquendo, и это текст, который вы попросили прочитать.",
             Language::Greek => "Γεια σας. Είμαι φωνή του Loquendo και αυτό είναι το κείμενο που διαβάζω.",
             Language::Turkish => "Merhaba. Ben bir Loquendo sesiyim ve bu okumamı istediğiniz metin.",
@@ -171,14 +145,8 @@ impl Language {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
-    Word {
-        text: String,
-        symbols: Vec<String>,
-    },
-    Pause {
-        ms: u32,
-        reason: String,
-    },
+    Word { text: String, symbols: Vec<String> },
+    Pause { ms: u32, reason: String },
 }
 
 impl Token {
@@ -230,16 +198,11 @@ pub fn strip_accent(c: char) -> char {
 
 /// Lower-case letters only; accents are kept so each language can read them.
 pub fn bare_word(w: &str) -> Vec<char> {
-    w.chars()
-        .map(|c| c.to_lowercase().next().unwrap_or(c))
-        .filter(|c| c.is_alphabetic())
-        .collect()
+    w.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic()).collect()
 }
 
 fn starts(w: &[char], i: usize, pat: &str) -> bool {
-    pat.chars()
-        .enumerate()
-        .all(|(k, c)| w.get(i + k) == Some(&c))
+    pat.chars().enumerate().all(|(k, c)| w.get(i + k) == Some(&c))
 }
 
 fn plain(w: &[char], i: usize) -> Option<char> {
@@ -382,10 +345,18 @@ fn english_connected_speech(tokens: &mut [Token]) {
     for (n, &i) in words.iter().enumerate() {
         let next = words.get(n + 1).copied();
         // joined to the next word only across a plain word gap
-        let joined = next.map(|j| tokens[i + 1..j].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))).unwrap_or(false);
+        let joined = next
+            .map(|j| {
+                tokens[i + 1..j]
+                    .iter()
+                    .all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))
+            })
+            .unwrap_or(false);
         let next_vowel = joined && next.map(|j| starts_vowel(&tokens[j])).unwrap_or(false);
         let next_you = joined
-            && next.map(|j| matches!(&tokens[j], Token::Word { text, .. } if text == "you" || text == "your")).unwrap_or(false);
+            && next
+                .map(|j| matches!(&tokens[j], Token::Word { text, .. } if text == "you" || text == "your"))
+                .unwrap_or(false);
         let after_voice = prev_end.as_deref().map(|e| is_vowel(e) || e == "n").unwrap_or(false);
         let next_first = next.and_then(|j| tokens[j].symbols().first().cloned()).filter(|_| joined);
         if let Token::Word { text, symbols } = &mut tokens[i] {
@@ -452,13 +423,19 @@ pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>
         for r in rows {
             // the German module's own query (LTTS7German.dll 0x10007720):
             // grafemica, gradoaccentuale, grammaticale WHERE both are set
-            if let (Some(word), Some(grade), Some(class)) = (r.first().and_then(|v| v.text()), r.get(2).and_then(|v| v.text()), r.get(3).and_then(|v| v.text())) {
+            if let (Some(word), Some(grade), Some(class)) = (
+                r.first().and_then(|v| v.text()),
+                r.get(2).and_then(|v| v.text()),
+                r.get(3).and_then(|v| v.text()),
+            ) {
                 if !grade.is_empty() && !class.is_empty() {
                     grammar.entry(word.to_lowercase()).or_insert((german_class(&class), grade == "DEA"));
                 }
             }
-            let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else { continue };
-            let syms: Vec<String> = pron.split(|c| c == ' ' || c == '-').filter(|s| !s.is_empty()).map(str::to_string).collect();
+            let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else {
+                continue;
+            };
+            let syms: Vec<String> = pron.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect();
             if !syms.is_empty() {
                 dictionary.entry(word.to_lowercase()).or_insert(syms);
             }
@@ -469,8 +446,17 @@ pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>
         names.entry(*f).or_insert_with(|| name.clone());
     }
     let n = dictionary.len();
-    let data = LanguageData { dictionary, grammar, gpr: gpr.and_then(crate::gpr::Gpr::parse), names };
-    LANGUAGE_DATA.write().unwrap().get_or_insert_with(HashMap::new).insert(lang, std::sync::Arc::new(data));
+    let data = LanguageData {
+        dictionary,
+        grammar,
+        gpr: gpr.and_then(crate::gpr::Gpr::parse),
+        names,
+    };
+    LANGUAGE_DATA
+        .write()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(lang, std::sync::Arc::new(data));
     n
 }
 
@@ -482,7 +468,9 @@ impl LanguageData {
     fn name(&self, f: u32) -> Option<String> {
         // the model sets a few extra bits the phone tables don't (w is
         // 0x401ec2 in EnglishUs.gpr, 0x1ec2 in Allison's table)
-        [0u32, 0x400000, 0x200000, 0x600000, 0x1000_0000].iter().find_map(|m| self.names.get(&(f & !m)).cloned())
+        [0u32, 0x400000, 0x200000, 0x600000, 0x1000_0000]
+            .iter()
+            .find_map(|m| self.names.get(&(f & !m)).cloned())
     }
 
     /// The word's phones before the language's word rules.
@@ -519,8 +507,10 @@ fn language_data_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
 
 fn en_vowel(s: &str) -> bool {
     let s = s.trim_start_matches('`').trim_end_matches(':');
-    matches!(s, "a" | "e" | "i" | "o" | "u" | "I" | "E" | "O" | "U" | "Ae" | "Aa" | "Ah" | "Oa" | "HEh" | "HEI" | "HAI" | "HOI" | "HOU" | "HAU" | "OR" | "HR" | "Oe")
-        || (s.starts_with('H') && s[1..].starts_with(|c| "AEIOU".contains(c)))
+    matches!(
+        s,
+        "a" | "e" | "i" | "o" | "u" | "I" | "E" | "O" | "U" | "Ae" | "Aa" | "Ah" | "Oa" | "HEh" | "HEI" | "HAI" | "HOI" | "HOU" | "HAU" | "OR" | "HR" | "Oe"
+    ) || (s.starts_with('H') && s[1..].starts_with(|c| "AEIOU".contains(c)))
 }
 
 /// The word rules the original applies after its dictionary and
@@ -574,7 +564,8 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
     for i in 1..out.len() {
         let prev = out[i - 1].clone();
         let nxt = out.get(i + 1).cloned();
-        if out[i] == "Hr" && (prev.trim_start_matches('`') == "HAI" || (matches!(prev.as_str(), "`I" | "`E") && !nxt.as_deref().map(en_vowel).unwrap_or(false))) {
+        if out[i] == "Hr" && (prev.trim_start_matches('`') == "HAI" || (matches!(prev.as_str(), "`I" | "`E") && !nxt.as_deref().map(en_vowel).unwrap_or(false)))
+        {
             out[i] = "HR".into();
         }
         if out[i] == "l" && matches!(prev.trim_start_matches('`'), "i:" | "i" | "HEI") && matches!(nxt.as_deref(), None | Some("z") | Some("d")) {
@@ -593,7 +584,10 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
             && (en_vowel(&prev) || matches!(prev.as_str(), "n" | "Hr" | "HR"))
             && vowelish
             && !stressed(&nxt)
-            && (prevv.as_deref().map(|v| stressed(v) || !matches!(v.trim_start_matches('`'), "HEh" | "I")).unwrap_or(false)
+            && (prevv
+                .as_deref()
+                .map(|v| stressed(v) || !matches!(v.trim_start_matches('`'), "HEh" | "I"))
+                .unwrap_or(false)
                 || (last && matches!(nxt.trim_start_matches('`'), "i" | "I" | "HR" | "Hl")))
         {
             out[i] = "HTh".into();
@@ -672,7 +666,9 @@ fn german_connected_speech(tokens: &mut [Token]) {
     let words: Vec<usize> = (0..tokens.len()).filter(|&i| matches!(tokens[i], Token::Word { .. })).collect();
     // n before k/g, also across a word gap: N
     for pair in words.windows(2) {
-        let joined = tokens[pair[0] + 1..pair[1]].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
+        let joined = tokens[pair[0] + 1..pair[1]]
+            .iter()
+            .all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
         let first = tokens[pair[1]].symbols().first().cloned().unwrap_or_default();
         if let (true, Token::Word { symbols, .. }) = (joined && matches!(first.as_str(), "k" | "g"), &mut tokens[pair[0]]) {
             if symbols.last().map(|s| s == "n") == Some(true) {
@@ -687,7 +683,13 @@ fn german_connected_speech(tokens: &mut [Token]) {
     let mut phrase_start = true;
     for (wi, &i) in words.iter().enumerate() {
         let next = words.get(wi + 1).copied();
-        let joined = next.map(|j| tokens[i + 1..j].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))).unwrap_or(false);
+        let joined = next
+            .map(|j| {
+                tokens[i + 1..j]
+                    .iter()
+                    .all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))
+            })
+            .unwrap_or(false);
         let starts_new_phrase = phrase_start;
         phrase_start = !joined;
         // a final stop is released into a vowel or h (Gepäck und, und halten)
@@ -753,7 +755,11 @@ fn german_connected_speech(tokens: &mut [Token]) {
                         c => c,
                     };
                     out[k] = if joined {
-                        if next_open { voiceless.into() } else { unrel(voiceless).into() }
+                        if next_open {
+                            voiceless.into()
+                        } else {
+                            unrel(voiceless).into()
+                        }
                     } else {
                         asp(voiceless).into()
                     };
@@ -766,7 +772,10 @@ fn german_connected_speech(tokens: &mut [Token]) {
                 {
                     out[k] = asp(cur).into();
                 } else if nxt.map(|n| matches!(n, "p" | "t" | "k" | "b" | "d" | "g")).unwrap_or(false)
-                    || nxt.map(|n| !vowelish(n) && !matches!(n, "R" | "l" | "Hn" | "$" | "s" | "j" | "h")).unwrap_or(false) && prev.map(vowelish).unwrap_or(false)
+                    || nxt
+                        .map(|n| !vowelish(n) && !matches!(n, "R" | "l" | "Hn" | "$" | "s" | "j" | "h"))
+                        .unwrap_or(false)
+                        && prev.map(vowelish).unwrap_or(false)
                 {
                     out[k] = unrel(cur).into();
                 }
@@ -784,8 +793,8 @@ fn german_connected_speech(tokens: &mut [Token]) {
 
 /// Little Spanish words said without stress (Jorge's transcriptions).
 const SPANISH_UNSTRESSED: &[&str] = &[
-    "el", "la", "los", "las", "lo", "de", "del", "con", "por", "para", "a", "al", "en", "y", "e", "o", "u", "que", "se", "me",
-    "te", "le", "les", "nos", "su", "sus", "mi", "mis", "tu", "tus", "un", "una", "unos", "unas", "sin",
+    "el", "la", "los", "las", "lo", "de", "del", "con", "por", "para", "a", "al", "en", "y", "e", "o", "u", "que", "se", "me", "te", "le", "les", "nos", "su",
+    "sus", "mi", "mis", "tu", "tus", "un", "una", "unos", "unas", "sin",
 ];
 
 /// What the original does across Spanish words: little words lose their
@@ -845,7 +854,10 @@ fn spanish_connected_speech(tokens: &mut [Token]) {
     for f in 0..flat.len().saturating_sub(1) {
         let (ti, k) = flat[f];
         let (tj, kj) = flat[f + 1];
-        let joined = ti == tj || tokens[ti + 1..tj].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
+        let joined = ti == tj
+            || tokens[ti + 1..tj]
+                .iter()
+                .all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
         if !joined {
             continue;
         }
@@ -886,7 +898,11 @@ fn french_compound(word: &str) -> Option<Vec<String>> {
     if let Some((a, b)) = word.split_once('-') {
         let mut out = word_to_symbols(a, Language::French);
         // `est-ce` `E s: the inverted ce keeps only its consonant
-        out.extend(if b == "ce" { vec!["s".to_string()] } else { word_to_symbols(b, Language::French) });
+        out.extend(if b == "ce" {
+            vec!["s".to_string()]
+        } else {
+            word_to_symbols(b, Language::French)
+        });
         return Some(out);
     }
     let (a, b) = word.split_once('\'')?;
@@ -918,10 +934,9 @@ fn french_compound(word: &str) -> Option<Vec<String>> {
 /// Little words the original reads without stress inside a sentence (Bernard's
 /// transcriptions, oracle/bench-fr.txt): `le` l HEh, `les` l e, `nous` n u.
 const FRENCH_UNSTRESSED: &[&str] = &[
-    "le", "la", "les", "de", "des", "du", "un", "une", "et", "à", "au", "aux", "ce", "ces", "mes",
-    "tes", "ses", "mon", "ton", "son", "ma", "ta", "sa", "nos", "vos", "je", "suis",
-    "tu", "il", "ils", "elle", "elles", "on", "nous", "vous", "me", "te", "se", "ne", "que",
-    "qui", "en", "y", "sur", "sous", "sont", "sans", "dans", "est", "pour", "par",
+    "le", "la", "les", "de", "des", "du", "un", "une", "et", "à", "au", "aux", "ce", "ces", "mes", "tes", "ses", "mon", "ton", "son", "ma", "ta", "sa", "nos",
+    "vos", "je", "suis", "tu", "il", "ils", "elle", "elles", "on", "nous", "vous", "me", "te", "se", "ne", "que", "qui", "en", "y", "sur", "sous", "sont",
+    "sans", "dans", "est", "pour", "par",
 ];
 
 /// What the original does between French words: little words lose their
@@ -935,7 +950,13 @@ fn french_connected_speech(tokens: &mut [Token]) {
     let starts_vowel = |t: &Token| t.symbols().first().map(|s| is_vowel(s)).unwrap_or(false);
     for (n, &i) in words.iter().enumerate() {
         let next = words.get(n + 1).copied();
-        let joined = next.map(|j| tokens[i + 1..j].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))).unwrap_or(false);
+        let joined = next
+            .map(|j| {
+                tokens[i + 1..j]
+                    .iter()
+                    .all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))
+            })
+            .unwrap_or(false);
         let next_vowel = joined && next.map(|j| starts_vowel(&tokens[j])).unwrap_or(false);
         let next_consonant = joined && !next_vowel;
         let mut link: Option<&str> = None;
@@ -951,7 +972,8 @@ fn french_connected_speech(tokens: &mut [Token]) {
             }
             if next_vowel {
                 link = match w {
-                    "les" | "des" | "mes" | "tes" | "ses" | "ces" | "nous" | "vous" | "ils" | "elles" | "aux" | "deux" | "trois" | "dans" | "chez" | "leurs" | "nos" | "vos" => Some("z"),
+                    "les" | "des" | "mes" | "tes" | "ses" | "ces" | "nous" | "vous" | "ils" | "elles" | "aux" | "deux" | "trois" | "dans" | "chez"
+                    | "leurs" | "nos" | "vos" => Some("z"),
                     "est" | "sont" | "ont" | "petit" | "grand" | "quand" | "tout" | "c'est" | "font" | "vont" => Some("tt"),
                     "un" | "mon" | "ton" | "son" | "on" | "en" | "aucun" | "bien" | "rien" => Some("n"),
                     "prochain" | "certain" | "plein" | "ancien" | "moyen" | "bon" => {
@@ -1035,7 +1057,7 @@ pub fn load_lexicon(lang: Language, mother_tongue: &str) -> usize {
 fn lexicon_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
     let lex = lexicons().lock().unwrap().get(&lang).cloned()?;
     let t = lex.get(&word.to_lowercase())?;
-    Some(t.split(|c| c == ' ' || c == '-').filter(|s| !s.is_empty()).map(str::to_string).collect())
+    Some(t.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect())
 }
 
 pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
@@ -1065,30 +1087,24 @@ pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
     if raw.is_empty() {
         return Vec::new();
     }
-    let accent_final = word
-        .chars()
-        .last()
-        .map(|c| ACCENTS.iter().any(|(a, _)| *a == c))
-        .unwrap_or(false);
+    let accent_final = word.chars().last().map(|c| ACCENTS.iter().any(|(a, _)| *a == c)).unwrap_or(false);
     let w: Vec<char> = match lang {
         Language::Russian | Language::Greek => transliterate(&raw),
         _ => raw.clone(),
     };
     let mut out = match lang {
         Language::Italian => italian(&w),
-        Language::German => german(&w),
+        // German and Spanish returned above (german.rs, spanish.rs)
+        Language::German | Language::Spanish => unreachable!(),
         Language::English => english(&w),
         Language::French => french(&w),
-        Language::Spanish => spanish(&w),
         Language::Catalan => catalan(&w),
         Language::Portuguese => portuguese(&w),
         Language::Dutch => dutch(&w),
         Language::Swedish | Language::Danish | Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
         Language::Polish => polish(&w),
-        Language::Turkish | Language::Russian | Language::Greek | Language::Generic => {
-            generic(&w)
-        }
+        Language::Turkish | Language::Russian | Language::Greek | Language::Generic => generic(&w),
     };
     if lang == Language::Italian {
         italian_stress(&raw, &mut out, accent_final);
@@ -1241,16 +1257,22 @@ fn italian(w: &[char]) -> Vec<String> {
                     // word-initial z is voiced (272 to 4), a single z between
                     // vowels is long (2745 to 203), after a consonant plain Ts
                     let between_vowels = prev_vowel && next.map(is_vowel_char).unwrap_or(false);
-                    push_all(&mut out, &[if i == 0 { "Dz" } else if between_vowels { "Ts:" } else { "Ts" }]);
+                    push_all(
+                        &mut out,
+                        &[if i == 0 {
+                            "Dz"
+                        } else if between_vowels {
+                            "Ts:"
+                        } else {
+                            "Ts"
+                        }],
+                    );
                 }
                 's' => {
                     let following_vowel = next.map(is_vowel_char).unwrap_or(false);
                     // voiced between vowels and before a voiced consonant (`sbaglio`)
                     let voiced_next = matches!(next, Some('b' | 'd' | 'g' | 'l' | 'm' | 'n' | 'r' | 'v'));
-                    push_all(
-                        &mut out,
-                        &[if prev_vowel && following_vowel || voiced_next { "z" } else { "s" }],
-                    );
+                    push_all(&mut out, &[if prev_vowel && following_vowel || voiced_next { "z" } else { "s" }]);
                 }
                 'n' => {
                     // velar before a hard c/g (`banca`, `lungo`), not before ce/ci/ge/gi
@@ -1281,8 +1303,8 @@ fn italian(w: &[char]) -> Vec<String> {
                     let after = if i > 0 { plain(w, i - 1) } else { None };
                     // the original keeps i a full vowel after r and l (`binario`,
                     // `Italia`: 8% and 3% glide) but glides it elsewhere (64-98%)
-                    let u_glides = (c == 'i' && !matches!(after, Some('r') | Some('l')))
-                        || (c == 'u' && (matches!(next, Some('o') | Some('i')) || after == Some('g')));
+                    let u_glides =
+                        (c == 'i' && !matches!(after, Some('r') | Some('l'))) || (c == 'u' && (matches!(next, Some('o') | Some('i')) || after == Some('g')));
                     if following_vowel && u_glides && vowels_before + vowels_after >= 2 && !final_ia(w, i) {
                         push_all(&mut out, &[if c == 'i' { "j" } else { "w" }]);
                     } else {
@@ -1319,7 +1341,10 @@ fn italian_table(which: usize) -> &'static std::collections::HashMap<String, Str
     static TABLES: [OnceLock<HashMap<String, String>>; 2] = [OnceLock::new(), OnceLock::new()];
     TABLES[which].get_or_init(|| {
         let src = [include_str!("it-position.tsv"), include_str!("it-quality.tsv")][which];
-        src.lines().filter_map(|l| l.split_once('\t')).map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        src.lines()
+            .filter_map(|l| l.split_once('\t'))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     })
 }
 
@@ -1354,10 +1379,7 @@ fn italian_stress(raw: &[char], symbols: &mut [String], accent_final: bool) {
         // (an i/u that glides into the next vowel is not a vowel here)
         let is_v = |c: char| "aeiouàèéìòù".contains(c);
         let groups: Vec<usize> = (0..raw.len())
-            .filter(|&i| {
-                is_v(raw[i])
-                    && !("iu".contains(raw[i]) && i > 0 && i + 1 < raw.len() && is_v(raw[i + 1]) && !is_v(raw[i - 1]))
-            })
+            .filter(|&i| is_v(raw[i]) && !("iu".contains(raw[i]) && i > 0 && i + 1 < raw.len() && is_v(raw[i + 1]) && !is_v(raw[i - 1])))
             .collect();
         let q = groups
             .len()
@@ -1379,135 +1401,10 @@ fn italian_stress(raw: &[char], symbols: &mut [String], accent_final: bool) {
 /// stress them when they are said alone): articles, prepositions with and
 /// without article, conjunctions, clitic pronouns.
 const ITALIAN_UNSTRESSED: [&str; 63] = [
-    "il", "lo", "la", "i", "gli", "le", "l", "un", "uno", "una", "di", "a", "da", "in", "con", "su",
-    "per", "tra", "fra", "del", "dello", "della", "dei", "degli", "delle", "al", "allo", "alla",
-    "ai", "agli", "alle", "dal", "dallo", "dalla", "dai", "dagli", "dalle", "nel", "nello", "nella",
-    "nei", "negli", "nelle", "sul", "sullo", "sulla", "sui", "sugli", "sulle", "col", "coi", "e",
-    "ed", "o", "od", "ma", "che", "se", "mi", "ti", "si", "ci", "non",
+    "il", "lo", "la", "i", "gli", "le", "l", "un", "uno", "una", "di", "a", "da", "in", "con", "su", "per", "tra", "fra", "del", "dello", "della", "dei",
+    "degli", "delle", "al", "allo", "alla", "ai", "agli", "alle", "dal", "dallo", "dalla", "dai", "dagli", "dalle", "nel", "nello", "nella", "nei", "negli",
+    "nelle", "sul", "sullo", "sulla", "sui", "sugli", "sulle", "col", "coi", "e", "ed", "o", "od", "ma", "che", "se", "mi", "ti", "si", "ci", "non",
 ];
-
-// --- German -----------------------------------------------------------------
-
-fn german(w: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
-    let n = w.len();
-    while i < n {
-        let c = w[i];
-        let mut used = 1;
-        if starts(w, i, "tsch") {
-            push_all(&mut out, &["T$"]);
-            used = 4;
-        } else if starts(w, i, "sch") {
-            push_all(&mut out, &["$"]);
-            used = 3;
-        } else if starts(w, i, "pf") {
-            push_all(&mut out, &["Pf"]);
-            used = 2;
-        } else if starts(w, i, "ch") {
-            push_all(&mut out, &["x"]);
-            used = 2;
-        } else if starts(w, i, "ck") {
-            push_all(&mut out, &["k"]);
-            used = 2;
-        } else if starts(w, i, "tz") {
-            push_all(&mut out, &["Ts"]);
-            used = 2;
-        } else if starts(w, i, "sp") && i == 0 {
-            push_all(&mut out, &["$", "p"]);
-            used = 2;
-        } else if starts(w, i, "st") && i == 0 {
-            push_all(&mut out, &["$"]);
-            used = 1;
-        } else if starts(w, i, "eu") || starts(w, i, "äu") {
-            // `eu`/`äu` is the /ɔʏ/ diphthong: Katrin's own symbol is HOI
-            push_all(&mut out, &["HOI"]);
-            used = if starts(w, i, "äu") { 2 } else { 2 };
-        } else if starts(w, i, "au") {
-            push_all(&mut out, &["AU"]);
-            used = 2;
-        } else if starts(w, i, "ei") || starts(w, i, "ai") {
-            push_all(&mut out, &["HAI"]);
-            used = 2;
-        } else {
-            match c {
-                'ä' => push_all(&mut out, &["E:"]),
-                'ö' => push_all(&mut out, &["OE:"]),
-                'ü' => push_all(&mut out, &["y:"]),
-                'ß' => push_all(&mut out, &["s"]),
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                // Katrin has no short i/u: its lax closed vowels are I and U
-                'i' => push_all(&mut out, &["I"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["U"]),
-                'y' => push_all(&mut out, &["y:"]),
-                'h' => {
-                    // h after a vowel only lengthens it
-                    match out.last() {
-                        Some(prev) if is_vowel(prev) => {
-                            if let Some(last) = out.last_mut() {
-                                if !last.ends_with(':') {
-                                    last.push(':');
-                                }
-                            }
-                        }
-                        _ => push_all(&mut out, &["h"]),
-                    }
-                }
-                'n' => {
-                    if matches!(plain(w, i + 1), Some('k') | Some('g')) {
-                        push_all(&mut out, &["N"]);
-                    } else {
-                        push_all(&mut out, &["n"]);
-                    }
-                }
-                'r' => push_all(&mut out, &["R"]),
-                'w' => push_all(&mut out, &["v"]),
-                'v' => push_all(&mut out, &["f"]),
-                'j' => push_all(&mut out, &["y:"]),
-                's' => {
-                    // before a vowel German s is voiced: sagen, Häuser
-                    if plain(w, i + 1).map(is_vowel_char).unwrap_or(false) {
-                        push_all(&mut out, &["z"]);
-                    } else {
-                        push_all(&mut out, &["s"]);
-                    }
-                }
-                'z' => push_all(&mut out, &["Ts"]),
-                'c' => push_all(&mut out, &["k"]),
-                'x' => push_all(&mut out, &["k", "s"]),
-                'p' => push_all(&mut out, &["ph"]),
-                't' => push_all(&mut out, &["t"]),
-                'b' => push_all(&mut out, &["p"]),
-                'd' => push_all(&mut out, &["t"]),
-                'g' => push_all(&mut out, &["k"]),
-                'k' => push_all(&mut out, &["k"]),
-                'f' => push_all(&mut out, &["f"]),
-                'l' => push_all(&mut out, &["l"]),
-                'm' => push_all(&mut out, &["m"]),
-                'q' => push_all(&mut out, &["k"]),
-                _ => {}
-            }
-        }
-        // a doubled consonant is not held twice in German, it just shortens
-        // the vowel, which the duration model already does
-        if used == 1 && plain(w, i + 1) == plain(w, i) && plain(w, i).is_some() {
-            used = 2;
-        }
-        i += used.max(1);
-    }
-    // Katrin has no stressed short `e`/`o` (only `e:`/`o:` among the stressed
-    // tense vowels), so a stressed e or o is lengthened to match its inventory
-    for s in out.iter_mut() {
-        if s.as_str() == "`e" {
-            *s = "`e:".to_string();
-        } else if s.as_str() == "`o" {
-            *s = "`o:".to_string();
-        }
-    }
-    out
-}
 
 // --- English ----------------------------------------------------------------
 
@@ -1546,10 +1443,7 @@ fn english(w: &[char]) -> Vec<String> {
         } else if starts(w, i, "oo") {
             push_all(&mut out, &["u:"]);
             used = 2;
-        } else if starts(w, i, "ee") {
-            push_all(&mut out, &["i:"]);
-            used = 2;
-        } else if starts(w, i, "ea") {
+        } else if starts(w, i, "ee") || starts(w, i, "ea") {
             push_all(&mut out, &["i:"]);
             used = 2;
         } else if starts(w, i, "ou") {
@@ -1679,73 +1573,7 @@ fn french(w: &[char]) -> Vec<String> {
     out
 }
 
-// --- Spanish and Catalan ----------------------------------------------------
-
-fn spanish(w: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
-    let n = w.len();
-    while i < n {
-        let c = plain(w, i).unwrap_or(' ');
-        let mut used = 1;
-        if starts(w, i, "ch") {
-            push_all(&mut out, &["T$"]);
-            used = 2;
-        } else if starts(w, i, "ll") {
-            push_all(&mut out, &["j"]);
-            used = 2;
-        } else if starts(w, i, "ny") {
-            push_all(&mut out, &["Gn"]);
-            used = 2;
-        } else if starts(w, i, "qu") {
-            push_all(&mut out, &["k"]);
-            used = 2;
-        } else if starts(w, i, "gu") {
-            push_all(&mut out, &["g"]);
-            used = 2;
-        } else if starts(w, i, "rr") {
-            push_all(&mut out, &["r"]);
-            used = 2;
-        } else {
-            match c {
-                'c' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["s"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["k"]);
-                    }
-                }
-                'g' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["x"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["g"]);
-                    }
-                }
-                'z' => push_all(&mut out, &["s"]),
-                'j' => push_all(&mut out, &["x"]),
-                'y' => push_all(&mut out, &["j"]),
-                'v' => push_all(&mut out, &["b"]),
-                'h' => {}
-                'x' => push_all(&mut out, &["k", "s"]),
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                'i' => push_all(&mut out, &["i"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["u"]),
-                'b' | 'd' | 'f' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't' => {
-                    let s = c.to_string();
-                    out.push(s);
-                }
-                _ => {}
-            }
-        }
-        i += used.max(1);
-    }
-    out
-}
+// --- Catalan ------------------------------------------------------------------
 
 fn catalan(w: &[char]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -1760,10 +1588,7 @@ fn catalan(w: &[char]) -> Vec<String> {
         } else if starts(w, i, "ny") {
             push_all(&mut out, &["Gn"]);
             used = 2;
-        } else if starts(w, i, "ig") {
-            push_all(&mut out, &["T$"]);
-            used = 2;
-        } else if starts(w, i, "tx") {
+        } else if starts(w, i, "ig") || starts(w, i, "tx") {
             push_all(&mut out, &["T$"]);
             used = 2;
         } else if starts(w, i, "qu") {
@@ -2143,8 +1968,7 @@ fn generic(w: &[char]) -> Vec<String> {
                     let s = c.to_string();
                     out.push(s);
                 }
-                'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't' | 'v'
-                | 'w' | 'z' => {
+                'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't' | 'v' | 'w' | 'z' => {
                     let s = c.to_string();
                     out.push(s);
                 }
@@ -2159,12 +1983,7 @@ fn generic(w: &[char]) -> Vec<String> {
 // --- stress -----------------------------------------------------------------
 
 fn stress(_w: &[char], symbols: &mut [String], lang: Language, accent_final: bool, raw: &[char]) {
-    let vowels: Vec<usize> = symbols
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| is_vowel(s))
-        .map(|(i, _)| i)
-        .collect();
+    let vowels: Vec<usize> = symbols.iter().enumerate().filter(|(_, s)| is_vowel(s)).map(|(i, _)| i).collect();
     if vowels.is_empty() {
         return;
     }
@@ -2225,14 +2044,28 @@ fn pause_for_punctuation(c: char) -> Option<u32> {
 /// ("duemilatrecentoquarantacinque"). Station announcements are full of them.
 pub fn italian_number(n: u64) -> String {
     const SMALL: [&str; 20] = [
-        "zero", "uno", "due", "tre", "quattro", "cinque", "sei", "sette", "otto", "nove", "dieci",
-        "undici", "dodici", "tredici", "quattordici", "quindici", "sedici", "diciassette",
-        "diciotto", "diciannove",
+        "zero",
+        "uno",
+        "due",
+        "tre",
+        "quattro",
+        "cinque",
+        "sei",
+        "sette",
+        "otto",
+        "nove",
+        "dieci",
+        "undici",
+        "dodici",
+        "tredici",
+        "quattordici",
+        "quindici",
+        "sedici",
+        "diciassette",
+        "diciotto",
+        "diciannove",
     ];
-    const TENS: [&str; 10] = [
-        "", "", "venti", "trenta", "quaranta", "cinquanta", "sessanta", "settanta", "ottanta",
-        "novanta",
-    ];
+    const TENS: [&str; 10] = ["", "", "venti", "trenta", "quaranta", "cinquanta", "sessanta", "settanta", "ottanta", "novanta"];
     fn below_1000(n: u64) -> String {
         let (h, r) = (n / 100, n % 100);
         let mut out = match h {
@@ -2241,7 +2074,11 @@ pub fn italian_number(n: u64) -> String {
             _ => format!("{}cento", SMALL[h as usize]),
         };
         let rest = if r < 20 {
-            if r == 0 { String::new() } else { SMALL[r as usize].to_string() }
+            if r == 0 {
+                String::new()
+            } else {
+                SMALL[r as usize].to_string()
+            }
         } else {
             let (t, u) = (r / 10, r % 10);
             let mut tens = TENS[t as usize].to_string();
@@ -2268,7 +2105,11 @@ pub fn italian_number(n: u64) -> String {
     let mut words: Vec<String> = Vec::new();
     let (millions, thousands, rest) = (n / 1_000_000, n / 1000 % 1000, n % 1000);
     if millions > 0 {
-        words.push(if millions == 1 { "unmilione".into() } else { below_1000(millions) + "milioni" });
+        words.push(if millions == 1 {
+            "unmilione".into()
+        } else {
+            below_1000(millions) + "milioni"
+        });
     }
     match thousands {
         0 => {}
@@ -2302,30 +2143,36 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
                     _ => w.clone(),
                 };
                 for (k, part) in spelled.split(' ').enumerate() {
-                if k > 0 {
-                    tokens.push(Token::Pause { ms: 45, reason: "word gap".into() });
-                }
-                let mut symbols = word_to_symbols(part, lang);
-                // number words are compounds (cento+settanta+sei): their s
-                // starts a morpheme and stays voiceless, as the original says it
-                if lang == Language::Italian && w.chars().all(|c| c.is_ascii_digit()) {
-                    for s in symbols.iter_mut().filter(|s| s.as_str() == "z") {
-                        *s = "s".into();
+                    if k > 0 {
+                        tokens.push(Token::Pause {
+                            ms: 45,
+                            reason: "word gap".into(),
+                        });
                     }
-                }
-                if lang == Language::Italian && ITALIAN_UNSTRESSED.contains(&w.as_str()) {
-                    for s in symbols.iter_mut() {
-                        // dropping the stress also drops the open quality
-                        *s = match s.trim_start_matches('`') {
-                            "E" => "e".to_string(),
-                            "Oa" => "o".to_string(),
-                            other => other.to_string(),
-                        };
+                    let mut symbols = word_to_symbols(part, lang);
+                    // number words are compounds (cento+settanta+sei): their s
+                    // starts a morpheme and stays voiceless, as the original says it
+                    if lang == Language::Italian && w.chars().all(|c| c.is_ascii_digit()) {
+                        for s in symbols.iter_mut().filter(|s| s.as_str() == "z") {
+                            *s = "s".into();
+                        }
                     }
-                }
-                if !symbols.is_empty() {
-                    tokens.push(Token::Word { text: if k == 0 { w.clone() } else { String::new() }, symbols });
-                }
+                    if lang == Language::Italian && ITALIAN_UNSTRESSED.contains(&w.as_str()) {
+                        for s in symbols.iter_mut() {
+                            // dropping the stress also drops the open quality
+                            *s = match s.trim_start_matches('`') {
+                                "E" => "e".to_string(),
+                                "Oa" => "o".to_string(),
+                                other => other.to_string(),
+                            };
+                        }
+                    }
+                    if !symbols.is_empty() {
+                        tokens.push(Token::Word {
+                            text: if k == 0 { w.clone() } else { String::new() },
+                            symbols,
+                        });
+                    }
                 }
             }
         };
@@ -2350,10 +2197,7 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
                 '.' | '\n' => "sentence break",
                 _ => "phrase break",
             };
-            tokens.push(Token::Pause {
-                ms,
-                reason: reason.into(),
-            });
+            tokens.push(Token::Pause { ms, reason: reason.into() });
         } else if lc.is_whitespace() {
             flush!();
             tokens.push(Token::Pause {
@@ -2404,11 +2248,7 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
     let mut collapsed: Vec<Token> = Vec::new();
     for t in tokens {
         if let Token::Pause { ms, reason } = &t {
-            if let Some(Token::Pause {
-                ms: prev,
-                reason: prev_reason,
-            }) = collapsed.last_mut()
-            {
+            if let Some(Token::Pause { ms: prev, reason: prev_reason }) = collapsed.last_mut() {
                 *prev = (*prev).max(*ms);
                 if reason != "word gap" {
                     *prev_reason = reason.clone();
@@ -2514,18 +2354,9 @@ mod tests {
 
     #[test]
     fn language_comes_from_the_voice_descriptor() {
-        assert_eq!(
-            Language::from_voice("German", "German,de-DE,de"),
-            Language::German
-        );
-        assert_eq!(
-            Language::from_voice("Italian", "Italian,it-IT,it"),
-            Language::Italian
-        );
-        assert_eq!(
-            Language::from_voice("English", "English,en-GB,en"),
-            Language::English
-        );
+        assert_eq!(Language::from_voice("German", "German,de-DE,de"), Language::German);
+        assert_eq!(Language::from_voice("Italian", "Italian,it-IT,it"), Language::Italian);
+        assert_eq!(Language::from_voice("English", "English,en-GB,en"), Language::English);
         assert_eq!(Language::from_voice("Klingon", "tlh"), Language::Generic);
     }
 

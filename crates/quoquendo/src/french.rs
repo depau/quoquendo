@@ -5,7 +5,10 @@
 //! original's transcriptions of a word list (MECHANICS.md §4).
 
 fn is_v(c: char) -> bool {
-    matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'à' | 'â' | 'ä' | 'é' | 'è' | 'ê' | 'ë' | 'î' | 'ï' | 'ô' | 'ö' | 'ù' | 'û' | 'ü' | 'œ' | 'æ')
+    matches!(
+        c,
+        'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'à' | 'â' | 'ä' | 'é' | 'è' | 'ê' | 'ë' | 'î' | 'ï' | 'ô' | 'ö' | 'ù' | 'û' | 'ü' | 'œ' | 'æ'
+    )
 }
 
 const SCHWA: &str = "HEh";
@@ -14,7 +17,13 @@ const SCHWA: &str = "HEh";
 pub fn transcribe(word: &str) -> Vec<String> {
     let w: Vec<char> = word.to_lowercase().chars().filter(|c| c.is_alphabetic()).collect();
     let n = w.len();
-    let at = |i: isize| -> char { if i < 0 || i as usize >= n { '#' } else { w[i as usize] } };
+    let at = |i: isize| -> char {
+        if i < 0 || i as usize >= n {
+            '#'
+        } else {
+            w[i as usize]
+        }
+    };
     let mut out: Vec<&str> = Vec::new();
     let mut i: usize = 0;
     // the word ends here, ignoring silent final letters
@@ -49,10 +58,7 @@ pub fn transcribe(word: &str) -> Vec<String> {
                 } else if r.starts_with("ay") && is_v(n2) {
                     out.extend(["E", "j"]);
                     step = 2;
-                } else if r.starts_with("aî") {
-                    out.push("E");
-                    step = 2;
-                } else if r.starts_with("ai") || r.starts_with("ay") && !is_v(n2) {
+                } else if r.starts_with("aî") || r.starts_with("ai") || r.starts_with("ay") && !is_v(n2) {
                     out.push("E");
                     step = 2;
                 } else if r.starts_with("au") {
@@ -89,9 +95,7 @@ pub fn transcribe(word: &str) -> Vec<String> {
                     if p == 'i' {
                         out.push("E)");
                         step = 2;
-                    } else if r == "ent" && i >= 2 && !is_v(p) && !w[..i].iter().collect::<String>().ends_with("m") {
-                        step = 3;
-                    } else if r == "ent" && i >= 2 && is_v(p) {
+                    } else if r == "ent" && i >= 2 && (is_v(p) || !w[..i].iter().collect::<String>().ends_with("m")) {
                         step = 3;
                     } else {
                         out.push("Aa)");
@@ -99,7 +103,10 @@ pub fn transcribe(word: &str) -> Vec<String> {
                     }
                 } else if i + 1 == n || (i + 2 == n && n1 == 's') {
                     // final e / es: silent (spoken in one-syllable words)
-                    if out.iter().all(|s| !matches!(*s, "a" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)")) {
+                    if out
+                        .iter()
+                        .all(|s| !matches!(*s, "a" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)"))
+                    {
                         out.push(if n1 == 's' { "e" } else { SCHWA });
                     }
                     step = n - i;
@@ -109,7 +116,12 @@ pub fn transcribe(word: &str) -> Vec<String> {
                 } else if i == 0 && n1 == n2 && !is_v(n1) {
                     out.push("e");
                     step = 1;
-                } else if !is_v(n1) && n1 != '#' && (!is_v(n2) || n1 == n2) && !(matches!(n1, 'b' | 'c' | 'd' | 'f' | 'g' | 'p' | 't' | 'v') && matches!(n2, 'r' | 'l')) && !(n2 == 'h') {
+                } else if !is_v(n1)
+                    && n1 != '#'
+                    && (!is_v(n2) || n1 == n2)
+                    && !(matches!(n1, 'b' | 'c' | 'd' | 'f' | 'g' | 'p' | 't' | 'v') && matches!(n2, 'r' | 'l'))
+                    && (n2 != 'h')
+                {
                     // closed syllable: E
                     out.push("E");
                     step = 1;
@@ -150,8 +162,18 @@ pub fn transcribe(word: &str) -> Vec<String> {
                     }
                     out.push("j");
                     step = 1;
-                } else if r.starts_with("ill") && i > 0 && !w[..i].iter().collect::<String>().ends_with('v') && !w[..i].iter().collect::<String>().ends_with("m") && !w[..i].iter().collect::<String>().ends_with("tranqu") {
-                    if out.last().map(|s| matches!(*s, "a" | "E" | "e" | "u" | "Oe" | "OE" | "o" | "Oa" | "Hy")).unwrap_or(false) && is_v(p) {
+                } else if r.starts_with("ill")
+                    && i > 0
+                    && !w[..i].iter().collect::<String>().ends_with('v')
+                    && !w[..i].iter().collect::<String>().ends_with("m")
+                    && !w[..i].iter().collect::<String>().ends_with("tranqu")
+                {
+                    if out
+                        .last()
+                        .map(|s| matches!(*s, "a" | "E" | "e" | "u" | "Oe" | "OE" | "o" | "Oa" | "Hy"))
+                        .unwrap_or(false)
+                        && is_v(p)
+                    {
                         out.push("j");
                     } else {
                         out.push("i");
@@ -232,7 +254,7 @@ pub fn transcribe(word: &str) -> Vec<String> {
             _ => {
                 // consonants; the last ones of a word are mostly silent (not c, r, f, l)
                 let last = i + 1 == n || (i + 2 == n && n1 == 's' && c != 's');
-                if last && !matches!(c, 'c' | 'r' | 'f' | 'l' | 'q' | 'k') && !(c == 's' && n <= 3 && false) {
+                if last && !matches!(c, 'c' | 'r' | 'f' | 'l' | 'q' | 'k') {
                     if c == 'x' && matches!(word, "six" | "dix") {
                         out.push("s");
                     }
@@ -345,7 +367,12 @@ pub fn transcribe(word: &str) -> Vec<String> {
         }
         i += step;
     }
-    let full = |s: &str| matches!(s, "a" | "Aa" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)" | "Hy");
+    let full = |s: &str| {
+        matches!(
+            s,
+            "a" | "Aa" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)" | "Hy"
+        )
+    };
     let mut kept: Vec<&str> = Vec::with_capacity(out.len());
     for (k, sym) in out.iter().enumerate() {
         if *sym == SCHWA && k + 1 < out.len() && k >= 2 && !full(out[k - 1]) && full(out[k - 2]) && out[k - 1] != "w" {
@@ -356,7 +383,12 @@ pub fn transcribe(word: &str) -> Vec<String> {
     let out = kept;
     let mut syms: Vec<String> = out.into_iter().map(str::to_string).collect();
     // stress the last full vowel
-    if let Some(k) = syms.iter().rposition(|s| matches!(s.as_str(), "a" | "Aa" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)")) {
+    if let Some(k) = syms.iter().rposition(|s| {
+        matches!(
+            s.as_str(),
+            "a" | "Aa" | "e" | "E" | "i" | "o" | "Oa" | "u" | "y" | "OE" | "Oe" | "Aa)" | "E)" | "o)" | "Oe)"
+        )
+    }) {
         syms[k] = format!("`{}", syms[k]);
     }
     syms

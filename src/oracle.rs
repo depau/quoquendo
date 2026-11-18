@@ -125,7 +125,10 @@ pub fn transcribe_words(voice: &str, words: &[String]) -> Result<Vec<(String, St
         if next < start {
             return Err(format!("the original engine failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
         }
-        eprintln!("the original engine stopped at \"{}\"; skipping it", words.get(next).map(String::as_str).unwrap_or(""));
+        eprintln!(
+            "the original engine stopped at \"{}\"; skipping it",
+            words.get(next).map(String::as_str).unwrap_or("")
+        );
         start = next + 1;
     }
     Ok(done)
@@ -133,7 +136,10 @@ pub fn transcribe_words(voice: &str, words: &[String]) -> Result<Vec<(String, St
 
 fn load(prefix: &Path, text: &str) -> Result<Reference, String> {
     let read = |ext: &str| std::fs::read(prefix.with_extension(ext)).map_err(|e| format!("{}.{ext}: {e}", prefix.display()));
-    let mut r = Reference { text: text.to_string(), ..Default::default() };
+    let mut r = Reference {
+        text: text.to_string(),
+        ..Default::default()
+    };
     r.transcription = quoquendo::loquendo::latin1(&read("fon")?).trim().to_string();
     for line in read("ev")?.split(|b| *b == b'\n') {
         let line = quoquendo::loquendo::latin1(line);
@@ -198,7 +204,10 @@ impl Reference {
     /// The engine's FON stage as phrases: its phones and pauses, with word
     /// starts taken from its transcription and tunes from the text's marks.
     pub fn target_phrases(&self) -> Vec<TargetPhrase> {
-        let words: Vec<Target> = quoquendo::synth::parse_transcription(&self.transcription).into_iter().flat_map(|p| p.phones).collect();
+        let words: Vec<Target> = quoquendo::synth::parse_transcription(&self.transcription)
+            .into_iter()
+            .flat_map(|p| p.phones)
+            .collect();
         let mut moods = self.text.chars().filter_map(|c| match c {
             '?' => Some(Some('I')),
             '!' => Some(Some('E')),
@@ -213,7 +222,12 @@ impl Reference {
                 if !cur.is_empty() {
                     let full_stop = sym == "@";
                     let mood = if full_stop { moods.next().flatten() } else { None };
-                    out.push(TargetPhrase { phones: std::mem::take(&mut cur), pause_ms: *ms, full_stop, mood });
+                    out.push(TargetPhrase {
+                        phones: std::mem::take(&mut cur),
+                        pause_ms: *ms,
+                        full_stop,
+                        mood,
+                    });
                 }
                 continue;
             }
@@ -225,7 +239,12 @@ impl Reference {
             cur.push(Target { sym: sym.clone(), word_start });
         }
         if !cur.is_empty() {
-            out.push(TargetPhrase { phones: cur, pause_ms: 0, full_stop: true, mood: None });
+            out.push(TargetPhrase {
+                phones: cur,
+                pause_ms: 0,
+                full_stop: true,
+                mood: None,
+            });
         }
         out
     }
@@ -306,10 +325,22 @@ mod tests {
         let r = Reference {
             text: "il treno, ok.".into(),
             transcription: "i l-tt r `E n o-o k-".into(),
-            phones: [("i", 90), ("l", 40), ("tt", 60), ("r", 60), ("`E", 80), ("n", 50), ("o", 70), ("#", 120), ("o", 50), ("k", 60), ("@", 500)]
-                .iter()
-                .map(|(s, m)| (s.to_string(), *m))
-                .collect(),
+            phones: [
+                ("i", 90),
+                ("l", 40),
+                ("tt", 60),
+                ("r", 60),
+                ("`E", 80),
+                ("n", 50),
+                ("o", 70),
+                ("#", 120),
+                ("o", 50),
+                ("k", 60),
+                ("@", 500),
+            ]
+            .iter()
+            .map(|(s, m)| (s.to_string(), *m))
+            .collect(),
             ..Default::default()
         };
         let p = r.target_phrases();

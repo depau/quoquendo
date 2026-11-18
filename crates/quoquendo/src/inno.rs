@@ -150,7 +150,11 @@ pub fn files(exe: &[u8], want: impl Fn(&str) -> bool) -> Result<Vec<(String, Vec
         let location = u32le(&entries, o)? as usize;
         let external = u64le(&entries, o + 8)?;
         (location < locations.len() && external == 0).then_some(())?;
-        let path: String = dest.iter().map(|&c| if c == b'\\' { '/' } else { c as char }).filter(|&c| c != '{' && c != '}').collect();
+        let path: String = dest
+            .iter()
+            .map(|&c| if c == b'\\' { '/' } else { c as char })
+            .filter(|&c| c != '{' && c != '}')
+            .collect();
         Some((o + FILE_TAIL, path, location))
     };
     // the first entry that another one follows (a lone match can be a folder entry)
@@ -195,7 +199,10 @@ pub fn files(exe: &[u8], want: impl Fn(&str) -> bool) -> Result<Vec<(String, Vec
         .map(|(path, l)| {
             let l = &locations[l];
             let chunk = &chunks[&l.start];
-            let mut data = chunk.get(l.suboffset as usize..(l.suboffset + l.size) as usize).ok_or("a file runs past its chunk")?.to_vec();
+            let mut data = chunk
+                .get(l.suboffset as usize..(l.suboffset + l.size) as usize)
+                .ok_or("a file runs past its chunk")?
+                .to_vec();
             if l.calls_filtered {
                 unfilter_calls(&mut data);
             }
@@ -210,7 +217,9 @@ mod tests {
     /// file we read is byte for byte what innoextract wrote.
     #[test]
     fn reads_like_innoextract() {
-        let (Some(exe), Some(reference)) = (std::env::var_os("QQ_INNO"), std::env::var_os("QQ_INNO_REF")) else { return };
+        let (Some(exe), Some(reference)) = (std::env::var_os("QQ_INNO"), std::env::var_os("QQ_INNO_REF")) else {
+            return;
+        };
         let exe = std::fs::read(exe).unwrap();
         let files = super::files(&exe, |_| true).unwrap();
         assert!(!files.is_empty());

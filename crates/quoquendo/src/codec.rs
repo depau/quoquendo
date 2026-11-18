@@ -122,7 +122,7 @@ impl AudioBank {
             let mut bits = SpeexBits([0; 64]);
             speex_bits_init(&mut bits);
             let mut k = from;
-            while out.len() < skip + len &&k < self.frames {
+            while out.len() < skip + len && k < self.frames {
                 let at = self.first_frame + k * self.frame_bytes;
                 frame.copy_from_slice(&self.data[at..at + self.frame_bytes]);
                 if self.key != 0 {
