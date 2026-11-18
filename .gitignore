@@ -5,6 +5,7 @@
 /oracle/cache
 /oracle/out
 /lexicons
+/oracle/words
 /oracle/loqref.exe
 # investigation tool records
 /agent-session.jsonl

@@ -23,6 +23,7 @@ pub mod g2p;
 pub mod german;
 pub mod gpr;
 pub mod inno;
+pub mod lang;
 pub mod loquendo;
 pub mod pack;
 pub mod phoneset;
@@ -136,6 +137,9 @@ pub struct VoiceFiles {
     /// the `LexicalDB` and `GPR` files its language's `.lde` names
     pub dbl: Option<Vec<u8>>,
     pub gpr: Option<Vec<u8>>,
+    /// the language module its `.lde` names (`LTTS7Italian.dll`), read as
+    /// data by the ported module (`lang`)
+    pub language_library: Option<Vec<u8>>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
     /// the voice's other `VocalDBName[i]` databases, in its `.vcf` order:
@@ -321,6 +325,7 @@ impl VoiceFiles {
             bin,
             bin_name,
             library: info.library.as_deref().and_then(read),
+            language_library: info.language_library.as_deref().and_then(read),
             dbl,
             gpr,
             language_missing: info.language_missing,
@@ -371,6 +376,10 @@ impl Voice {
             }
             _ => g2p::Frontend::rules(lang),
         };
+        let frontend = match files.language_library {
+            Some(module) => frontend.with_module(module),
+            None => frontend,
+        };
         Ok(Voice {
             descriptor,
             db,
@@ -399,6 +408,7 @@ mod tests {
             "data/voices/Roberto/Roberto.sde",
             "data/voices/Roberto/Roberto.32000.LTTS7Codec210.44000.10.bin",
             "bin/LTTS7Roberto.dll",
+            "bin/LTTS7Italian.dll",
             "data/languages/Italian/Italian.lde",
         ] {
             let Ok(b) = std::fs::read(root.join(rel)) else { return };

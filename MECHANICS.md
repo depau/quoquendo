@@ -457,6 +457,63 @@ Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
 newline) — its transcription confirms `#50` and `@500`.
 
+## 4b. Italian FON, ported from LTTS7Italian.dll (`lang/italian.rs`)
+
+With `LTTS7Italian.dll` in the voice's tree (`VoiceFiles.language_library`,
+from the `.lde`'s `Library`) the Italian front end is the module itself,
+ported: its tables are read from the DLL's bytes at the addresses its code
+uses (`lang/common.rs` `Pe`), nothing is copied, nothing runs. The export
+`Italian` (0x1000b640) walks a name → function table at **0x10031ff8**
+(19 pairs): `GetVersion` 0x1000b550, `ELQGetGraphemes` 0x1000b520,
+`ELQGetPhonemes` 0x1000b530, `LesAccenta` 0x10002aa0,
+`LesNormalizzaAccento` 0x10002b50, `FonTrasParola` 0x1000f210,
+`LesIniNumeri` 0x1000b4d0 (installs the number readers 0x10005680,
+0x100049b0, 0x1000a0b0…), `LesAnalizza` 0x1000d890, `LesGetSymbolName`
+0x100032a0, `LesGradiAccentuali` 0x1000b6b0, `LesConfiniProsodici`
+0x1000c080, `LesPronunciabile` 0x1000b2e0, `FonTrasConfini` 0x1000f0e0,
+`LesEspandiAbbreviazioni` 0x10007430, `ELQGetLicenseMessage` 0x1000b5a0,
+`FonGetSamples` 0x1000b540, `LesGetAbbreviazioni` 0x1000b610,
+`LesGetNumeroAbbreviazioni` 0x1000b600, `LesGetDefaultCurrency` 0x100074b0.
+LoqTTS7.dll binds them by name (LES 0x10036140, FON 0x1002d5c0) and runs,
+per sentence of 24-byte word records (+4 text, +0xe class, +0xf subclass,
++0x10 information, +0x11 boundary, +0x12 stress grade; ctx+8 the sentence
+type: 0 `.`, 3 `?`, 5 `:` `;`, 6 `!`): LesAnalizza, LesAccenta,
+LesConfiniProsodici, LesGradiAccentuali; then its phrase loop (0x1002c300)
+calls FonTrasParola per word and, through 0x1002d060, FonTrasConfini at
+every word start. Ported:
+
+| function | address | what it does | tables |
+|---|---|---|---|
+| LesAnalizza | 0x1000d890 → 0x1000cdf0, 0x1000d180, 0x1000cb40 | classes: function words, neighbours (articles vs `lo`/`la` pronouns, 0x1000cf20), endings (verb forms, clitics 0x1000c820/0x1000c7b0) | function words 0x1006b3e8 (0x17b × 8 bytes); word forms 0x10066668 (0x675 × 12) |
+| LesAccenta | 0x10002aa0 → 0x10002430, 0x10002790, 0x10002990 | marks the stressed vowel (grave, acute for closed e/o; code n = n-th vowel from the end, +30 acute) | homographs 0x1002bb78 (0x3b × 8); stress endings 0x10028078 (0x44a × 12, `{reversed ending, exception list, code}`, searched by 0x100010c0, exceptions 0x10001000); `-ano`/`-ino` lists 0x1002bef0, 0x1002bd50 |
+| LesConfiniProsodici | 0x1000c080 → 0x1000baa0, 0x1000b970 | boundaries; a pause (0x0a, 50 ms) between groups when both sides have ≥ 2 words and ≥ 15 / 20 letters | — |
+| LesGradiAccentuali | 0x1000b6b0 | short function words inside a phrase unstressed (grade 3) | — |
+| FonTrasParola | 0x1000f210 → 0x1000db80, 0x1000dd10 (zz), 0x1000e5c0 (s), 0x1000ebf0 / 0x1000ef50 (i) | letters → phone codes | characters 0x10030ed8 (8 bytes each); codes 0x1006bf4c, 0x1006bee4, 0x1006be7c; whole-word exceptions 0x1006c138 (0x1ea74 bytes, `word=phones`, `ELQSearchCompactString` LTTS7Util.dll 0x100289f0); word lists at 0x1008abac…0x1008bf4c; symbols 0x100318c0 |
+| FonTrasConfini | 0x1000f0e0 | across words without a pause: s → z before a voiced consonant, n → m/M/N | — |
+
+Checked stage by stage against the original's own calls: `/tmp`-built
+loqref with every slot of the table at 0x10031ff8 swapped for a logging
+thunk (records before and after each function, FonTrasParola's input and
+output codes). On the 20 000 held-out words (`oracle/words/it.txt`, every
+4th alphabetic word of LibreOffice `it_IT/it_IT.dic`) and the benchmark,
+LesAnalizza, LesAccenta, LesConfiniProsodici, LesGradiAccentuali and
+FonTrasParola give the original's records and codes for **every** call.
+
+Whole transcriptions (`QQ_NO_LEXICON=1`, against the original's
+`LOQ_FON_ONLY` output): benchmark `oracle/bench-it.txt` 96.6% → **100%**
+of sounds (20 of 20 sentences identical, 3 before); held-out words 87.1% →
+**99.9%** (19 980 of 20 000).
+
+The engine's own tokenizer (LoqTTS7.dll TOP/LES) is approximated
+(`Italian::sentences`): lower case, proper nouns (capitalised inside a
+sentence: class 0x15), elisions as their own record joined to the next
+(boundary 0), numbers read by `g2p::italian_number` (class 0x15,
+subclass `z`, the last `y`), punctuation records (class `2`, `|` ends a
+sentence, `}` inside). Not ported yet (§11): the engine's spelling of
+unpronounceable words (`LesPronunciabile`: `CD` → `T$ i-dd i`), its
+number/date/time/currency readers, abbreviations, `Italian.lex`, and
+0x10001290 (stress of class `-` participles in sentences).
+
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
 **What the original does** (LoqTTS7.dll): units are half-phones; the event
@@ -805,9 +862,18 @@ when a speed/pitch change asks for it.
 
 - An exact port of French letter-to-sound (FonTrasParola, LTTS7French.dll
   0x1000f730, 3 570 lines) instead of fitted rules (97.9%); German loanword
-  stress (97.6% held out); Italian's exception and ending tables in
-  LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
-  are readable but not decoded — our learned tables stand in (96.6%).
+  stress (97.6% held out).
+- Italian (§4b): the module's LES/FON functions are ported and match the
+  original call for call; the 20 held-out words still differing are all
+  spelled out by the engine (`AN` `` `a-`E n: e ``, `CD`, `CPU`, `DNA`,
+  `b`, `dg`…): LoqTTS7.dll's TOP/LES spelling of words LesPronunciabile
+  (0x1000b2e0 → 0x1000b140) rejects is not ported, nor its number, date,
+  time, currency and abbreviation readers (LesIniNumeri's 0x10005680…,
+  LesEspandiAbbreviazioni), the `Italian.lex` lexicon (`CA FE DB 60`, not
+  decrypted yet) and 0x10001290 (stress of class-`-` participles inside
+  sentences; alone such words take the noun class and match). The fitted
+  rules (`g2p::italian`, `it-position.tsv`, `it-quality.tsv`) remain as
+  the front end of Italian voices whose tree lacks LTTS7Italian.dll.
 - The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
   hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk at a
   time; 0x10028c00 asks for `floor(pending·32/44)`, minus 16 when above 16,
