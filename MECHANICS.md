@@ -539,13 +539,52 @@ all 97 322 candidates now score the same in both.
 - a right half also takes the next left half when the recording has the
   wanted next phone there and its class score is ≥ 10.
 
-Half-phones from the same recording and place as the original's:
+**Every database, last first.** A voice's `.vcf` lists `VocalDBName[0..]`:
+the main recordings, then (Gilded voices) `<Voice>GildedPhrases` and
+`<Voice>GildedParalinguistics`, each an `.sde` (with `A=` text lines and
+`S=e`/`f`/`x` tunes) and recordings of their own. 0x10046de0 asks them last
+first with one best score across all; once a database leaves the best at
+5 000 000 or more (a whole-phrase match, 0x10045ad0 above) the rest are not
+asked and the pick takes all of that recording (`2·phones − 4` halves).
+`VoiceFiles::from_layout` loads them into `VoiceFiles.extra`;
+`VoiceDatabase::add_database` appends their sentences to `units`
+(`db_start`, `database_of`, `bank`), every phone's instances listing the
+last database's first; a piece event's `<db>,<sentence>` id maps onto that.
+Giulia, Luca, Matteo and Paola say "Attenzione!" with a Gilded phrase
+(`1,25`): the earlier "piece from sentence 25 not found" was that id read as
+a main-database sentence.
 
-| voice | benchmark | similarity guessed | tables | + word-end marks |
-|---|---|---|---|---|
-| Roberto | `oracle/bench-it.txt` | 39.6% | 84.8% | **94.5%** |
-| Allison | `oracle/bench-en.txt` | 43.6% | 83.0% | **93.7%** |
-| Bernard | `oracle/bench-fr.txt` | 43.8% | 80.5% | **97.9%** |
+**Two formats of voice library.** Older libraries (Roberto, Allison,
+Katrin, Bernard, Jorge…) hold their own feature words (`#` 0x18, `@` 0x28,
+`^` 0x48), which the engine converts with 0x10050780; the newer ones
+(Giulia, Luca, Steven, Carlos, Soledad, Florence, Ximena, Marcello…) hold
+the engine's words already (`#` 0x13, `@` 0x17, `^` 0x10). The engine
+converts only below a version (CatLoadVoiceReadOnlyData 0x1004bd60,
+0x10051210); 0x10050680 tells them apart by the `@` record (0x28 → convert),
+which `PhoneTables::from_library` does too. Converting a newer table a second
+time scrambled every feature, class and similarity: that was the 8–20% CAT
+of Steven, Carlos, Soledad, Florence, Ximena and Marcello, and their poor
+replays (every voiced/voiceless decision at the joins wrong). Giulia's
+tables now equal the original's dump (`LOQ_DUMP_TABLES`) in every feature,
+class and similarity.
+
+Half-phones from the same recording and place as the original's, given its
+transcription (`--compare`; the original's pieces located by the ticks of
+every half SIG played, `LOQ_TRACE_UNITS`, where the sounds alone were
+ambiguous):
+
+| voice | benchmark | similarity guessed | tables | + word-end marks | + every database, both library formats |
+|---|---|---|---|---|---|
+| Roberto | `oracle/bench-it.txt` | 39.6% | 84.8% | 94.5% | **100%** |
+| Allison | `oracle/bench-en.txt` | 43.6% | 83.0% | 93.7% | **100%** |
+| Bernard | `oracle/bench-fr.txt` | 43.8% | 80.5% | 97.9% | **100%** |
+| Katrin | `oracle/bench-de.txt` | | | 98.2% | **100%** |
+| Jorge | `oracle/bench-es.txt` | | | 98.9% | **100%** |
+
+Every other voice with a benchmark: 100% except Afroditi 98.1%, Annika 99.6%,
+Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof 99.5%,
+Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% (§11).
+Giulia and Steven went from 10.8% and 15.6% to 100%.
 
 (`--compare` gives the picker the original's own transcription; that string
 glues some words together, `h `` `HAI `` HEh v s `` `E ``…, so word starts are
@@ -556,47 +595,85 @@ same phone, 50 same without stress/length, no classes).
 
 ## 6. SIG — joining (the original's rules, decompiled)
 
-Decoding: each piece plays from its `.sde` time (with the codec's own 509
-samples of delay, §2).
+The original handles **every half-phone as a unit of its own** (per-unit loop
+`0x1001faa0`): decoded with **64 samples** of margin on each side
+(`(rate/10·400)/20000`, 0x1001f580; no lead-in for a half at the very start
+of a recording), in the order SIG plays them, then given its pitch marks
+(0x1001e3a0). A half of no length (an `L` record of 0 ticks) is a unit too.
+Half-phones that follow each other in one recording make a run (0x100472f0):
+inside it they are copied (algorithm 0); the run's last half is joined to the
+next unit (algorithm 1, `0x1001f8a3` → `0x10024660`). A pause is **two**
+zero-filled half units of half its length each (no lead-in, a 4× = 256-sample
+tail); the first is joined to the second, the second to nothing, so the
+speech after a pause starts exactly as recorded. Each unit then plays its own
+samples (`pre .. pre + len`). `synth::render` (`JoinStyle::Original`) does
+all of this unit by unit; `sig::join` is 0x10024660:
 
-The original handles every half-phone as a unit (`0x1001faa0`), decoded with
-**64 samples** of margin on each side (`(rate/10·400)/20000`, 0x1001f580);
-half-phones inside one picked run are plain copies (algorithm 0), the last
-one of a run is joined to the next run (algorithm 1, `0x1001f870` →
-`0x10024660`); pauses are zero-filled units with no lead-in margin and a
-4× (256-sample) tail. `synth::render` (`JoinStyle::Original`) does the same:
+- **Cross-fade** (unless both halves are voiced, flag +0x640; 0x100244a0):
+  from `a.len − b.pre + 1 + a.pre` (unsigned, at most a's whole buffer) to
+  the end of the previous unit's buffer, n points (127 between speech), at
+  most 500 and no more than the next unit's buffer; window **type 2** of 2n
+  points `0.5 − 0.5·cos(2π(i+1)/(2n+1))` (0x100241e0, case 0x100242ba), the
+  previous unit on the falling half; the sum clamped to ±32767/−32768
+  (0x100a5c20, 0x100a5c40), truncated (`_ftol2` 0x10069060) and written
+  into both units.
+- **Voiced join** (0x10024660; both halves' marks, at most 50 periods, two
+  or more each side, each frame under 1000 samples; anything refused leaves
+  both units as they were, without a cross-fade): every period with the
+  unit's margins becomes a frame. Loudness: √Σs²/count per frame (`fsqrt`
+  0x10069600, stored as a float); each side's mean summed in floats; when
+  the first is at least the second its periods get `max(0.5, float(k·(mB/mA
+  − 1)/float(na−1) + 1))`, else the second's `max(0.5, float(j·(1 − r)/
+  float(nb−1) + r))`, r = mA/mB — every product and quotient a double, as the
+  x87 at precision 53 computes them. Periods: `x = float(float(na)/total)`
+  kept in [0.2 (0x100a5cd0), 0.5]; when the mean periods (summed in floats,
+  0x10024590) differ by 0.5–14 semitones (`|ln(pB/pA)·12/ln 2|`, 0x100a5b80,
+  0x100a5cc0) the first side's become `trunc((first_b − last_a)·x·(k/
+  float(na−1)) + p)`, the second's `trunc((last_a − first_b)·float(1−x)·
+  ((total−j−1)/float(nb−1)) + p)`, undone when Σ float(|Δ|/p)/total > 0.1
+  (0x100a5cb8). Overlap-add (0x10024360): frame 0 copied; each next frame's
+  samples × its gain (a double, at most 32767, `modf` rounding half up for
+  positives, 0x10059ce0), the output trimmed by the previous frame's tail,
+  then laid from `len − pre + d` (d the period change, dropped when within
+  ±1 or when it would empty the frame): the overlap cross-faded with the
+  same window, truncated **without** a clamp, the rest appended (more than
+  500 to overlap: the frame is dropped). A start past `2·(a.len + b.len)`
+  abandons the join. The two units get their new lengths and marks
+  (`M[i] − M[0]`, `M[na+i] − M[na]`) and their buffers back out of the
+  joined one, margins included (a later join reads them).
+- `cos` is the runtime's SSE2 routine (0x10069510 → 0x1006b13e, taken with
+  SSE2 present and every exception masked): x·32/π rounded, a 64-entry
+  table of sin/cos parts (0x100a9f70) and two polynomials in double
+  arithmetic; `sig::msvc_cos` is that routine operation by operation. 2π is
+  the DLL's `6.28318530717958` (0x100a5be0), 7 ulps under the true one:
+  with the true 2π or the platform's `cos`, single samples of cross-fades
+  came out 1 off.
 
-- **Cross-fade** (any join but voiced–voiced; 0x100244a0): from the previous
-  unit's last samples through its tail margin into the next unit's lead-in
-  and first samples, `n = tail + lead-in − 1` points (127 between speech),
-  Hann window `0.5·(1 − cos(2π(i+1)/(2n+1)))` over 2n points (0x100241e0,
-  type 2 at 0x100242ba; previous unit takes the falling half), sum clamped
-  and truncated to 16 bits, written into both units; then only the units'
-  own samples are played. Into a pause the speech rings out over the
-  pause's first 63 samples; out of one it fades in over ~255 samples.
-- **Voiced join** (both half-phones voiced, `sig.rs`): pitch marks of each
-  half (0x1001e3a0: voiceless every `rate/125`; voiced from `period =
-  rate/F0` of the half's record, the best rising zero crossing 0.5–1.5
-  periods on, scored by correlation, peak and distance — 75 of 110 traced
-  halves get identical marks, most others ±1 sample since our decoding is
-  near- not bit-identical); each period with its margins becomes a frame;
-  period lengths ease toward the other side when the pitch differs by
-  0.5–14 semitones (`x = periods before / all` kept in [0.2, 0.5]; previous
-  half `p + (first − last)·x·k/(n−1)`, next half `p + (last − first)·(1−x)·
-  (n−1−j)/(n−1)`, truncated; changes of ±1 dropped; undone if they average
-  over 10%) — **all 23 traced joins** reproduced exactly; loudness eased with
-  a linear gain ramp toward the other side's mean (never below 0.5); frames
-  overlap-added back with the same cross-fade over the 64 samples before each
-  mark. A one-half unit keeps the marks this gave it for its next join.
+Checked with `oracle/loqref.c` `LOQ_TRACE_JOIN=2` (every join's two units
+before and after, every sample): given the original's units, `sig::join`
+returns the same samples, lengths and marks for 1 080 of the 1 082 joins of
+the five benchmarks (both residuals in §11), and `sig::pitch_marks` the same
+marks for 422 of 423 voiced halves.
 
-Match with the original's audio (its own pieces through our SIG), samples
-within ±2 / whole-file SNR:
+Match with the original's audio, its own pieces (`LOQ_TRACE_UNITS`: every
+half SIG played, by its ticks) through our SIG, whole files (hard cuts:
+samples within ±2; after: samples identical):
 
-| voice | hard cuts (before) | + cross-fades, voiced joins, pause units |
-|---|---|---|
-| Roberto | 26.0% / −1.1 dB | **60.1% / 16.0 dB** |
-| Allison | 33.2% / 0.1 dB | **56.8% / 7.7 dB** |
-| Bernard | 35.0% / 1.2 dB | **70.1% / 33.0 dB** |
+| voice | hard cuts | cross-fades and voiced joins on pieces | per-half units, exact joins |
+|---|---|---|---|
+| Roberto | 26.0% | 77.8% | **100%** |
+| Allison | 33.2% | 74.3% | **100%** |
+| Katrin | — | 70.8% | **100%** |
+| Bernard | 35.0% | 98.3% | **100%** |
+| Jorge | — | 88.8% | **100%** |
+
+and so are all the other 32 kHz voices of the pack with a benchmark (Gilded
+databases included, §5): Afroditi, Amalia, Annika, Carlos, Carmen, Dave,
+Diego, Elizabeth, Esperanza, Eusebio, Felipe, Fernanda, Francisca, Frida,
+Gabriela, Giulia, Krzysztof, Leonor, Luca, Matteo, Paola, Simon, Soledad,
+Stefan, Steven, Susan, Sven, Zosia. The 44 kHz CodecMsx voices are not yet
+(§2c, §11): Alan 80.2%, Dmitri 78.6%, Florence 93.0%, Grace 79.4%,
+Marcello 63.3%, Olga 79.0%, Willem 86.1%, Ximena 82.1%.
 
 **Smoothed** (my own, `JoinStyle::Smooth`): cuts in mid-phone, slides the new
 piece up to ±5 ms to the best waveform match and cross-fades over 5 ms.
@@ -731,13 +808,30 @@ when a speed/pitch change asks for it.
   stress (97.6% held out); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
-- The browser build exists now (`trunk build`, web/index.html); the 44 kHz
-  voices' last phone-end samples follow the engine's per-phone resampler
-  calls (§2c), which needs our joins to match first.
-- `x87::exp` beyond ±619, where the DLLs' runtime finishes on the x87 at
-  64-bit precision (§2d); the decoders never pass such arguments.
-- The CAT gap that remains (3–6%), the original's automatic pauses, speed
-  and pitch controls, Gilded phrases.
+- The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
+  hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk at a
+  time; 0x10028c00 asks for `floor(pending·32/44)`, minus 16 when above 16,
+  and 0x1001c370 (Smith's `resample` with its 4096-sample input buffer,
+  `Xoff`/`Time` kept between calls, readData 0x1001c030, SrcUD 0x1001be70)
+  carries the rest over. Our joins at 44 kHz are the original's (the same
+  code as at 32 kHz), so the whole-file gap of the CodecMsx voices (63–93%
+  identical) is this streaming alone; `oracle/loqref.c LOQ_TRACE_RESAMPLE`
+  (=2 with samples) logs the chunks to port it against. Not done.
+- Two joins of 1 082 traced (Roberto, Bernard) differ in the next unit's
+  tail margin only: the joined buffer is shorter than `b.pre + b.len +
+  b.post` and the engine copies the rest out of its scratch memory
+  (0x100b747c/0x100b74b4, the buffer reused across joins), whose stale
+  contents we fill with zeros. Neither reaches the output on the benchmarks
+  (replays 100% identical). One voiced half of 423 (Bernard) gets other
+  pitch marks than the original's, also without effect there.
+- CAT given the original's FON: 100% on 30 voices; Afroditi 98.1%, Annika
+  99.6%, Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof
+  99.5%, Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% not
+  yet diffed term by term (`LOQ_TRACE_CAT` against `QQ_TRACE_CAT`). The
+  original's automatic pauses (TOP/LES) are a FON matter: given its FON the
+  picker already gets them as pauses. Speed and pitch controls.
+- The app's piece player (`src/app.rs`) and the JNI `analyse` read pieces
+  from `db.audio`; pieces from a Gilded database need `db.bank(unit)`.
 - Four voices have no LTTS7 language module in any installer of the pack:
   Jordi (Catalan), Empar (Valencian), Carmela (Galician), LinLin (Chinese).
   The original refuses them too: with the voice unpacked into a full engine,

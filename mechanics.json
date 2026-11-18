@@ -239,8 +239,8 @@
   {
    "name": "join style (original)",
    "group": "joining",
-   "value": "hard cut",
-   "source": "measured: joins rebuilt without any fade match at 79 and 49 dB"
+   "value": "every half-phone a unit; runs copied; the run's last half joined to the next unit (voiced pitch-synchronous join, else cross-fade); replay of the original's pieces identical sample for sample on every 32 kHz benchmark voice",
+   "source": "LoqTTS7.dll 0x1001faa0, 0x100472f0, 0x1001f8a3 -> 0x10024660; checked with oracle/loqref.c LOQ_TRACE_JOIN=2 / LOQ_TRACE_UNITS"
   },
   {
    "name": "excitation handed to the 8-16 kHz band",
@@ -277,8 +277,8 @@
   {
    "name": "exact join rule",
    "group": "joining",
-   "value": "not known (cuts move by a few to a few dozen samples)",
-   "estimated": true
+   "value": "sig::join, ported from 0x10024660 (cross-fade 0x100244a0, overlap-add 0x10024360, window 0x100241e0 type 2)",
+   "source": "LoqTTS7.dll; 1080 of 1082 traced joins identical given the original's units (MECHANICS §6, §11)"
   },
   {
    "name": "ticks to samples",
@@ -526,6 +526,48 @@
    "group": "joining",
    "value": "4 x unit margin",
    "source": "LoqTTS7.dll 0x1001f580 (algorithms 2/4)"
+  },
+  {
+   "name": "pause units",
+   "group": "joining",
+   "value": "two zero half units of half the pause each; the first joined to the second, the second to nothing",
+   "source": "LoqTTS7.dll join hook 0x1001f8a3 traces (LOQ_TRACE_JOIN): no join after a pause's second half"
+  },
+  {
+   "name": "2 pi in the window",
+   "group": "joining",
+   "value": "0x401921fb54442d11 (6.28318530717958)",
+   "source": "LoqTTS7.dll 0x100a5be0, read by 0x100241e0"
+  },
+  {
+   "name": "window cos",
+   "group": "joining",
+   "value": "runtime SSE2 cos (x*32/pi rounded, 64-entry table, two polynomials)",
+   "source": "LoqTTS7.dll 0x10069510 -> 0x1006b13e, constants 0x100aa770..0x100aa7d8, table 0x100a9f70"
+  },
+  {
+   "name": "cross-fade sample clamp",
+   "group": "joining",
+   "value": "[-32768, 32767] then truncated (0x100244a0); none in the overlap-add (0x10024360)",
+   "source": "LoqTTS7.dll 0x100a5c20, 0x100a5c40, _ftol2 0x10069060"
+  },
+  {
+   "name": "voiced join limits",
+   "group": "joining",
+   "value": "at most 50 periods, at least 2 per side, frames under 1000 samples, gain at least 0.5, start below 2*(a.len+b.len)",
+   "source": "LoqTTS7.dll 0x10024660 (0x32, 0x3e8, 0x100a5be8)"
+  },
+  {
+   "name": "voice library feature format",
+   "group": "selection",
+   "value": "converted by 0x10050780 only when the @ record holds 0x28 (older libraries); newer ones hold engine words (@ = 0x17)",
+   "source": "LoqTTS7.dll 0x1004bd60 (version check 0x10051210), 0x10050680"
+  },
+  {
+   "name": "databases asked",
+   "group": "selection",
+   "value": "every VocalDBName[i], last first; stop once the best is >= 5000000, which takes the whole recording (2*phones-4 halves)",
+   "source": "LoqTTS7.dll 0x10046de0"
   },
   {
    "name": "English dictionary",

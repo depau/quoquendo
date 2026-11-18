@@ -98,19 +98,12 @@ pub fn run(text: &str, fe: &Frontend, voice: &str, db: &VoiceDatabase, stages: &
     Ok(Run { targets, plan })
 }
 
-/// Every half-phone a plan plays, as (sentence, start sample).
-fn halves(plan: &[Phrase], db: &VoiceDatabase) -> Vec<(u32, u32)> {
-    let mut out = Vec::new();
-    for piece in plan.iter().flat_map(|p| &p.pieces) {
-        for ph in db.units[piece.unit as usize].phones.iter().filter(|p| p.timed) {
-            for (a, b) in [(ph.start, ph.mid), (ph.mid, ph.end)] {
-                if a >= piece.from && b <= piece.to && b > a {
-                    out.push((piece.unit, a));
-                }
-            }
-        }
-    }
-    out
+/// Every half-phone a plan plays, as (sentence, half index).
+fn halves(plan: &[Phrase]) -> Vec<(u32, u32)> {
+    plan.iter()
+        .flat_map(|p| &p.pieces)
+        .flat_map(|piece| (piece.first_half..piece.first_half + piece.halves).map(move |h| (piece.unit, h)))
+        .collect()
 }
 
 /// Words of a FON result, each as its phones joined by spaces.
@@ -311,7 +304,7 @@ pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&st
             }
         }
         let ours_plan = synth::select_all(db, &orig_words);
-        let (ho, hq) = (halves(&orig_plan, db), halves(&ours_plan, db));
+        let (ho, hq) = (halves(&orig_plan), halves(&ours_plan));
         let set: std::collections::HashSet<_> = hq.iter().collect();
         let same_h = ho.iter().filter(|h| set.contains(h)).count();
         tot.halves += ho.len();
@@ -371,13 +364,14 @@ pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&st
     let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
     let _ = writeln!(
         rep,
-        "\nTOTAL  FON {:.1}% sounds the same, {:.1}% words | CAT {:.1}% half-sounds the same | SIG inside pieces {:.1} dB, whole file {:.1} dB, {:.1}% samples within ±2 | length ours/original {:.2}",
+        "\nTOTAL  FON {:.1}% sounds the same, {:.1}% words | CAT {:.1}% half-sounds the same | SIG inside pieces {:.1} dB, whole file {:.1} dB, {:.1}% samples within ±2, {:.2}% identical | length ours/original {:.2}",
         100.0 * tot.same_phones as f64 / tot.phones.max(1) as f64,
         100.0 * tot.same_words as f64 / tot.words.max(1) as f64,
         100.0 * tot.same_halves as f64 / tot.halves.max(1) as f64,
         mean(&tot.inside_snr),
         mean(&tot.replay_snr),
         100.0 * mean(&tot.replay_close),
+        100.0 * mean(&tot.replay_exact),
         tot.ours_s / tot.orig_s.max(1e-9)
     );
     Ok((rep, tot))

@@ -123,6 +123,12 @@ pub struct VoiceDatabase {
     pub mean_duration: HashMap<String, f32>,
     /// the original's phone tables for this voice, when dumped (synth::PhoneTables)
     pub tables: Option<crate::synth::PhoneTables>,
+    /// The voice's other `VocalDBName[i]` databases (Gilded phrases and
+    /// paralinguistics), their sentences appended to `units` after the main
+    /// one's: database `d` starts at `units[db_start[d]]` (empty: the main
+    /// one alone), and `extra_audio[d - 1]` holds its recordings.
+    pub db_start: Vec<u32>,
+    pub extra_audio: Vec<Result<crate::codec::AudioBank, String>>,
 }
 
 /// Drop stress (level ≥ 1) and length (level 2) marks from a symbol.
@@ -165,6 +171,45 @@ impl VoiceDatabase {
     /// Longest recorded sentence, in phones.
     pub fn longest_unit(&self) -> usize {
         self.units.iter().map(|u| u.phones.len()).max().unwrap_or(0)
+    }
+
+    /// Which database (0 the main one, then the `VocalDBName[i]` order) a
+    /// sentence of `units` comes from.
+    pub fn database_of(&self, unit: u32) -> usize {
+        self.db_start.iter().rposition(|&s| s <= unit).unwrap_or(0)
+    }
+
+    /// The recordings a sentence of `units` plays from.
+    pub fn bank(&self, unit: u32) -> Option<&crate::codec::AudioBank> {
+        match self.database_of(unit) {
+            0 => self.audio.as_ref(),
+            d => self.extra_audio.get(d - 1).and_then(|a| a.as_ref().ok()),
+        }
+    }
+
+    /// Append another `VocalDBName[i]` database (its index and recordings).
+    /// The picker asks the databases last first (LoqTTS7.dll 0x10046de0), so
+    /// every phone's instances list the last database's first.
+    pub fn add_database(&mut self, other: VoiceDatabase, audio: Result<crate::codec::AudioBank, String>) {
+        if self.db_start.is_empty() {
+            self.db_start.push(0);
+        }
+        let first = self.units.len() as u32;
+        self.db_start.push(first);
+        self.extra_audio.push(audio);
+        let mut singles: [HashMap<String, Vec<At>>; 3] = Default::default();
+        for (level, map) in other.singles.into_iter().enumerate() {
+            for (key, list) in map {
+                singles[level].insert(key, list.into_iter().map(|(u, p)| (u + first, p)).collect());
+            }
+        }
+        for (level, map) in std::mem::take(&mut self.singles).into_iter().enumerate() {
+            for (key, list) in map {
+                singles[level].entry(key).or_default().extend(list);
+            }
+        }
+        self.singles = singles;
+        self.units.extend(other.units);
     }
 
     fn build_index(&mut self) {

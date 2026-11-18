@@ -59,9 +59,21 @@ pub struct Piece {
     pub unit: u32,
     pub from: u32,
     pub to: u32,
+    /// its half-phones in the recorded sentence: the first (2·phone + side,
+    /// side 0 left, 1 right) and how many; some halves last no time at all,
+    /// so `from`..`to` alone doesn't say which
+    pub first_half: u32,
+    pub halves: u32,
     pub pitch: u16,
     /// joined to the previous piece at a phone edge, not mid-phone
     pub hard: bool,
+}
+
+impl Piece {
+    /// Its half-phones: (phone index in the sentence, side).
+    pub fn half_phones(&self) -> impl Iterator<Item = (usize, u8)> {
+        (self.first_half..self.first_half + self.halves).map(|h| ((h / 2) as usize, (h % 2) as u8))
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -297,10 +309,16 @@ pub struct PhoneTables {
 impl PhoneTables {
     /// Build them as the original does, from the voice library's bytes
     /// (`LTTS7<Voice>.dll`, `phoneset`): nothing but the voice is needed.
+    /// Older libraries (Roberto, Allison, Katrin…) hold their own feature
+    /// words, `@` = 0x28, which the engine converts (0x10050780); newer ones
+    /// (Giulia, Steven, Carlos…) hold the engine's already, `@` = 0x17, and
+    /// are taken as they are (CatLoadVoiceReadOnlyData 0x1004bd60 converts
+    /// only below a version; 0x10050680 tests the `@` record for 0x28).
     pub fn from_library(lib: &[u8], db: &VoiceDatabase) -> Option<PhoneTables> {
         use crate::phoneset::*;
         let phones = phone_table(lib)?;
-        let features: Vec<u32> = phones.iter().map(|p| engine_features(p.base)).collect();
+        let convert = phones.get(3).is_some_and(|p| p.base == 0x28);
+        let features: Vec<u32> = phones.iter().map(|p| if convert { engine_features(p.base) } else { p.base }).collect();
         let class = features.iter().map(|&f| weight_class(f)).collect();
         let sim = features.iter().flat_map(|&a| features.iter().map(move |&c| similarity(a, c))).collect();
         let index = phones.iter().enumerate().map(|(i, p)| (p.name.clone(), i as u8)).collect();
@@ -815,10 +833,11 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
     if n == 0 {
         return phrase;
     }
-    // a whole recorded sentence saying exactly this phrase, with the same tune,
-    // beats everything (0x10045ad0 scores it 10 000 000)
+    // without the voice's tables: a whole recorded sentence saying exactly
+    // this phrase, with the same tune, beats everything (with them the
+    // context score finds it, 0x10045ad0)
     let wanted: Vec<&str> = t.iter().map(|x| x.sym.as_str()).collect();
-    for (ui, u) in db.units.iter().enumerate() {
+    for (ui, u) in db.units.iter().enumerate().filter(|_| db.tables.is_none()) {
         let inner: Vec<&str> = u.phones.iter().filter(|p| p.timed).map(|p| p.sym.as_str()).collect();
         if inner == wanted && u.mood == mood && u.phones.last().map(|p| p.sym.as_str()) == Some(edge) {
             let (a, b) = (&u.phones[1], &u.phones[u.phones.len() - 2]);
@@ -827,6 +846,8 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 unit: ui as u32,
                 from: a.start,
                 to: b.end,
+                first_half: 2,
+                halves: 2 * (u.phones.len() as u32 - 2),
                 pitch: a.pitch_l,
                 hard: false,
             });
@@ -856,7 +877,18 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
         let level = level_of(&t[i].sym).unwrap();
         let prev = path.last().copied();
         let mut best: Option<(i64, Half)> = None;
+        // every database of the voice, the last first (their instances come
+        // in that order); once one holds a score of 5 000 000 or more (a
+        // whole-phrase match) the rest aren't asked (0x10046de0)
+        let mut asking = None;
         for &(unit, phone) in &db.singles[level][relax(&t[i].sym, level)] {
+            let in_db = db.database_of(unit);
+            if asking != Some(in_db) {
+                if best.is_some_and(|b| b.0 >= 5_000_000) {
+                    break;
+                }
+                asking = Some(in_db);
+            }
             let h = Half { unit, phone, side };
             let u = &db.units[unit as usize];
             let mut score = match (&db.tables, &wanted_t) {
@@ -906,9 +938,21 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 best = Some((score, h));
             }
         }
-        let (_, h) = best.unwrap();
+        let (best_score, h) = best.unwrap();
         path.push(h);
         k += 1;
+        // a whole-phrase match takes all of its recording (0x10046de0)
+        let phones = db.units[h.unit as usize].phones.len();
+        if best_score >= 5_000_000 && phones > 2 {
+            let mut last = h;
+            while k < 2 * n {
+                let Some(nx) = last.next(db) else { break };
+                path.push(nx);
+                last = nx;
+                k += 1;
+            }
+            continue;
+        }
         // at a right half, carry on into the next phone's left half when the
         // recording has the wanted phone there (0x10046b20, local count 2)
         if side == 1 && k < 2 * n {
@@ -963,6 +1007,7 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
         if k > 0 && path[k - 1].next(db) == Some(*h) {
             let last = phrase.pieces.last_mut().unwrap();
             last.to = to;
+            last.halves += 1;
             if h.side == 0 {
                 last.covers.push(sym.clone());
             }
@@ -973,6 +1018,8 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 unit: h.unit,
                 from,
                 to,
+                first_half: 2 * h.phone as u32 + h.side as u32,
+                halves: 1,
                 pitch,
                 hard: h.side == 0 && k > 0,
             });
@@ -1001,7 +1048,7 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
     let gain = settings.volume / 32768.0;
     let resampled = rate != crate::codec::OUTPUT_RATE;
     if settings.join == JoinStyle::Original {
-        let mut out = join_like_original(plan, db, bank);
+        let mut out = join_like_original(plan, db, rate);
         if resampled {
             out = crate::codec::resample(&out, rate, crate::codec::OUTPUT_RATE);
         }
@@ -1020,6 +1067,7 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
             let len = piece.to.saturating_sub(piece.from) as usize;
             let head = from.min(FADE + SLIDE);
             let pad = FADE + SLIDE;
+            let bank = db.bank(piece.unit).unwrap_or(bank);
             let buf: Vec<f32> = bank.read(from - head, head + len + pad).into_iter().map(|s| s as f32 * gain).collect();
             let nominal_end = head + len;
             if tail.is_empty() {
@@ -1082,157 +1130,87 @@ pub fn unit_margin(rate: u32) -> usize {
     (rate as usize / 10 * 400) / 20000
 }
 
-/// The whole utterance joined the way the original does with plain-copy
-/// units (algorithm 1, CONCATENAZIONE). Every unit is decoded with
-/// `unit_margin` samples on each side; pauses are zero-filled units. At each
-/// join between two voiced half-phones the pitch-synchronous join
-/// (`sig::voiced_join`); at every other join (0x10024660 → 0x100244a0) the
-/// previous unit's last samples and tail margin are cross-faded with the next
-/// unit's lead-in margin and first samples (Hann window, falling half on the
-/// previous unit), the sum clamped and truncated to 16 bits and written into
-/// both; then the units' own samples are played one after another. Into a
-/// pause this rings the speech out over the pause's first 63 samples; out of
-/// one it fades the speech in over about 8 ms.
-fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::AudioBank) -> Vec<i16> {
-    use crate::sig::{pitch_marks, voiced_join, JoinHalf, Voicing};
-    let m = unit_margin(bank.rate);
-    let rate = bank.rate;
-    // every unit in order: the phrases' pieces, each followed by its pause
-    // (a zero-filled unit: no lead-in margin, a 4× tail margin, 0x1001f580)
-    struct Unit {
-        buf: Vec<i16>,
-        pre: usize,
-        len: usize,
-        /// first and last half-phone: (start, end) in the unit, F0, voicing
-        first: Option<(usize, usize, u32, Voicing)>,
-        last: Option<(usize, usize, u32, Voicing)>,
-        /// the first half's marks as a previous join left them
-        first_marks: Option<Vec<usize>>,
-    }
-    let mut units: Vec<Unit> = Vec::new();
+/// The whole utterance joined the way the original's SIG does with
+/// plain-copy units (LoqTTS7.dll 0x1001faa0). Every half-phone is a unit of
+/// its own, decoded with `unit_margin` samples on each side (none before a
+/// half at the recording's very start, 0x1001f580) in the order the engine
+/// asks for them, and given its pitch marks (0x1001e3a0); pauses are
+/// zero-filled units with no lead-in and a 4× tail. Halves inside one picked
+/// run are copied (algorithm 0); the last half of a run is joined to the next
+/// unit (algorithm 1, `sig::join`): pitch-synchronously between two voiced
+/// halves, else cross-faded. Each unit then plays its own samples.
+fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> Vec<i16> {
+    use crate::sig::{join, pitch_marks, JoinUnit, Voicing};
+    let m = unit_margin(rate);
+    let mut out = Vec::new();
+    // the unit before, waiting for its join; whether it ends a run
+    let mut prev: Option<(JoinUnit, bool)> = None;
+    let mut push = |mut u: JoinUnit, ends_run: bool, out: &mut Vec<i16>| {
+        if let Some((mut p, p_ends)) = prev.take() {
+            if p_ends {
+                join(&mut p, &mut u);
+            }
+            out.extend_from_slice(&p.buf[p.pre..p.pre + p.len]);
+        }
+        prev = Some((u, ends_run));
+    };
     for phrase in plan {
+        // the phrase's half-phones in order: (sentence, half index, start,
+        // length, F0, voicing); halves of no length are units too
+        let mut halves = Vec::new();
         for p in &phrase.pieces {
-            let from = p.from as usize;
-            let len = p.to.saturating_sub(p.from) as usize;
-            let pre = m.min(from);
             let u = &db.units[p.unit as usize];
-            let mut halves = Vec::new();
-            for ph in u.phones.iter().filter(|ph| ph.timed) {
+            for (i, side) in p.half_phones() {
+                let ph = &u.phones[i];
                 let voicing = db
                     .tables
                     .as_ref()
                     .map(|t| Voicing::of_features(t.features[t.id(&ph.sym) as usize]))
                     .unwrap_or(Voicing::Other);
-                for (a, b, f0) in [(ph.start, ph.mid, ph.pitch_l), (ph.mid, ph.end, ph.pitch_r)] {
-                    if a >= p.from && b <= p.to && b > a {
-                        halves.push(((a - p.from) as usize, (b - p.from) as usize, f0 as u32, voicing));
-                    }
-                }
+                let (a, b, f0) = if side == 0 { (ph.start, ph.mid, ph.pitch_l) } else { (ph.mid, ph.end, ph.pitch_r) };
+                halves.push((p.unit, 2 * i + side as usize, a as usize, b.saturating_sub(a) as usize, f0 as u32, voicing));
             }
-            units.push(Unit {
-                buf: bank.read(from - pre, pre + len + m),
+        }
+        for (k, &(unit, half, start, len, f0, voicing)) in halves.iter().enumerate() {
+            // a run goes on while the next half follows this one in the
+            // recording (0x100472f0)
+            let ends_run = halves.get(k + 1).is_none_or(|next| (next.0, next.1) != (unit, half + 1));
+            let pre = if start == 0 { 0 } else { m.min(start) };
+            let buf = db.bank(unit).map(|b| b.read(start - pre, pre + len + m)).unwrap_or_else(|| vec![0; pre + len + m]);
+            let marks = {
+                let s = |i: isize| *buf.get((i + pre as isize) as usize).unwrap_or(&0) as i32;
+                pitch_marks(&s, len, rate, f0, voicing)
+            };
+            let unit = JoinUnit {
+                buf,
                 pre,
                 len,
-                first: halves.first().copied(),
-                last: halves.last().copied(),
-                first_marks: None,
-            });
+                post: m,
+                marks,
+                voiced: voicing == Voicing::Voiced,
+            };
+            push(unit, ends_run, &mut out);
         }
+        // a pause is two half-phone units of zeros (no lead-in, a 4× tail);
+        // the first is joined to the second, the second to nothing: the
+        // speech after a pause starts as recorded
         let len = phrase.pause_ms as usize * rate as usize / 1000;
-        units.push(Unit {
-            buf: vec![0; len + 4 * m],
-            pre: 0,
-            len,
-            first: None,
-            last: None,
-            first_marks: None,
-        });
-    }
-    let voiced_joins = std::env::var_os("QQ_NO_VOICED_JOIN").is_none();
-    for k in 1..units.len() {
-        let (left, right) = units.split_at_mut(k);
-        let (a, b) = (&mut left[k - 1], &mut right[0]);
-        // two voiced half-phones: the pitch-synchronous join (0x10024660)
-        if let (Some(ha), Some(hb)) = (a.last, b.first) {
-            if ha.3 == Voicing::Voiced && hb.3 == Voicing::Voiced {
-                if !voiced_joins {
-                    continue;
-                }
-                let make = |buf: &[i16], from: usize, len: usize, f0: u32| {
-                    let v: Vec<i16> = buf[from..(from + len + 2 * m).min(buf.len())].to_vec();
-                    let s = |i: isize| *v.get((i + m as isize) as usize).unwrap_or(&0) as i32;
-                    let marks = pitch_marks(&s, len, rate, f0, Voicing::Voiced);
-                    JoinHalf {
-                        buf: v,
-                        pre: m,
-                        len,
-                        post: m,
-                        marks,
-                    }
+        if len > 0 {
+            for (half, ends_run) in [(len / 2, true), (len - len / 2, false)] {
+                let unit = JoinUnit {
+                    buf: vec![0; half + 4 * m],
+                    pre: 0,
+                    len: half,
+                    post: 4 * m,
+                    marks: vec![0, half],
+                    voiced: false,
                 };
-                let mut ja = make(&a.buf, a.pre + ha.0 - m, ha.1 - ha.0, ha.2);
-                // a one-half unit keeps the marks its previous join gave it
-                if ha.0 == 0 {
-                    if let Some(mk) = a.first_marks.clone() {
-                        ja.marks = mk;
-                    }
-                }
-                let jb = make(&b.buf, b.pre - m, hb.1 - hb.0, hb.2);
-                if std::env::var_os("QQ_DEBUG_JOIN").is_some() {
-                    let per = |h: &JoinHalf| h.marks.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
-                    eprintln!(
-                        "join A{:?} B{:?} -> {:?}",
-                        per(&ja),
-                        per(&jb),
-                        voiced_join(&ja, &jb).map(|(x, y, _)| (x.len(), y.len()))
-                    );
-                }
-                if let Some((na, nb, nb_marks)) = voiced_join(&ja, &jb) {
-                    b.first_marks = Some(nb_marks);
-                    let mut abuf = a.buf[..a.pre + ha.0].to_vec();
-                    abuf.extend_from_slice(&na);
-                    abuf.extend(std::iter::repeat_n(0, m));
-                    a.len = ha.0 + na.len();
-                    a.buf = abuf;
-                    if let Some(l) = a.last.as_mut() {
-                        l.1 = a.len;
-                    }
-                    let mut bbuf = vec![0i16; m];
-                    bbuf.extend_from_slice(&nb);
-                    bbuf.extend_from_slice(&b.buf[b.pre + hb.1..]);
-                    let shift = nb.len() as isize - (hb.1 - hb.0) as isize;
-                    b.len = (b.len as isize + shift) as usize;
-                    b.pre = m;
-                    b.buf = bbuf;
-                    if let Some(f) = b.first.as_mut() {
-                        f.1 = nb.len();
-                    }
-                    if let Some(l) = b.last.as_mut() {
-                        l.0 = (l.0 as isize + shift).max(0) as usize;
-                        l.1 = (l.1 as isize + shift).max(0) as usize;
-                    }
-                }
-                continue;
+                push(unit, ends_run, &mut out);
             }
         }
-        // any other join (0x100244a0): a cross-fade from the previous unit's
-        // last samples through its tail margin into the next one's lead-in
-        let start = (a.pre + a.len + 1).saturating_sub(b.pre);
-        let n = a.buf.len().saturating_sub(start);
-        if n == 0 || 2 * n > 1000 || n > b.buf.len() {
-            continue;
-        }
-        let w = crate::sig::hann_window(2 * n);
-        for i in 0..n {
-            let v = a.buf[start + i] as f64 * w[n + i] + b.buf[i] as f64 * w[i];
-            let v = v.clamp(-32768.0, 32767.0) as i16;
-            a.buf[start + i] = v;
-            b.buf[i] = v;
-        }
     }
-    let mut out = Vec::new();
-    for u in &units {
-        out.extend_from_slice(&u.buf[u.pre..u.pre + u.len]);
+    if let Some((p, _)) = prev {
+        out.extend_from_slice(&p.buf[p.pre..p.pre + p.len]);
     }
     out
 }

@@ -77,10 +77,12 @@ __asm__(".globl _hook_pros\n_hook_pros:\n"
         " movl %edx, _pros_edx\n popl _pros_ret\n call *_real_pros\n"
         " pushl _pros_ret\n pushl %eax\n pushl %eax\n call _log_pros\n"
         " addl $4, %esp\n popl %eax\n ret\n");
-/* LOQ_TRACE_JOIN=1: log every voiced join (0x1001f8a3 -> 0x10024660, the
- * current unit in EDX, the previous one on the stack, caller cleans) to
- * <prefix>.join: each unit's start/pre/len/post/voiced, pitch marks, and the
- * lengths after the join, plus a checksum of the samples it outputs. */
+/* LOQ_TRACE_JOIN=1: log every join of two runs (0x1001f8a3 -> 0x10024660,
+ * the current unit in EDX, the previous one on the stack, caller cleans) to
+ * <prefix>.join: each unit's start/pre/len/post/voiced, pitch marks (the
+ * array at +0x1c, count at +0x41c), and the same after the join, plus a
+ * checksum of its samples. LOQ_TRACE_JOIN=2 adds every sample (pre + len +
+ * post) on an `S` line after each unit. */
 FILE *joinlog;
 void *real_join;
 unsigned join_a, join_b, join_ret;
@@ -92,22 +94,35 @@ static void log_unit(const char *tag, unsigned char *u) {
     for (unsigned i = 0; i < pre + len + post && buf; i++) sum += (long long)buf[i] * (long long)(i + 1);
     fprintf(joinlog, "%s start=%u pre=%u len=%u post=%u voiced=%u base=%d sum=%lld marks", tag, *(unsigned *)(u + 0x18), pre, len, post,
             u[0x640], *(int *)(u + 0x1c), sum);
-    for (unsigned i = 0; i < nm && i < 256; i++) fprintf(joinlog, " %d", *(int *)(u + 0x20 + 4 * i));
+    for (unsigned i = 0; i < nm && i < 256; i++) fprintf(joinlog, " %d", *(int *)(u + 0x1c + 4 * i));
     fprintf(joinlog, "\n");
+    if (buf && getenv("LOQ_TRACE_JOIN")[0] == '2') {
+        fprintf(joinlog, "S");
+        for (unsigned i = 0; i < pre + len + post; i++) fprintf(joinlog, " %d", buf[i]);
+        fprintf(joinlog, "\n");
+    }
 }
 void __cdecl join_pre(void) { log_unit("A", (unsigned char *)join_a); log_unit("B", (unsigned char *)join_b); }
 void __cdecl join_post(void) { log_unit("A'", (unsigned char *)join_a); log_unit("B'", (unsigned char *)join_b); fflush(joinlog); }
 /* and every unit's pitch marks (0x1001fbd1 -> 0x1001e3a0, cdecl engine,
- * unit info): its ticks, F0 (+0x140), voicing (+0x150) and the marks */
+ * unit info): its ticks, F0 (+0x140), voicing (+0x150), algorithm (+0xc: 0
+ * inside a run, 1 at its end) and the marks. LOQ_TRACE_UNITS=1 logs the same
+ * M lines alone to <prefix>.units: every half-phone SIG plays, in order. */
+FILE *unitlog;
 typedef void (__cdecl *fn_marks)(unsigned char *, unsigned char *);
 static fn_marks real_marks;
 static void __cdecl hook_marks(unsigned char *e, unsigned char *info) {
     real_marks(e, info);
     unsigned n = *(unsigned *)(e + 0x1528);
-    fprintf(joinlog, "M t0=%u t1=%u f0=%u voc=%c algo=%u margin=%u marks", *(unsigned *)(e + 0x155c), *(unsigned *)(e + 0x1564),
-            *(unsigned *)(info + 0x140), info[0x150] ? info[0x150] : '-', *(unsigned *)(info + 0xc), *(unsigned *)(e + 0x25c));
-    for (unsigned i = 0; i < n && i < 256; i++) fprintf(joinlog, " %u", *(unsigned *)(e + 0x1128 + 4 * i));
-    fprintf(joinlog, "\n");
+    FILE *logs[] = {joinlog, unitlog};
+    for (int k = 0; k < 2; k++) {
+        FILE *f = logs[k];
+        if (!f) continue;
+        fprintf(f, "M t0=%u t1=%u f0=%u voc=%c algo=%u margin=%u marks", *(unsigned *)(e + 0x155c), *(unsigned *)(e + 0x1564),
+                *(unsigned *)(info + 0x140), info[0x150] ? info[0x150] : '-', *(unsigned *)(info + 0xc), *(unsigned *)(e + 0x25c));
+        for (unsigned i = 0; i < n && i < 256; i++) fprintf(f, " %u", *(unsigned *)(e + 0x1128 + 4 * i));
+        fprintf(f, "\n");
+    }
 }
 void hook_join(void);
 __asm__(".globl _hook_join\n_hook_join:\n"
@@ -116,6 +131,24 @@ __asm__(".globl _hook_join\n_hook_join:\n"
         " popl _join_ret\n call *_real_join\n pushl _join_ret\n"
         " pushl %eax\n call _join_post\n popl %eax\n ret\n");
 
+/* LOQ_TRACE_RESAMPLE=1: log every chunk SIG hands the output resampler
+ * (VoiceResamplerRun 0x10028ee0, called once at 0x10015c77, cdecl: state,
+ * rates, chunk, output) to <prefix>.res: its sample count (+4), and with
+ * LOQ_TRACE_RESAMPLE=2 its samples (handle at +0x248):
+ *   R <count> [samples...] */
+FILE *reslog;
+typedef int (__cdecl *fn_res)(int *, unsigned *, unsigned char *, void *);
+static fn_res real_res;
+static int __cdecl hook_res(int *state, unsigned *rates, unsigned char *chunk, void *out) {
+    unsigned n = chunk ? *(unsigned *)(chunk + 4) : 0;
+    fprintf(reslog, "R %u", n);
+    if (chunk && n && getenv("LOQ_TRACE_RESAMPLE")[0] == '2') {
+        short *s = **(short ***)(chunk + 0x248);
+        for (unsigned i = 0; i < n && s; i++) fprintf(reslog, " %d", s[i]);
+    }
+    fprintf(reslog, "\n");
+    return real_res(state, rates, chunk, out);
+}
 static void *redirect(HMODULE dll, unsigned site, void *to) {
     unsigned char *at = (unsigned char *)dll + (site - 0x10000000);
     DWORD old;
@@ -287,7 +320,16 @@ int main(int argc, char **argv) {
         snprintf(path, sizeof path, "%s.join", argv[4]);
         joinlog = fopen(path, "wb");
         real_join = redirect(dll, 0x1001f8a3, (void *)hook_join);
-        real_marks = (fn_marks)redirect(dll, 0x1001fbd1, (void *)hook_marks);
+    }
+    if (getenv("LOQ_TRACE_UNITS")) {
+        snprintf(path, sizeof path, "%s.units", argv[4]);
+        unitlog = fopen(path, "wb");
+    }
+    if (joinlog || unitlog) real_marks = (fn_marks)redirect(dll, 0x1001fbd1, (void *)hook_marks);
+    if (getenv("LOQ_TRACE_RESAMPLE")) {
+        snprintf(path, sizeof path, "%s.res", argv[4]);
+        reslog = fopen(path, "wb");
+        real_res = (fn_res)redirect(dll, 0x10015c77, (void *)hook_res);
     }
     if (getenv("LOQ_TRACE_DECODE")) {
         snprintf(path, sizeof path, "%s.dec", argv[4]);
@@ -353,6 +395,10 @@ int main(int argc, char **argv) {
         CHECK(ttsSetAudio(reader, "LTTS7AudioFile", path, 32000, 0, 1, NULL));
         unsigned prompt = 0;
         if (declog) { fprintf(declog, "U %d\n", i); fflush(declog); }
+        if (joinlog) { fprintf(joinlog, "U %d\n", i); fflush(joinlog); }
+        if (unitlog) { fprintf(unitlog, "U %d\n", i); fflush(unitlog); }
+        if (reslog) { fprintf(reslog, "U %d\n", i); fflush(reslog); }
+        if (catlog) { fprintf(catlog, "U %d\n", i); fflush(catlog); }
         CHECK(ttsRead(reader, text, 0, 0, &prompt));
         if (declog) fflush(declog);
         fclose(ev);

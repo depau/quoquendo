@@ -20,8 +20,12 @@ pub struct Reference {
     pub transcription: String,
     /// every phone it said, with its duration in ms
     pub phones: Vec<(String, u32)>,
-    /// every piece it chose: (recorded sentence, number of half-phones)
-    pub pieces: Vec<(u32, u32)>,
+    /// every piece it chose: (database, recorded sentence, number of
+    /// half-phones), from its `<db>,<sentence>` id
+    pub pieces: Vec<(u32, u32, u32)>,
+    /// every half-phone SIG played, in order (`LOQ_TRACE_UNITS`): its start
+    /// and end in `.sde` ticks and whether it ends a run (algorithm 1)
+    pub units: Vec<(u64, u64, bool)>,
     /// SIG: its audio
     pub audio: Vec<i16>,
     /// every request to its decoders (`LOQ_TRACE_DECODE`): decoder, sample
@@ -64,42 +68,56 @@ pub fn run_many(voice: &str, texts: &[String]) -> Result<Vec<Reference>, String>
     let dir = oracle_dir().ok_or("oracle/run.sh not found (run from the quoquendo folder)")?;
     let cache = dir.join("cache");
     std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
-    // results come with their decoder trace (`.dec`); older cached ones
-    // without it are run again
-    let todo: Vec<&String> = texts.iter().filter(|t| !cache.join(format!("{}.dec", key(voice, t))).is_file()).collect();
+    // results come with their decoder and unit traces (`.dec`, `.units`);
+    // older cached ones without them are run again
+    let todo: Vec<&String> = texts.iter().filter(|t| !cache.join(format!("{}.units", key(voice, t))).is_file()).collect();
     if !todo.is_empty() {
-        let batch = cache.join("batch.txt");
+        // one batch name per process: two runs at once (two voices, or two
+        // checkouts' tools) must not read each other's files
+        let name = format!("batch-{}", std::process::id());
+        let batch = cache.join(format!("{name}.txt"));
         let lines: Vec<String> = todo.iter().map(|t| t.replace(['\n', '\r'], " ")).collect();
         std::fs::write(&batch, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(cache.join("batch.dec"));
+        let _ = std::fs::remove_file(cache.join(format!("{name}.dec")));
         let out = std::process::Command::new(dir.join("run.sh"))
             .arg(voice)
             .arg(&batch)
-            .arg(cache.join("batch"))
+            .arg(cache.join(&name))
             .env("LOQ_LINES", "1")
             .env("LOQ_TRACE_DECODE", "1")
+            .env("LOQ_TRACE_UNITS", "1")
             .output()
             .map_err(|e| format!("running the original engine: {e}"))?;
         if !String::from_utf8_lossy(&out.stdout).contains("ok") {
             return Err(format!("the original engine failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
         }
-        // the trace is one file for the batch, `U <n>` before each utterance
-        let trace = std::fs::read_to_string(cache.join("batch.dec")).unwrap_or_default();
-        let mut per_text: Vec<String> = vec![String::new(); todo.len()];
-        let mut cur: Option<usize> = None;
-        for line in trace.lines() {
-            if let Some(n) = line.strip_prefix("U ") {
-                cur = n.trim().parse().ok().filter(|&n: &usize| n < todo.len());
-            } else if let (Some(i), true) = (cur, line.starts_with("D ")) {
-                per_text[i].push_str(line);
-                per_text[i].push('\n');
+        // the traces are one file each for the batch, `U <n>` before each
+        // utterance
+        let split = |ext: &str, prefix: &str| -> Vec<String> {
+            let path = cache.join(format!("{name}.{ext}"));
+            let trace = std::fs::read_to_string(&path).unwrap_or_default();
+            let _ = std::fs::remove_file(&path);
+            let mut per_text: Vec<String> = vec![String::new(); todo.len()];
+            let mut cur: Option<usize> = None;
+            for line in trace.lines() {
+                if let Some(n) = line.strip_prefix("U ") {
+                    cur = n.trim().parse().ok().filter(|&n: &usize| n < todo.len());
+                } else if let (Some(i), true) = (cur, line.starts_with(prefix)) {
+                    per_text[i].push_str(line);
+                    per_text[i].push('\n');
+                }
             }
-        }
+            per_text
+        };
+        let decodes = split("dec", "D ");
+        let units = split("units", "M ");
+        let _ = std::fs::remove_file(&batch);
         for (i, t) in todo.iter().enumerate() {
             for ext in ["fon", "ev", "wav"] {
-                let _ = std::fs::rename(cache.join(format!("batch-{i}.{ext}")), cache.join(format!("{}.{ext}", key(voice, t))));
+                let _ = std::fs::rename(cache.join(format!("{name}-{i}.{ext}")), cache.join(format!("{}.{ext}", key(voice, t))));
             }
-            let _ = std::fs::write(cache.join(format!("{}.dec", key(voice, t))), &per_text[i]);
+            let _ = std::fs::write(cache.join(format!("{}.dec", key(voice, t))), &decodes[i]);
+            let _ = std::fs::write(cache.join(format!("{}.units", key(voice, t))), &units[i]);
             let _ = std::fs::write(cache.join(format!("{}.txt", key(voice, t))), t.as_bytes());
         }
     }
@@ -172,12 +190,12 @@ fn load(prefix: &Path, text: &str) -> Result<Reference, String> {
             let hex = field("hex=").unwrap_or_default();
             let bytes: Vec<u8> = (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok()).collect();
             if bytes.len() >= 0x1c {
-                // "0,<sentence>" at 4..12, half-phone count at 0x18
+                // "<database>,<sentence>" at 4..12, half-phone count at 0x18
                 let id: String = bytes[4..12].iter().take_while(|b| **b != 0).map(|b| *b as char).collect();
-                let unit = id.split(',').nth(1).and_then(|s| s.parse().ok());
+                let mut parts = id.split(',').map(|s| s.parse().ok());
                 let halves = u32::from_le_bytes([bytes[0x18], bytes[0x19], bytes[0x1a], bytes[0x1b]]);
-                if let Some(unit) = unit {
-                    r.pieces.push((unit, halves));
+                if let (Some(Some(db)), Some(Some(unit))) = (parts.next(), parts.next()) {
+                    r.pieces.push((db, unit, halves));
                 }
             }
         }
@@ -190,6 +208,13 @@ fn load(prefix: &Path, text: &str) -> Result<Reference, String> {
         let f: Vec<&str> = line.split(' ').collect();
         if let (Some(dec), Some(pos)) = (f.get(2), f.get(3).and_then(|p| p.parse().ok())) {
             r.decodes.push((dec.to_string(), pos, f.iter().skip(8).filter_map(|x| x.parse().ok()).collect()));
+        }
+    }
+    // `M t0=<ticks> t1=<ticks> f0=… voc=… algo=<0|1> …`
+    for line in std::fs::read_to_string(prefix.with_extension("units")).unwrap_or_default().lines() {
+        let kv: std::collections::HashMap<&str, &str> = line.split(' ').filter_map(|f| f.split_once('=')).collect();
+        if let (Some(t0), Some(t1), Some(algo)) = (kv.get("t0"), kv.get("t1"), kv.get("algo")) {
+            r.units.push((t0.parse().unwrap_or(0), t1.parse().unwrap_or(0), *algo == "1"));
         }
     }
     Ok(r)
@@ -276,8 +301,9 @@ impl Reference {
         out
     }
 
-    /// The engine's CAT stage as phrases of pieces, each found in the voice's
-    /// index by matching its half-phones against the phones said.
+    /// The engine's CAT stage as phrases of pieces. Each piece's half-phones
+    /// are found in the voice's index by their `.sde` ticks when the units
+    /// SIG played were traced, else by matching their sounds.
     pub fn phrases(&self, db: &VoiceDatabase) -> Result<Vec<Phrase>, String> {
         // the half-phones said, in order, and where each phrase ends
         let mut halves: Vec<&str> = Vec::new();
@@ -290,10 +316,11 @@ impl Reference {
                 halves.push(sym);
             }
         }
+        let traced = self.units.len() == self.pieces.iter().map(|p| p.2 as usize).sum::<usize>();
         let mut out: Vec<Phrase> = vec![Phrase::default()];
         let mut h = 0usize;
         let mut b = 0usize;
-        for &(unit, n) in &self.pieces {
+        for &(dbi, unit, n) in &self.pieces {
             while b < breaks.len() && breaks[b].0 <= h {
                 let cur = out.last_mut().unwrap();
                 cur.pause_ms += breaks[b].1;
@@ -302,10 +329,40 @@ impl Reference {
                 }
                 b += 1;
             }
+            // `<db>,<sentence>`: the voice's databases follow each other in `units`
+            let unit = match (dbi, db.db_start.get(dbi as usize)) {
+                (0, _) => unit,
+                (_, Some(&first)) => first + unit,
+                _ => return Err(format!("piece {dbi},{unit} from a database this voice didn't load")),
+            };
             let n = n as usize;
             let want = &halves[h.min(halves.len())..(h + n).min(halves.len())];
-            let u = db.units.get(unit as usize).ok_or(format!("sentence {unit} is not in this voice"))?;
-            let segs = segments(u, want).ok_or(format!("piece from sentence {unit} not found in it"))?;
+            let u = db.units.get(unit as usize).ok_or(format!("sentence {dbi},{unit} is not in this voice"))?;
+            let segs = if traced {
+                // each half by its ticks (a half of no length shares its
+                // start with the next); contiguous halves make one stretch
+                let mut segs: Vec<(usize, usize)> = Vec::new();
+                for &(t0, t1, _) in &self.units[h..h + n] {
+                    let pos = u
+                        .phones
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, p)| p.timed)
+                        .find_map(|(i, p)| {
+                            (p.tick_l == t0 && p.tick_l + p.len_l == t1)
+                                .then_some(2 * i)
+                                .or((p.tick_r == t0 && p.tick_r + p.len_r == t1).then_some(2 * i + 1))
+                        })
+                        .ok_or(format!("half at ticks {t0}–{t1} not in sentence {unit}"))?;
+                    match segs.last_mut() {
+                        Some((p0, len)) if *p0 + *len == pos => *len += 1,
+                        _ => segs.push((pos, 1)),
+                    }
+                }
+                segs
+            } else {
+                segments(u, want).ok_or(format!("piece from sentence {unit} not found in it"))?
+            };
             let phrase = out.last_mut().unwrap();
             let mut k = 0;
             for (pos, len) in segs {
@@ -319,6 +376,8 @@ impl Reference {
                     unit,
                     from: if pos % 2 == 0 { first.start } else { first.mid },
                     to: if last_pos % 2 == 0 { last.mid } else { last.end },
+                    first_half: pos as u32,
+                    halves: len as u32,
                     pitch: if pos % 2 == 0 { first.pitch_l } else { first.pitch_r },
                     hard: false,
                 });

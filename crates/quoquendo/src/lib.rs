@@ -138,6 +138,9 @@ pub struct VoiceFiles {
     pub gpr: Option<Vec<u8>>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
+    /// the voice's other `VocalDBName[i]` databases, in its `.vcf` order:
+    /// (name, `.sde`, recordings), the Gilded phrases and paralinguistics
+    pub extra: Vec<(String, Vec<u8>, Vec<u8>)>,
 }
 
 fn ini(bytes: &[u8]) -> HashMap<String, String> {
@@ -295,6 +298,22 @@ impl VoiceFiles {
             }
             _ => (None, None),
         };
+        // every other VocalDBName[i]: <name>.sde and the biggest <name>.*.bin
+        let mut extra = Vec::new();
+        for db in info.descriptor.vocal_dbs.iter().skip(1) {
+            let prefix = format!("{}.", db.to_ascii_lowercase());
+            let bin = in_dir
+                .iter()
+                .filter(|n| {
+                    let l = n.to_ascii_lowercase();
+                    l.starts_with(&prefix) && l.ends_with(".bin")
+                })
+                .filter_map(|n| read(&format!("{dir}/{n}")))
+                .max_by_key(|d| d.len());
+            if let (Some(sde), Some(bin)) = (pick(&format!("{db}.sde")), bin) {
+                extra.push((db.clone(), sde, bin));
+            }
+        }
         Ok(VoiceFiles {
             vcf: read(&info.vcf).unwrap_or_default(),
             vde,
@@ -305,6 +324,7 @@ impl VoiceFiles {
             dbl,
             gpr,
             language_missing: info.language_missing,
+            extra,
         })
     }
 
@@ -338,6 +358,10 @@ impl Voice {
         match codec::AudioBank::parse(files.bin) {
             Ok(bank) => db.audio = Some(bank),
             Err(e) => db.audio_error = Some(e),
+        }
+        for (_, sde, bin) in files.extra {
+            let extra = loquendo::parse_sde(&loquendo::latin1(&sde), descriptor.audio_rate);
+            db.add_database(extra, codec::AudioBank::parse(bin));
         }
         db.tables = files.library.as_deref().and_then(|l| synth::PhoneTables::from_library(l, &db));
         let lang = descriptor.language();
