@@ -16,6 +16,7 @@
 //! # Ok::<(), String>(())
 //! ```
 
+pub mod catalog;
 pub mod codec;
 pub mod french;
 pub mod g2p;
@@ -142,40 +143,141 @@ fn ini(bytes: &[u8]) -> HashMap<String, String> {
     loquendo::parse_ini(&loquendo::latin1(bytes))
 }
 
+/// What a voice is and where its files are in an LTTS7 tree, read without
+/// loading its recordings (`inspect`).
+#[derive(Clone, Debug, Default)]
+pub struct VoiceInfo {
+    /// from its `.vcf` and `.vde`, with the recordings file's name
+    pub descriptor: VoiceDescriptor,
+    /// `data/<Voice>.vcf`
+    pub vcf: String,
+    /// `data/voices/<Voice>`: the `.vde`, `.sde`, recordings and Gilded files
+    pub dir: String,
+    /// `bin/LTTS7<Voice>.dll`, when present
+    pub library: Option<String>,
+    /// `data/languages/<Language>/<Variant>.lde` that speaks its MotherTongue
+    pub language: Option<String>,
+    /// the language module named by that `.lde` (`bin/LTTS7English.dll`), when present
+    pub language_library: Option<String>,
+    /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
+    pub language_missing: Option<String>,
+    /// why the voice can't speak yet (`codec LTTS7CodecMsx`, `no Catalan module`)
+    pub unsupported: Option<String>,
+}
+
+impl VoiceInfo {
+    /// The language folder (`data/languages/English`).
+    pub fn language_dir(&self) -> Option<&str> {
+        self.language.as_deref().and_then(|l| l.rsplit_once('/')).map(|(d, _)| d)
+    }
+}
+
+/// Find the voice called `voice` in an LTTS7 tree: `read(path)` gives a
+/// file's bytes and `list(folder)` the names in a folder, both relative to
+/// the LTTS7 root (`data/Roberto.vcf`, `bin`). Names match case-insensitively.
+pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn Fn(&str) -> Vec<String>) -> Result<VoiceInfo, String> {
+    let sorted = |dir: &str| {
+        let mut names = list(dir);
+        names.sort();
+        names
+    };
+    let (vcf, cv) = sorted("data")
+        .into_iter()
+        .filter(|n| n.to_ascii_lowercase().ends_with(".vcf"))
+        .filter_map(|n| {
+            let path = format!("data/{n}");
+            let c = ini(&read(&path)?);
+            Some((path, c))
+        })
+        .find(|(_, c)| c.get("BaseVoice").is_some_and(|b| b.eq_ignore_ascii_case(voice)))
+        .ok_or_else(|| format!("no voice {voice} here"))?;
+    let base = cv["BaseVoice"].clone();
+    let voice_path = cv.get("VoicePath").map(|p| p.replace('\\', "/").trim_matches('/').to_string());
+    let dir = format!("data/{}", voice_path.unwrap_or_else(|| format!("voices/{base}")));
+    let in_dir = sorted(&dir);
+    let find = |names: &[String], want: &str| names.iter().find(|n| n.eq_ignore_ascii_case(want)).cloned();
+    let vde = find(&in_dir, &format!("{base}.vde"))
+        .and_then(|n| read(&format!("{dir}/{n}")))
+        .ok_or("the voice has no .vde")?;
+    let dv = ini(&vde);
+    let mut descriptor = VoiceDescriptor::from_ini(&cv, &dv);
+    // the recordings: the biggest <Voice>.*.bin (the name tells codec and rate)
+    let prefix = format!("{}.", base.to_ascii_lowercase());
+    let bins: Vec<&String> = in_dir
+        .iter()
+        .filter(|n| {
+            let l = n.to_ascii_lowercase();
+            l.starts_with(&prefix) && l.ends_with(".bin")
+        })
+        .collect();
+    if let Some(b) = bins.first() {
+        descriptor.set_bin_name(b);
+    }
+    let bins_dir = sorted("bin");
+    let library = find(&bins_dir, &format!("LTTS7{base}.dll")).map(|n| format!("bin/{n}"));
+    // the language: the `.lde` that speaks the voice's MotherTongue
+    let mut ldes = Vec::new();
+    for lang in sorted("data/languages") {
+        let folder = format!("data/languages/{lang}");
+        for f in sorted(&folder).iter().filter(|f| f.to_ascii_lowercase().ends_with(".lde")) {
+            let path = format!("{folder}/{f}");
+            if let Some(b) = read(&path) {
+                ldes.push((path, loquendo::latin1(&b)));
+            }
+        }
+    }
+    let lde = pack::language_descriptor(&ldes, &descriptor.mother_tongue, &descriptor.mother_tongue_aliases);
+    let language = lde.map(|i| ldes[i].0.clone());
+    let language_library = lde
+        .and_then(|i| loquendo::parse_ini(&ldes[i].1).get("Library")?.split(',').next().map(|s| s.trim().to_string()))
+        .and_then(|lib| find(&bins_dir, &format!("{lib}.dll")))
+        .map(|n| format!("bin/{n}"));
+    let language_missing = lde.is_none().then(|| descriptor.mother_tongue.clone());
+    let unsupported = match &language_missing {
+        Some(t) if catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(t)) => Some(format!("no {t} module")),
+        _ if descriptor.bin_name.contains("LTTS7CodecMsx") => Some("codec LTTS7CodecMsx".to_string()),
+        _ => None,
+    };
+    Ok(VoiceInfo {
+        descriptor,
+        vcf,
+        dir,
+        library,
+        language,
+        language_library,
+        language_missing,
+        unsupported,
+    })
+}
+
+/// Every voice in an LTTS7 tree (`inspect` for `read` and `list`), in `.vcf`
+/// name order; voices whose files don't add up are left out.
+pub fn list_voices(read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn Fn(&str) -> Vec<String>) -> Vec<VoiceInfo> {
+    let mut vcfs: Vec<String> = list("data").into_iter().filter(|n| n.to_ascii_lowercase().ends_with(".vcf")).collect();
+    vcfs.sort();
+    vcfs.iter()
+        .filter_map(|n| ini(&read(&format!("data/{n}"))?).get("BaseVoice").cloned())
+        .filter_map(|v| inspect(&v, read, list).ok())
+        .collect()
+}
+
 impl VoiceFiles {
-    /// A voice's files from an LTTS7 tree: `read(path)` gives a file's bytes
-    /// and `list(folder)` the names in a folder, both relative to the LTTS7
-    /// root (`data/Roberto.vcf`, `bin`). Names match case-insensitively.
+    /// A voice's files from an LTTS7 tree (`inspect` for `read` and `list`).
     pub fn from_layout(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn Fn(&str) -> Vec<String>) -> Result<VoiceFiles, String> {
-        let sorted = |dir: &str| {
-            let mut names = list(dir);
-            names.sort();
-            names
-        };
-        let (vcf, cv) = sorted("data")
-            .iter()
-            .filter(|n| n.to_ascii_lowercase().ends_with(".vcf"))
-            .filter_map(|n| read(&format!("data/{n}")))
-            .map(|b| {
-                let c = ini(&b);
-                (b, c)
-            })
-            .find(|(_, c)| c.get("BaseVoice").is_some_and(|b| b.eq_ignore_ascii_case(voice)))
-            .ok_or_else(|| format!("no voice {voice} here"))?;
-        let base = cv["BaseVoice"].clone();
-        let voice_path = cv.get("VoicePath").map(|p| p.replace('\\', "/").trim_matches('/').to_string());
-        let dir = format!("data/{}", voice_path.unwrap_or_else(|| format!("voices/{base}")));
-        let in_dir = sorted(&dir);
+        let info = inspect(voice, read, list)?;
+        let name = &info.descriptor.name;
+        let dir = &info.dir;
+        let mut in_dir = list(dir);
+        in_dir.sort();
         let pick = |want: &str| {
             in_dir
                 .iter()
                 .find(|n| n.eq_ignore_ascii_case(want))
                 .and_then(|n| read(&format!("{dir}/{n}")))
         };
-        let vde = pick(&format!("{base}.vde")).ok_or("the voice has no .vde")?;
-        let sde = pick(&format!("{base}.sde")).ok_or("the voice has no .sde")?;
-        // the recordings: the biggest <Voice>.*.bin
-        let prefix = format!("{}.", base.to_ascii_lowercase());
+        let vde = pick(&format!("{name}.vde")).ok_or("the voice has no .vde")?;
+        let sde = pick(&format!("{name}.sde")).ok_or("the voice has no .sde")?;
+        let prefix = format!("{}.", name.to_ascii_lowercase());
         let (bin_name, bin) = in_dir
             .iter()
             .filter(|n| {
@@ -185,43 +287,24 @@ impl VoiceFiles {
             .filter_map(|n| Some((n.clone(), read(&format!("{dir}/{n}"))?)))
             .max_by_key(|(_, d)| d.len())
             .ok_or("the voice has no recordings")?;
-        let library = sorted("bin")
-            .iter()
-            .find(|n| n.eq_ignore_ascii_case(&format!("LTTS7{base}.dll")))
-            .and_then(|n| read(&format!("bin/{n}")));
-        // the language: the `.lde` that speaks the voice's MotherTongue
-        let dv = ini(&vde);
-        let tongue = dv.get("MotherTongue").cloned().unwrap_or_default();
-        let aliases = dv.get("MotherTongueAliases").cloned().unwrap_or_default();
-        let mut ldes = Vec::new();
-        for lang in sorted("data/languages") {
-            let folder = format!("data/languages/{lang}");
-            for f in sorted(&folder).iter().filter(|f| f.to_ascii_lowercase().ends_with(".lde")) {
-                let path = format!("{folder}/{f}");
-                if let Some(b) = read(&path) {
-                    ldes.push((path, loquendo::latin1(&b)));
-                }
-            }
-        }
-        let (dbl, gpr, language_missing) = match pack::language_descriptor(&ldes, &tongue, &aliases) {
-            Some(i) => {
-                let folder = ldes[i].0.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
-                let lde = loquendo::parse_ini(&ldes[i].1);
+        let (dbl, gpr) = match (&info.language, info.language_dir()) {
+            (Some(lde), Some(folder)) => {
+                let lde = read(lde).map(|b| ini(&b)).unwrap_or_default();
                 let file = |key: &str| lde.get(key).and_then(|f| read(&format!("{folder}/{f}")));
-                (file("LexicalDB"), file("GPR"), None)
+                (file("LexicalDB"), file("GPR"))
             }
-            None => (None, None, Some(tongue)),
+            _ => (None, None),
         };
         Ok(VoiceFiles {
-            vcf,
+            vcf: read(&info.vcf).unwrap_or_default(),
             vde,
             sde,
             bin,
             bin_name,
-            library,
+            library: info.library.as_deref().and_then(read),
             dbl,
             gpr,
-            language_missing,
+            language_missing: info.language_missing,
         })
     }
 
