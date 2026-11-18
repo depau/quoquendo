@@ -11,9 +11,8 @@
 # install (installers overwrite it):
 #  - by default the one loquendo-keygen made for this computer and Wine user
 #    `wineuser`, license-wineuser.reg in the repository root (LOQ_LICENCE to
-#    use another): the engine runs as it is, except Kate and Juliette, which
-#    crash under it (the licence the installers write instead makes every
-#    voice say only that the licence isn't valid for this system);
+#    use another): the engine runs as it is (the licence the installers write
+#    instead makes every voice say only that it isn't valid for this system);
 #  - without any, the loquendo-tts-server licence (from its git history),
 #    bound to the network card 7A:8B:9C:1D:2E:3F: the engine then runs in its
 #    own network namespace holding a dummy card with that address (no root).
