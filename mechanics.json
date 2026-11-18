@@ -490,6 +490,61 @@
    "group": "voice files",
    "value": "data/<Voice>.vcf, data/voices/<Voice>/ (.sde .bin .vde), bin/LTTS7<Voice>.dll",
    "source": "innoextract listing of the installers; phoneset.rs, loquendo.rs"
+  },
+  {
+   "name": "unit margin",
+   "group": "joining",
+   "value": 64,
+   "unit": "samples",
+   "source": "LoqTTS7.dll 0x1001f580: (rate/10*400)/20000 at 32 kHz"
+  },
+  {
+   "name": "cross-fade window",
+   "group": "joining",
+   "value": "Hann 0.5*(1-cos(2pi(i+1)/(2n+1))) over 2n points",
+   "source": "LoqTTS7.dll 0x100241e0 type 2 (0x100242ba), used by 0x100244a0 and 0x10024360"
+  },
+  {
+   "name": "voiced join period weight range",
+   "group": "joining",
+   "value": "0.2..0.5",
+   "source": "LoqTTS7.dll 0x10024660 (constants 0x100a5cd0, 0x100a5b70)"
+  },
+  {
+   "name": "voiced join pitch range",
+   "group": "joining",
+   "value": "0.5..14 semitones",
+   "source": "LoqTTS7.dll 0x10024660 (0x100a5b70, 0x100a5cc0)"
+  },
+  {
+   "name": "voiced join undo threshold",
+   "group": "joining",
+   "value": 0.1,
+   "source": "LoqTTS7.dll 0x10024660 (0x100a5cb8)"
+  },
+  {
+   "name": "voiceless pitch mark spacing",
+   "group": "joining",
+   "value": "rate/125",
+   "source": "LoqTTS7.dll 0x1001e3a0"
+  },
+  {
+   "name": "pause unit tail margin",
+   "group": "joining",
+   "value": "4 x unit margin",
+   "source": "LoqTTS7.dll 0x1001f580 (algorithms 2/4)"
+  },
+  {
+   "name": "English dictionary",
+   "group": "FON",
+   "value": "EnglishUs.dbl, SQLite table lessico",
+   "source": "installer data/languages/English; LTTS7English.dll SELECT grafemica,... FROM lessico"
+  },
+  {
+   "name": "English letter-to-sound model",
+   "group": "FON",
+   "value": "EnglishUs.gpr context rules, 27 letters, 80 classes",
+   "source": "LTTS7GPR.dll 0x10001710 (loader), 0x10001220 (rule match)"
   }
  ]
 }

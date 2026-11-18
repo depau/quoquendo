@@ -19,6 +19,23 @@ text ─FON─► sounds to say ─CAT─► pieces of recordings ─SIG─► a
       rules | original | command   builtin | original    like the original | smoothed
 ```
 
+**Layout.** `crates/quoquendo` is the engine as a library (no dependencies
+beyond a C compiler for the bundled Speex decoder; no process spawning, no
+GUI): `Voice::find(data_dir, "Roberto")` or `Voice::from_bytes(VoiceFiles {…})`
+then `voice.say(text)` gives 32 kHz mono samples, `voice.transcribe(text)`
+the FON result. The root package is the app (egui window, command line,
+installer unpacking, and the Wine reference harness under `oracle/`).
+
+**What a voice needs**, all from its own installer (`<Voice> - <Language>.exe`,
+Inno Setup 5.2.3; `quoquendo --install` unpacks it with `innoextract`):
+`data/<Voice>.vcf`, `data/voices/<Voice>/` (`.sde` index, `.bin` recordings,
+`.vde`), `bin/LTTS7<Voice>.dll` (its phone table, read as data, §5) and
+`data/languages/<Language>/` (`<MotherTongue>.dbl` dictionary and, for
+English, `.gpr` letter-to-sound model, §4). Nothing of the original is run.
+The optional `lexicons/<MotherTongue>.tsv` dictionaries are the only thing
+still made by running the original under Wine (§9); without them US English
+and Italian stay close (below), French does not.
+
 Stages hand each other plain data (`synth::TargetPhrase`, `synth::Phrase`,
 `synth::Speech`). FON output also has a text form, the original engine's own
 transcription notation (`i l-tt r `E n o #50 ... @500?`), so **any program**
@@ -145,6 +162,39 @@ liaison moves the silent consonant to the next word (`mes amis` m e | z a m
 before a consonant (`votre patience` v `` `Oa `` tt HRF HEh); `m'appelle` is the
 elided word plus the rest; `est-ce` `` `E `` s.
 
+**The languages' own data** (read from the installer's files, `g2p::load_language_data`):
+
+- `<MotherTongue>.dbl` is a plain **SQLite 3** database (read by `sqlite.rs`,
+  a small pure-Rust reader): table `lessico` with `grafemica` (spelling),
+  `fonetica` (pronunciation in the voice's notation), `gradoaccentuale`,
+  `grammaticale`, `gennum`, `tempomodo`, `abbreviazione`, `altreinfo`,
+  `omografotempo`. US English 1 715 words, French 1 308, German 3 577:
+  exceptions, homographs, abbreviations (`ELQDB*` in LTTS7Util.dll reads it
+  with SQL).
+- `<MotherTongue>.gpr` (English) is LTTS7GPR.dll's letter-to-sound model
+  ("LoqG2P", `gpr.rs`): per letter an ordered list of context rules (left and
+  right context strings, from a string pool) giving an output class; the
+  first matching rule wins, else the letter's default class; a class is a
+  list of engine feature words (§5), named through the voice's phone table.
+  Layout from the loader 0x10001710, matching from 0x10001220 (the early
+  exit at 0x1000141f returns the matched rule's class).
+- After them the original applies word rules (LTTS7English.dll); measured
+  against its transcriptions of 128 374 words, these reproduce **80.5%** of
+  words exactly (35% from the model alone): `s` + t/k/p inside a word loses
+  aspiration; `t s` → `Ts`; `HEh Hr` → `HR` before a consonant or the end;
+  `HEh l` → `Hl` at the end or before z/d; `Hr` → `HR` after `HAI` and
+  stressed I/E; dark `Hl` after `i:`/`i`/`HEI` at the end; `th` flapped
+  (`HTh`) between a vowel (or n, r) and an unstressed vowel when the vowel
+  before is stressed or full, or in the last syllable before i/I/HR/Hl;
+  other stops before a consonant (not r, l, j, w) unreleased; `'s` is the
+  stem plus I z / s / z, without the stem's flap.
+
+Sounds identical to the original on the benchmarks **without** the Wine-made
+dictionaries: Italian 96.6% (rules and learned ending tables), US English
+**97.7%** (its own data, above; 70.4% before), French 69.8% (rules only: its
+letter-to-sound rules are code, FonTrasParola 0x1000f730 in LTTS7French.dll,
+3 570 decompiled lines, not ported yet).
+
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
 newline) — its transcription confirms `#50` and `@500`.
@@ -246,21 +296,52 @@ taken from ours where the sounds line up.)
 Voices whose library isn't found fall back to the earlier approximation (100
 same phone, 50 same without stress/length, no classes).
 
-## 6. SIG — joining
+## 6. SIG — joining (the original's rules, decompiled)
 
-**Like the original** (default, measured): each piece is decoded with a fresh
-decoder and played **160 samples (5 ms) later** than the `.sde` times say —
-with that shift, pieces match the original's audio at 70–80 dB — and butted
-against the next one with a **hard cut** (two joins measured exact at 79 and
-49 dB). Phrases are separated by exactly their pause, with no lead-in.
+Decoding: each piece plays **160 samples (5 ms) later** than the `.sde` times
+say (measured; pieces then match the original's audio at 70–80 dB).
 
-The original sometimes moves a cut by a few samples to a few dozen (−3, +38…)
-and at some joins plays ~15 ms that is neither piece. That rule is **not
-known yet**, so the whole-file match drifts (−1 dB) although each piece is
-identical inside.
+The original handles every half-phone as a unit (`0x1001faa0`), decoded with
+**64 samples** of margin on each side (`(rate/10·400)/20000`, 0x1001f580);
+half-phones inside one picked run are plain copies (algorithm 0), the last
+one of a run is joined to the next run (algorithm 1, `0x1001f870` →
+`0x10024660`); pauses are zero-filled units with no lead-in margin and a
+4× (256-sample) tail. `synth::render` (`JoinStyle::Original`) does the same:
 
-**Smoothed** (my own): cuts in mid-phone, slides the new piece up to ±5 ms to
-the best waveform match and cross-fades over 5 ms; phrases fade in/out.
+- **Cross-fade** (any join but voiced–voiced; 0x100244a0): from the previous
+  unit's last samples through its tail margin into the next unit's lead-in
+  and first samples, `n = tail + lead-in − 1` points (127 between speech),
+  Hann window `0.5·(1 − cos(2π(i+1)/(2n+1)))` over 2n points (0x100241e0,
+  type 2 at 0x100242ba; previous unit takes the falling half), sum clamped
+  and truncated to 16 bits, written into both units; then only the units'
+  own samples are played. Into a pause the speech rings out over the
+  pause's first 63 samples; out of one it fades in over ~255 samples.
+- **Voiced join** (both half-phones voiced, `sig.rs`): pitch marks of each
+  half (0x1001e3a0: voiceless every `rate/125`; voiced from `period =
+  rate/F0` of the half's record, the best rising zero crossing 0.5–1.5
+  periods on, scored by correlation, peak and distance — 75 of 110 traced
+  halves get identical marks, most others ±1 sample since our decoding is
+  near- not bit-identical); each period with its margins becomes a frame;
+  period lengths ease toward the other side when the pitch differs by
+  0.5–14 semitones (`x = periods before / all` kept in [0.2, 0.5]; previous
+  half `p + (first − last)·x·k/(n−1)`, next half `p + (last − first)·(1−x)·
+  (n−1−j)/(n−1)`, truncated; changes of ±1 dropped; undone if they average
+  over 10%) — **all 23 traced joins** reproduced exactly; loudness eased with
+  a linear gain ramp toward the other side's mean (never below 0.5); frames
+  overlap-added back with the same cross-fade over the 64 samples before each
+  mark. A one-half unit keeps the marks this gave it for its next join.
+
+Match with the original's audio (its own pieces through our SIG), samples
+within ±2 / whole-file SNR:
+
+| voice | hard cuts (before) | + cross-fades, voiced joins, pause units |
+|---|---|---|
+| Roberto | 26.0% / −1.1 dB | **60.1% / 16.0 dB** |
+| Allison | 33.2% / 0.1 dB | **56.8% / 7.7 dB** |
+| Bernard | 35.0% / 1.2 dB | **70.1% / 33.0 dB** |
+
+**Smoothed** (my own, `JoinStyle::Smooth`): cuts in mid-phone, slides the new
+piece up to ±5 ms to the best waveform match and cross-fades over 5 ms.
 
 ## 7. Command line
 
@@ -302,6 +383,14 @@ records:
 | `.ev` event 3 | FON+prosody | each phone said and its duration in ms (`ttsGetPhonemeInfo`), pauses `#`/`@` included |
 | `.ev` event 19 | CAT | each piece: sentence id string at +4, half-phone count at +0x18 |
 | `.wav` | SIG | `LTTS7AudioFile` device, 32 kHz mono |
+
+Tracing the original from inside (all in `oracle/loqref.c`, by redirecting a
+call's rel32 to a logging wrapper): `LOQ_DUMP_TABLES` (the CAT tables as
+built), `LOQ_TRACE_CAT` (+`LOQ_TRACE_CLASSES`: every candidate's context,
+class part, factor, prosody, the labels), `LOQ_TRACE_JOIN` (every voiced
+join's units before/after and every half-phone's pitch marks). quoquendo's
+counterparts: `QQ_TRACE_CAT=1`, `QQ_CHECK_MARKS=<trace.join>`,
+`QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
 
 `LOQ_LINES=1` treats every line as an utterance; `LOQ_FON_ONLY=1` writes
 `<prefix>.fonlist` with one transcription per line (87 421 words in 6 s).
@@ -361,16 +450,15 @@ when a speed/pitch change asks for it.
 
 ## 11. Not done / unknown
 
-- The exact join rule (cut shifts, the occasional 15 ms blend) — SIG §6.
-- The rest of the CAT gap (2–6%): the 30-entry exclusion list
-  (state+0x3d4), and where our word boundaries differ from the original's.
-- Words outside the learned dictionaries still go through the plain rules,
-  and English/French rules beyond those in §4 (French h aspiré before liaison,
-  English stress shifts) are not modelled. The other voices' languages have
-  no dictionary yet (one `--learn-lexicon` run each). The dictionaries are the
-  one thing still made by running the original (its compiled lexicons in
-  `LTTS7<Language>.dll` are not decoded).
-- The original's automatic pauses (`#50` before `è` in long sentences) and its
-  grouping of words.
-- Speed and pitch controls; Katrin's Gilded phrases.
-- The `.sde` header pair (`14,4` / `10,16`) and the rare `^` symbol.
+- French (and other rule-coded languages') letter-to-sound rules without
+  the Wine-made dictionary: the code is FonTrasParola (LTTS7French.dll
+  0x1000f730, 3 570 lines); Italian's exception and ending tables in
+  LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
+  are readable but not decoded — our learned tables stand in (96.6%).
+- Reading the installers natively (Inno Setup 5.2.3 headers + LZMA) instead
+  of calling `innoextract`; needed for a browser build (the library already
+  loads everything from bytes, `Voice::from_bytes`).
+- Bit-exact Speex decoding (we are within ±1–2 LSB, 70–80 dB): it decides
+  the last pitch marks and so the last SIG differences.
+- The CAT gap that remains (3–6%), the original's automatic pauses, speed
+  and pitch controls, Gilded phrases, the `.sde` header pair (`14,4`/`10,16`).

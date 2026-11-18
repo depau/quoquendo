@@ -2010,6 +2010,13 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
                     tokens.push(Token::Pause { ms: 45, reason: "word gap".into() });
                 }
                 let mut symbols = word_to_symbols(part, lang);
+                // number words are compounds (cento+settanta+sei): their s
+                // starts a morpheme and stays voiceless, as the original says it
+                if lang == Language::Italian && w.chars().all(|c| c.is_ascii_digit()) {
+                    for s in symbols.iter_mut().filter(|s| s.as_str() == "z") {
+                        *s = "s".into();
+                    }
+                }
                 if lang == Language::Italian && ITALIAN_UNSTRESSED.contains(&w.as_str()) {
                     for s in symbols.iter_mut() {
                         // dropping the stress also drops the open quality
