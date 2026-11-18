@@ -31,6 +31,7 @@ typedef int (__stdcall *fn_setparam)(H, const char *, const char *);
 typedef const char *(__stdcall *fn_errmsg)(int);
 
 static FILE *ev;
+#include "lestrace.h"
 
 /* LOQ_DUMP_TABLES=<prefix>: catch the CAT module's phonetic tables as the
  * voice loads. LoqTTS7.dll stores them with ELQSharedResourceAdd (its pointer
@@ -337,6 +338,12 @@ int main(int argc, char **argv) {
         if (hook_codec(argv[1], "LTTS7Codec210.dll", 0x1002e064, 0x10004530, (void *)hook_dec210, &real_dec210, 0x100300cc, 0x100300d0) < 0 ||
             hook_codec(argv[1], "LTTS7CodecMsx.dll", 0x10015b1c, 0x10002780, (void *)hook_decmsx, &real_decmsx, 0x1001c184, 0x1001c18c) < 0)
             return 2;
+    }
+    if (getenv("LOQ_TRACE_LES")) {
+        snprintf(path, sizeof path, "%s.les", argv[4]);
+        leslog = fopen(path, "wb");
+        if (hook_language(argv[1], getenv("LOQ_LES_DLL") ? getenv("LOQ_LES_DLL") : "LTTS7Italian.dll",
+                          getenv("LOQ_LES_TABLE") ? strtoul(getenv("LOQ_LES_TABLE"), 0, 16) : 0x10031ff8, NSLOT) < 0) return 2;
     }
     CHECK(ttsLoadPersona(reader, argv[2], NULL, NULL));
     CHECK(ttsSetTextEncoding(reader, 65001));

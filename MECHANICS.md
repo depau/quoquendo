@@ -797,10 +797,15 @@ call's rel32 to a logging wrapper): `LOQ_DUMP_TABLES` (the CAT tables as
 built), `LOQ_TRACE_CAT` (+`LOQ_TRACE_CLASSES`: every candidate's context,
 class part, factor, prosody, the labels), `LOQ_TRACE_JOIN` (every voiced
 join's units before/after and every half-phone's pitch marks),
-`LOQ_TRACE_DECODE` (every decoder request and its samples, §2d). quoquendo's
-counterparts: `QQ_TRACE_CAT=1`, `QQ_CHECK_MARKS=<trace.join>`,
-`--check-decode <trace.dec>`, `QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules
-alone).
+`LOQ_TRACE_DECODE` (every decoder request and its samples, §2d),
+`LOQ_TRACE_LES` (`oracle/lestrace.h`: every slot of the language module's
+function table swapped for a logging thunk — each LES function's word
+records before and after, FonTrasParola's word and codes, FonTrasConfini's
+arguments — to `<prefix>.les`; `LOQ_LES_DLL`/`LOQ_LES_TABLE` for another
+module than Italian's; `oracle/parse_les.py` turns it into JSON lines,
+§4b). quoquendo's counterparts: `QQ_TRACE_CAT=1`,
+`QQ_CHECK_MARKS=<trace.join>`, `--check-decode <trace.dec>`,
+`QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
 
 `LOQ_LINES=1` treats every line as an utterance; `LOQ_FON_ONLY=1` writes
 `<prefix>.fonlist` with one transcription per line (87 421 words in 6 s).

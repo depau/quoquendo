@@ -2186,243 +2186,46 @@ impl Italian {
     }
 }
 
-// --- The engine's side: text → word records → phones (LoqTTS7.dll) -----------
+// --- The engine's side (LoqTTS7.dll, `common`) calls these --------------------
 
-use crate::g2p::Token;
-
-/// The pauses the engine gives each kind of break (its ShortPauseLength
-/// for the pauses LesConfiniProsodici adds, MediumPauseLength after a
-/// comma, LongPauseLength at the end of a sentence).
-const ADDED_PAUSE_MS: u32 = crate::g2p::SHORT_PAUSE_MS;
-const COMMA_PAUSE_MS: u32 = crate::g2p::MEDIUM_PAUSE_MS;
-const END_PAUSE_MS: u32 = crate::g2p::LONG_PAUSE_MS;
-
-/// A word record as the engine's tokenizer makes it: class unknown (0x17)
-/// or proper noun (0x15), no subclass, boundary and grade not set.
-fn record(text: Vec<u8>, class: u8, sub: u8, info: u8) -> Word {
-    let mut f = [0u8; 24];
-    f[0xc] = 0xff;
-    f[0xd] = 0xff;
-    f[CLASS] = class;
-    f[SUB] = sub;
-    f[INFO] = info;
-    f[BOUND] = 0x15;
-    f[GRADE] = 0x0e;
-    Word { text, tag: None, f }
-}
-
-/// One sentence for the LES stage: its records and its type (0 statement,
-/// 3 question, 5 `:`/`;`, 6 exclamation).
-struct Sentence {
-    words: Vec<Word>,
-    mode: i32,
-}
-
-/// The text in the engine's 8-bit characters (Windows-1252 for what
-/// Latin-1 lacks of it is not needed by the Italian module).
-fn to_8bit(c: char) -> Option<u8> {
-    let u = c as u32;
-    match u {
-        0..=0xff => Some(u as u8),
-        0x2019 | 0x2018 => Some(b'\''),
-        0x201c | 0x201d => Some(b'"'),
-        0x2013 | 0x2014 => Some(b'-'),
-        0x2026 => Some(b'.'),
-        _ => None,
-    }
-}
-
-impl Italian {
-    /// Split text into sentences of word records, as LoqTTS7.dll's
-    /// tokenizer hands them to the module: lower case, a capitalised word
-    /// inside a sentence a proper noun, an elided word (`l'`) its own
-    /// record, numbers read out as their words (class 0x15, subclass `z`,
-    /// the last `y`), punctuation records (class `2`, subclass `|` ending a
-    /// sentence, `}` inside one).
-    fn sentences(&self, text: &str) -> Vec<Sentence> {
-        let mut out = Vec::new();
-        let mut cur: Vec<Word> = Vec::new();
-        let chars: Vec<u8> = text.chars().filter_map(to_8bit).collect();
-        let lower = |c: u8| self.chars[c as usize].0;
+impl super::common::Les for Italian {
+    fn letter(&self, c: u8) -> (bool, bool, u8) {
         // flags bit 0: a letter (digits have only 0x04)
-        let letter = |c: u8| self.flags(c) & 0x1 != 0;
-        let mut i = 0usize;
-        let end = |cur: &mut Vec<Word>, out: &mut Vec<Sentence>, p: u8| {
-            if cur.iter().all(|w| w.f[CLASS] == b'2') {
-                cur.clear();
-                return;
-            }
-            let mode = match p {
-                b'!' => 6,
-                b'?' => 3,
-                b':' | b';' => 5,
-                _ => 0,
-            };
-            cur.push(record(vec![p], b'2', b'|', 9));
-            out.push(Sentence { words: std::mem::take(cur), mode });
-        };
-        while i < chars.len() {
-            let c = chars[i];
-            if letter(c) {
-                let start = i;
-                while i < chars.len() && letter(chars[i]) {
-                    i += 1;
-                }
-                let mut t: Vec<u8> = chars[start..i].iter().map(|&c| lower(c)).collect();
-                let elided = i < chars.len() && chars[i] == b'\'' && chars.get(i + 1).is_some_and(|&n| letter(n));
-                if elided {
-                    t.push(b'\'');
-                    i += 1;
-                }
-                let capital = self.flags(chars[start]) & UPPER != 0;
-                let first = cur.iter().all(|w| w.f[CLASS] == b'2');
-                let class = if capital && !first { 0x15 } else { 0x17 };
-                let mut r = record(t, class, 0xc8, 0xc8);
-                if elided {
-                    r.f[0xc] = 0;
-                    r.f[0xd] = 0;
-                }
-                cur.push(r);
-            } else if c.is_ascii_digit() {
-                let start = i;
-                while i < chars.len() && chars[i].is_ascii_digit() {
-                    i += 1;
-                }
-                let digits = std::str::from_utf8(&chars[start..i]).unwrap_or("0");
-                let spoken = match digits.parse::<u64>() {
-                    Ok(n) if digits.len() <= 12 => crate::g2p::italian_number(n),
-                    _ => digits.chars().map(|d| crate::g2p::italian_number(d.to_digit(10).unwrap_or(0) as u64)).collect::<Vec<_>>().join(" "),
-                };
-                let parts: Vec<&str> = spoken.split(' ').collect();
-                for (k, p) in parts.iter().enumerate() {
-                    let t: Vec<u8> = p.chars().filter_map(to_8bit).collect();
-                    cur.push(record(t, 0x15, if k + 1 == parts.len() { b'y' } else { b'z' }, 0x10));
-                }
-            } else if matches!(c, b'.' | b'!' | b'?' | b':' | b';') {
-                let start = i;
-                while i < chars.len() && chars[i] == c {
-                    i += 1;
-                }
-                if c == b'.' && i - start > 1 {
-                    cur.push(record(chars[start..i].to_vec(), b'2', b'}', 9));
-                } else {
-                    end(&mut cur, &mut out, c);
-                }
-                continue;
-            } else if matches!(c, b',' | b'"' | b'(' | b')' | b'-') {
-                cur.push(record(vec![c], b'2', b'}', 9));
-                i += 1;
-            } else {
-                i += 1;
-            }
-        }
-        if !cur.is_empty() {
-            end(&mut cur, &mut out, b'.');
-        }
-        out
+        let f = self.flags(c);
+        (f & 0x1 != 0, f & UPPER != 0, self.chars[c as usize].0)
     }
-
+    fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
+        let spoken = match digits.parse::<u64>() {
+            Ok(n) if digits.len() <= 12 => crate::g2p::italian_number(n),
+            _ => digits.chars().map(|d| crate::g2p::italian_number(d.to_digit(10).unwrap_or(0) as u64)).collect::<Vec<_>>().join(" "),
+        };
+        spoken.split(' ').map(|p| p.chars().filter_map(super::common::to_8bit).collect()).collect()
+    }
+    fn analizza(&self, w: &mut [Word]) {
+        Italian::analizza(self, w)
+    }
+    fn accenta(&self, w: &mut [Word]) {
+        Italian::accenta(self, w)
+    }
+    fn confini(&self, w: &mut [Word], mode: i32) {
+        Italian::confini(self, w, mode)
+    }
+    fn gradi(&self, w: &mut [Word]) {
+        Italian::gradi(self, w)
+    }
+    fn tras_parola(&self, word: &[u8], grade: u8) -> Vec<u32> {
+        Italian::tras_parola(self, word, grade)
+    }
+    fn tras_confini(&self, prev_bound: u8, phones: &mut [u32], first: u32) {
+        Italian::tras_confini(self, prev_bound, phones, first)
+    }
+    fn symbol(&self, code: u32) -> Option<&str> {
+        Italian::symbol(self, code)
+    }
 }
 
 impl super::Module for Italian {
-    fn analyse(&self, text: &str) -> Vec<Token> {
-        Italian::analyse(self, text)
+    fn analyse(&self, text: &str) -> Vec<crate::g2p::Token> {
+        super::common::analyse(self, text)
     }
-}
-
-impl Italian {
-    /// The FON stage on text: the module's LES functions on every sentence,
-    /// then FonTrasParola word by word and FonTrasConfini at every word
-    /// boundary, as LoqTTS7.dll's phrase loop (0x1002c300) runs them:
-    /// phrases end at punctuation, a boundary 0x0a (or 8, 0x0c–0x0e) adds a
-    /// short pause, a word joined to the next (elision, boundary 0) shares
-    /// its phones.
-    pub fn analyse(&self, text: &str) -> Vec<Token> {
-        let mut tokens = Vec::new();
-        for mut s in self.sentences(text) {
-            let w = &mut s.words;
-            self.analizza(w);
-            self.accenta(w);
-            self.confini(w, s.mode);
-            self.gradi(w);
-            let mut phrase: Vec<u32> = Vec::new();
-            let mut phrase_start = 0usize;
-            let mut word_syms: Vec<String> = Vec::new();
-            let mut word_text: Vec<u8> = Vec::new();
-            for i in 0..w.len() {
-                let r = &w[i];
-                let punct = r.f[CLASS] == b'2';
-                let codes = if punct {
-                    vec![if r.f[SUB] == b'|' { 0x17 } else { 0x13 }]
-                } else {
-                    self.tras_parola(&r.text, r.f[GRADE])
-                };
-                if let Some(&first) = codes.first() {
-                    if i > phrase_start && !phrase.is_empty() {
-                        let mut j = i - 1;
-                        while j > phrase_start && w[j].f[BOUND] == 0x16 {
-                            j -= 1;
-                        }
-                        self.tras_confini(w[j].f[BOUND], &mut phrase, first);
-                        // the assimilated phone belongs to the word before
-                        if let (Some(&last), Some(sym)) = (phrase.last(), word_syms.last_mut().or_else(|| last_word_sym(&mut tokens))) {
-                            *sym = self.symbol(last).unwrap_or("").to_string();
-                        }
-                    }
-                }
-                if punct {
-                    flush_word(&mut tokens, &mut word_text, &mut word_syms);
-                    let (ms, reason) = if r.f[SUB] == b'|' {
-                        let reason = match s.mode {
-                            3 => "question",
-                            6 => "exclamation",
-                            _ => "sentence break",
-                        };
-                        (END_PAUSE_MS, reason)
-                    } else {
-                        (COMMA_PAUSE_MS, "phrase break")
-                    };
-                    tokens.push(Token::Pause { ms, reason: reason.into() });
-                    phrase.clear();
-                    phrase_start = i + 1;
-                    continue;
-                }
-                phrase.extend(&codes);
-                word_syms.extend(codes.iter().map(|&c| self.symbol(c).unwrap_or("").to_string()));
-                word_text.extend(&r.text);
-                if r.f[BOUND] != 0 {
-                    flush_word(&mut tokens, &mut word_text, &mut word_syms);
-                }
-                if matches!(r.f[BOUND], 0x0a | 0x08 | 0x0e | 0x0c | 0x0d) {
-                    phrase.push(0x13);
-                    tokens.push(Token::Pause {
-                        ms: ADDED_PAUSE_MS,
-                        reason: "phrase break".into(),
-                    });
-                }
-            }
-            flush_word(&mut tokens, &mut word_text, &mut word_syms);
-        }
-        tokens
-    }
-}
-
-/// The last phone of the last word already emitted.
-fn last_word_sym(tokens: &mut [Token]) -> Option<&mut String> {
-    match tokens.last_mut() {
-        Some(Token::Word { symbols, .. }) => symbols.last_mut(),
-        _ => None,
-    }
-}
-
-fn flush_word(tokens: &mut Vec<Token>, text: &mut Vec<u8>, syms: &mut Vec<String>) {
-    if syms.is_empty() {
-        text.clear();
-        return;
-    }
-    tokens.push(Token::Word {
-        text: text.iter().map(|&c| c as char).collect(),
-        symbols: std::mem::take(syms),
-    });
-    text.clear();
 }
