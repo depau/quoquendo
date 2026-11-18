@@ -27,6 +27,7 @@ pub mod phoneset;
 pub mod phonetics;
 pub mod sig;
 pub mod spanish;
+pub mod speex;
 pub mod sqlite;
 pub mod synth;
 

@@ -49,12 +49,10 @@ pronunciation the engine will use, in the voices' own notation.
 
 ## Other platforms
 
-The library needs `lzma-rs` (pure Rust, for the installers) and a C
-compiler for the bundled Speex decoder (`crates/quoquendo/speex`, BSD). For the browser
-(`wasm32-unknown-unknown`) what is left is that C code: either compile it
-with a WASI/Emscripten sysroot or port the decoder to Rust; everything else
-is plain Rust working on bytes. The app uses eframe, which also targets the
-web; its file and audio parts would need web counterparts.
+The library is pure Rust working on bytes (its one dependency, `lzma-rs`,
+reads the installers), so it should build for the browser
+(`wasm32-unknown-unknown`) as it is. The app uses eframe, which also targets
+the web; its file and audio parts would need web counterparts.
 
 ## How close it is
 
@@ -78,5 +76,5 @@ No voice data, Loquendo library or dictionary is included here or needed to
 build: quoquendo reads the files of voices you already have, from their
 installers or an existing installation. Loquendo and the voice names belong
 to their owners; this project is not affiliated with or endorsed by them.
-The bundled Speex decoder is Xiph.Org's, under its BSD licence
-(`crates/quoquendo/speex`).
+The Speex decoder in `crates/quoquendo/src/speex` is a Rust port of
+Xiph.Org's, under its BSD licence (`crates/quoquendo/LICENSE-speex`).

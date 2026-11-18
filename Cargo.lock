@@ -2225,7 +2225,6 @@ dependencies = [
 name = "quoquendo"
 version = "0.1.0"
 dependencies = [
- "cc",
  "lzma-rs",
 ]
 

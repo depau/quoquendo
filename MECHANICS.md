@@ -19,9 +19,8 @@ text ─FON─► sounds to say ─CAT─► pieces of recordings ─SIG─► a
       rules | original | command   builtin | original    like the original | smoothed
 ```
 
-**Layout.** `crates/quoquendo` is the engine as a library (no dependencies
-beyond a C compiler for the bundled Speex decoder; no process spawning, no
-GUI): `Voice::find(data_dir, "Roberto")` or `Voice::from_bytes(VoiceFiles {…})`
+**Layout.** `crates/quoquendo` is the engine as a library (pure Rust, its
+one dependency `lzma-rs` for the installers; no process spawning, no GUI): `Voice::find(data_dir, "Roberto")` or `Voice::from_bytes(VoiceFiles {…})`
 then `voice.say(text)` gives 32 kHz mono samples, `voice.transcribe(text)`
 the FON result. The root package is the app (egui window, command line,
 installer unpacking, and the Wine reference harness under `oracle/`).
@@ -57,7 +56,14 @@ when installed; Italian voices' sample text ends with the station warning
 name→function table at 0x1002e028 (`ELQOpenDecoder` 0x100045e0, `ELQDecode`
 0x10004530, ...). Its strings are libspeex's ("ultra-wideband (sub-band
 CELP)", "Invalid mode encountered: corrupted stream?"), so the codec is
-**Speex**, compiled in from the BSD-licensed 1.2rc2 sources (`speex/`).
+**Speex**. quoquendo decodes it with `speex/`, a Rust port of Speex 1.2's
+float decoder (BSD, `LICENSE-speex`) for the one frame layout the voices
+use: every frame of all 19 voice files we have (2.6 million frames) is
+narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1, 492 +
+352 + 36 = 880 bits; other layouts are refused when the file is opened. The
+port keeps Speex's float and double steps exactly, and every one of those
+frames decodes to the same samples as libspeex compiled from C (a test pins
+the output for synthetic frames).
 
 File layout (all four Katrin/Roberto files checked):
 
@@ -80,7 +86,7 @@ comparing against the original's audio and then confirmed in its code:
   `SPEEX_GET_INNOV` (decoder ctl 0x1000f0e0, case 0x66) writes
   `e[2i] = 2.0 · exc[i]` (constant 2.0 at 0x10022e58), with alternating signs
   in the folding (-1.0 at 0x100242f8). Speex 1.2 hands 1×, so 8–16 kHz was
-  6 dB too quiet. Patched in `speex/libspeex/sb_celp.c`.
+  6 dB too quiet. Done in `speex::HighBand::decode`.
 - Speex 1.2 high-passes its output; the older decoder doesn't. Turned off
   (`SPEEX_SET_HIGHPASS` 0): below 250 Hz the match went from 10 dB to 40 dB.
 
@@ -523,9 +529,12 @@ when a speed/pitch change asks for it.
   stress (97.6% held out); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
-- A browser build: everything is Rust on bytes (installers included) except
-  the Speex decoder, C, which needs a WASI/Emscripten sysroot or a Rust port.
-- Bit-exact Speex decoding (we are within ±1–2 LSB, 70–80 dB): it decides
-  the last pitch marks and so the last SIG differences.
+- A browser build: the library is all Rust on bytes now (installers and
+  Speex included) but hasn't been built for `wasm32` here (the target isn't
+  installed); the app's file and audio parts need web counterparts.
+- Decoding exactly as LTTS7Codec210 does (we match libspeex bit for bit, the
+  original within ±1–2 LSB, 70–80 dB; it was built with MSVC for 32-bit x87
+  and rounds differently): it decides the last pitch marks and so the last
+  SIG differences.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
   and pitch controls, Gilded phrases.

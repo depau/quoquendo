@@ -579,6 +579,12 @@
    "group": "German FON",
    "value": "0x19, 0x1e, 0x18, 0x20, 0x21, 0x16, 0x22, 0x1f, 0x82, 0x2e",
    "source": "LTTS7German.dll 0x10008130; class codes from 0x1000a470"
+  },
+  {
+   "name": "Speex frame layout of every voice",
+   "group": "recordings",
+   "value": "narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1 (492 + 352 + 36 bits)",
+   "source": "every frame of 19 voice files read; speex::Decoder::supports"
   }
  ]
 }
