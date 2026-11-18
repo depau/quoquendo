@@ -1,0 +1,195 @@
+package eu.depau.quoquendo
+
+import android.media.AudioFormat
+import android.speech.tts.SynthesisCallback
+import android.speech.tts.SynthesisRequest
+import android.speech.tts.TextToSpeech
+import android.speech.tts.TextToSpeechService
+import android.speech.tts.Voice
+import android.util.Log
+import java.util.Locale
+import java.util.MissingResourceException
+
+/** quoquendo as an Android text-to-speech engine. */
+class QuoquendoTtsService : TextToSpeechService() {
+    private lateinit var store: VoiceStore
+
+    /** The one loaded voice: its name and engine handle. */
+    private var loadedName: String? = null
+    private var handle: Long = 0
+    private var language: Array<String> = arrayOf("", "", "")
+    private val lock = Any()
+    private val listLock = Any()
+
+    @Volatile
+    private var stopped = false
+
+    private var cached: List<InstalledVoice> = emptyList()
+    private var cachedAt = 0L
+
+    override fun onCreate() {
+        store = VoiceStore(this)
+        super.onCreate()
+    }
+
+    override fun onDestroy() {
+        synchronized(lock) { unload() }
+        super.onDestroy()
+    }
+
+    /** Installed voices that can speak, re-read at most every two seconds. */
+    private fun voices(): List<InstalledVoice> = synchronized(listLock) {
+        val now = System.currentTimeMillis()
+        if (now - cachedAt > 2000) {
+            cached = try {
+                store.installed().filter { it.speakable }
+            } catch (e: Exception) {
+                Log.e(TAG, "listing voices failed", e)
+                emptyList()
+            }
+            cachedAt = now
+        }
+        cached
+    }
+
+    private fun Locale.iso3Language(): String = try { isO3Language } catch (_: MissingResourceException) { language }
+    private fun Locale.iso3Country(): String = try { isO3Country } catch (_: MissingResourceException) { country }
+
+    /** How well [locale] matches a request (TextToSpeech.LANG_* level). */
+    private fun level(locale: Locale, lang: String?, country: String?, variant: String?): Int {
+        val l = lang.orEmpty()
+        if (l.isEmpty() || !(locale.iso3Language().equals(l, true) || locale.language.equals(l, true))) {
+            return TextToSpeech.LANG_NOT_SUPPORTED
+        }
+        val c = country.orEmpty()
+        if (c.isEmpty() || !(locale.iso3Country().equals(c, true) || locale.country.equals(c, true))) {
+            return TextToSpeech.LANG_AVAILABLE
+        }
+        val v = variant.orEmpty()
+        return if (v.isNotEmpty() && locale.variant.equals(v, true)) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+        else TextToSpeech.LANG_COUNTRY_AVAILABLE
+    }
+
+    /** The best (voice, locale, level) for a request, or null. */
+    private fun best(lang: String?, country: String?, variant: String?): Triple<InstalledVoice, Locale, Int>? =
+        voices().flatMap { v -> v.locales.map { Triple(v, it, level(it, lang, country, variant)) } }
+            .filter { it.third >= TextToSpeech.LANG_AVAILABLE }
+            // the strongest match; among equals, a voice whose language data is present
+            .maxWithOrNull(compareBy({ it.third }, { !it.first.languageMissing }))
+
+    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
+        best(lang, country, variant)?.third ?: TextToSpeech.LANG_NOT_SUPPORTED
+
+    override fun onGetLanguage(): Array<String> = synchronized(lock) { language }
+
+    override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
+        val (voice, locale, level) = best(lang, country, variant) ?: return TextToSpeech.LANG_NOT_SUPPORTED
+        synchronized(lock) {
+            if (!load(voice.name)) return TextToSpeech.LANG_NOT_SUPPORTED
+            language = arrayOf(locale.iso3Language(), locale.iso3Country(), locale.variant)
+        }
+        return level
+    }
+
+    override fun onGetVoices(): List<Voice> = voices().flatMap { v ->
+        v.locales.map { locale ->
+            Voice(
+                VoiceStore.ttsVoiceName(v.name, locale),
+                locale,
+                Voice.QUALITY_HIGH,
+                Voice.LATENCY_NORMAL,
+                false,
+                emptySet(),
+            )
+        }
+    }
+
+    override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String? =
+        best(lang, country, variant)?.let { (v, locale, _) -> VoiceStore.ttsVoiceName(v.name, locale) }
+
+    /** The installed voice and locale behind a TTS voice name. */
+    private fun byVoiceName(voiceName: String?): Pair<InstalledVoice, Locale>? {
+        if (voiceName == null) return null
+        for (v in voices()) for (l in v.locales) {
+            if (VoiceStore.ttsVoiceName(v.name, l) == voiceName) return v to l
+        }
+        return null
+    }
+
+    override fun onIsValidVoiceName(voiceName: String?): Int =
+        if (byVoiceName(voiceName) != null) TextToSpeech.SUCCESS else TextToSpeech.ERROR
+
+    override fun onLoadVoice(voiceName: String?): Int {
+        val (voice, locale) = byVoiceName(voiceName) ?: return TextToSpeech.ERROR
+        synchronized(lock) {
+            if (!load(voice.name)) return TextToSpeech.ERROR
+            language = arrayOf(locale.iso3Language(), locale.iso3Country(), locale.variant)
+        }
+        return TextToSpeech.SUCCESS
+    }
+
+    /** Make [name] the one loaded voice. Call holding [lock]. */
+    private fun load(name: String): Boolean {
+        if (loadedName == name && handle != 0L) return true
+        unload()
+        return try {
+            handle = Native.loadVoice(store.root.path, name)
+            loadedName = name
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "loading $name failed", e)
+            false
+        }
+    }
+
+    private fun unload() {
+        if (handle != 0L) Native.freeVoice(handle)
+        handle = 0
+        loadedName = null
+    }
+
+    override fun onStop() {
+        stopped = true
+    }
+
+    override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
+        stopped = false
+        val text = request.charSequenceText?.toString().orEmpty()
+        Log.i(TAG, "onSynthesizeText voice=${request.voiceName} lang=${request.language}-${request.country} chars=${text.length}")
+        val (samples, rate) = try {
+            synchronized(lock) {
+                val wanted = byVoiceName(request.voiceName)?.first
+                    ?: best(request.language, request.country, request.variant)?.first
+                    ?: throw IllegalStateException("no installed voice speaks ${request.language}-${request.country}")
+                if (!load(wanted.name)) throw IllegalStateException("could not load ${wanted.name}")
+                // rate and pitch from the request are ignored: the engine has no speed or pitch control yet
+                Native.synthesize(handle, text) to Native.sampleRate(handle)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "synthesis failed", e)
+            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            return
+        }
+        Log.i(TAG, "synthesized ${samples.size} samples at $rate Hz")
+        if (callback.start(rate, AudioFormat.ENCODING_PCM_16BIT, 1) != TextToSpeech.SUCCESS) return
+        val bytes = ByteArray(samples.size * 2)
+        for (i in samples.indices) {
+            val s = samples[i].toInt()
+            bytes[2 * i] = s.toByte()
+            bytes[2 * i + 1] = (s shr 8).toByte()
+        }
+        val chunk = callback.maxBufferSize.coerceAtLeast(2)
+        var at = 0
+        while (at < bytes.size) {
+            if (stopped) return
+            val n = minOf(chunk, bytes.size - at)
+            if (callback.audioAvailable(bytes, at, n) != TextToSpeech.SUCCESS) return
+            at += n
+        }
+        callback.done()
+    }
+
+    companion object {
+        const val TAG = "quoquendo"
+    }
+}

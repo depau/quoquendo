@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/quoquendo"]
+members = ["crates/quoquendo", "crates/quoquendo-jni"]
 
 [package]
 name = "quoquendo-app"
@@ -13,10 +13,31 @@ path = "src/main.rs"
 
 [dependencies]
 quoquendo = { path = "crates/quoquendo" }
-eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "persistence"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+rfd = "0.15"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+eframe = { version = "0.29", default-features = false, features = ["x11", "wayland"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 rodio = "0.19"
-serde_json = "1"
+ureq = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+    "Window", "Navigator", "StorageManager", "FileSystemDirectoryHandle", "FileSystemFileHandle",
+    "FileSystemWritableFileStream", "FileSystemGetFileOptions", "FileSystemGetDirectoryOptions",
+    "FileSystemRemoveOptions", "File", "Blob", "BlobPropertyBag", "Url", "Document", "HtmlAnchorElement",
+    "HtmlCanvasElement", "Request", "RequestInit", "Response", "Headers", "ReadableStream",
+    "ReadableStreamDefaultReader", "AudioContext", "AudioBuffer", "AudioBufferSourceNode",
+    "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext", "WritableStream",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = "0.30"

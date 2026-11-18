@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>quoquendo</title>
+    <meta name="description" content="Loquendo 7 voices, rebuilt: speak with the original voice files in your browser.">
+    <link data-trunk rel="rust" href="../Cargo.toml" data-bin="quoquendo" data-wasm-opt="z" />
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1917; }
+        canvas#qq_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+        #qq_loading {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #948e82; font: 15px system-ui, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="qq_canvas"></canvas>
+    <div id="qq_loading">Loading quoquendo…</div>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: import an installer without the document picker.
+     D=/sdcard/Android/data/eu.depau.quoquendo/files
+     A="am broadcast -n eu.depau.quoquendo/.DebugImportReceiver -a eu.depau.quoquendo.DEBUG_IMPORT"
+     adb shell $A                      (creates $D owned by the app)
+     adb push "Raffaele - Italian.exe" $D/
+     adb shell $A -[-]es file "'Raffaele - Italian.exe'"
+     logcat tag quoquendo reports "DEBUG_IMPORT …: installed [Roberto]". -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".DebugImportReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="eu.depau.quoquendo.DEBUG_IMPORT" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
