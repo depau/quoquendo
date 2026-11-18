@@ -25,6 +25,7 @@ pub mod phoneset;
 pub mod phonetics;
 pub mod sqlite;
 pub mod sig;
+pub mod spanish;
 pub mod synth;
 
 use std::path::Path;

@@ -604,6 +604,102 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
     out
 }
 
+// --- Spanish connected speech ------------------------------------------------
+
+/// Little Spanish words said without stress (Jorge's transcriptions).
+const SPANISH_UNSTRESSED: &[&str] = &[
+    "el", "la", "los", "las", "lo", "de", "del", "con", "por", "para", "a", "al", "en", "y", "e", "o", "u", "que", "se", "me",
+    "te", "le", "les", "nos", "su", "sus", "mi", "mis", "tu", "tus", "un", "una", "unos", "unas", "sin",
+];
+
+/// What the original does across Spanish words: little words lose their
+/// stress (`y` is i); b/d/g are stops (b dd g) at the start of a phrase or
+/// after a nasal (d also after l) and soft (BH DH GH) elsewhere, also inside
+/// words; n takes the place of the next consonant (m before p/b/m, M before
+/// f, N before k/g/x, GN before ll/y); su/tu/mi glide into a vowel.
+fn spanish_connected_speech(tokens: &mut [Token]) {
+    let words: Vec<usize> = (0..tokens.len()).filter(|&i| matches!(tokens[i], Token::Word { .. })).collect();
+    for &i in &words {
+        if let Token::Word { text, symbols } = &mut tokens[i] {
+            if text == "y" {
+                *symbols = vec!["i".into()];
+            } else if SPANISH_UNSTRESSED.contains(&text.as_str()) {
+                for s in symbols.iter_mut() {
+                    *s = s.trim_start_matches('`').to_string();
+                }
+            }
+        }
+    }
+    // walk the phones of each phrase (pauses other than word gaps break it)
+    let mut prev: Option<String> = None;
+    for t in tokens.iter_mut() {
+        match t {
+            Token::Pause { reason, .. } => {
+                if reason != "word gap" {
+                    prev = None;
+                }
+            }
+            Token::Word { symbols, .. } => {
+                for k in 0..symbols.len() {
+                    let cur = symbols[k].clone();
+                    let after_nasal = matches!(prev.as_deref(), Some("m" | "n" | "N" | "M" | "GN" | "Gn"));
+                    let soft = match cur.as_str() {
+                        "b" => (prev.is_some() && !after_nasal).then_some("BH"),
+                        "dd" => (prev.is_some() && !after_nasal && prev.as_deref() != Some("l")).then_some("DH"),
+                        "g" => (prev.is_some() && !after_nasal).then_some("GH"),
+                        _ => None,
+                    };
+                    if let Some(s) = soft {
+                        symbols[k] = s.into();
+                    }
+                    prev = Some(symbols[k].clone());
+                }
+            }
+        }
+    }
+    // nasal assimilation and gliding, across word gaps too
+    let mut flat: Vec<(usize, usize)> = Vec::new();
+    for (ti, t) in tokens.iter().enumerate() {
+        if let Token::Word { symbols, .. } = t {
+            for k in 0..symbols.len() {
+                flat.push((ti, k));
+            }
+        }
+    }
+    for f in 0..flat.len().saturating_sub(1) {
+        let (ti, k) = flat[f];
+        let (tj, kj) = flat[f + 1];
+        let joined = ti == tj || tokens[ti + 1..tj].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
+        if !joined {
+            continue;
+        }
+        let next = tokens[tj].symbols()[kj].trim_start_matches('`').to_string();
+        if let Token::Word { text, symbols } = &mut tokens[ti] {
+            let cur = symbols[k].clone();
+            if cur == "n" {
+                let to = match next.as_str() {
+                    "p" | "b" | "BH" | "m" => Some("m"),
+                    "f" => Some("M"),
+                    "k" | "g" | "GH" | "x" => Some("N"),
+                    "Gl" | "J" => Some("GN"),
+                    _ => None,
+                };
+                if let Some(to) = to {
+                    symbols[k] = to.into();
+                }
+            }
+            let glide_word = matches!(text.as_str(), "su" | "tu" | "mi" | "sus" | "tus" | "mis");
+            if ti != tj && glide_word && k + 1 == symbols.len() && matches!(next.as_str(), "a" | "e" | "i" | "o" | "u") {
+                symbols[k] = match cur.as_str() {
+                    "u" => "w".into(),
+                    "i" => "j".into(),
+                    other => other.into(),
+                };
+            }
+        }
+    }
+}
+
 // --- French connected speech --------------------------------------------------
 
 /// A French word the dictionary doesn't have whole: `est-ce` reads as its
@@ -782,6 +878,9 @@ pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
         if std::env::var_os("QQ_OLD_FRENCH").is_none() {
             return crate::french::transcribe(word);
         }
+    }
+    if lang == Language::Spanish {
+        return crate::spanish::transcribe(word);
     }
     let raw = bare_word(word);
     if raw.is_empty() {
@@ -2114,6 +2213,9 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
     }
     if lang == Language::French {
         french_connected_speech(&mut tokens);
+    }
+    if lang == Language::Spanish {
+        spanish_connected_speech(&mut tokens);
     }
 
     // collapse runs of pauses into the strongest one
