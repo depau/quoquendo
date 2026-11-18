@@ -24,6 +24,9 @@ pub struct Reference {
     pub pieces: Vec<(u32, u32)>,
     /// SIG: its audio
     pub audio: Vec<i16>,
+    /// every request to its decoders (`LOQ_TRACE_DECODE`): decoder, sample
+    /// position, the samples returned
+    pub decodes: Vec<(String, usize, Vec<i16>)>,
 }
 
 fn is_pause(sym: &str) -> bool {
@@ -61,25 +64,42 @@ pub fn run_many(voice: &str, texts: &[String]) -> Result<Vec<Reference>, String>
     let dir = oracle_dir().ok_or("oracle/run.sh not found (run from the quoquendo folder)")?;
     let cache = dir.join("cache");
     std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
-    let todo: Vec<&String> = texts.iter().filter(|t| !cache.join(format!("{}.wav", key(voice, t))).is_file()).collect();
+    // results come with their decoder trace (`.dec`); older cached ones
+    // without it are run again
+    let todo: Vec<&String> = texts.iter().filter(|t| !cache.join(format!("{}.dec", key(voice, t))).is_file()).collect();
     if !todo.is_empty() {
         let batch = cache.join("batch.txt");
         let lines: Vec<String> = todo.iter().map(|t| t.replace(['\n', '\r'], " ")).collect();
         std::fs::write(&batch, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(cache.join("batch.dec"));
         let out = std::process::Command::new(dir.join("run.sh"))
             .arg(voice)
             .arg(&batch)
             .arg(cache.join("batch"))
             .env("LOQ_LINES", "1")
+            .env("LOQ_TRACE_DECODE", "1")
             .output()
             .map_err(|e| format!("running the original engine: {e}"))?;
         if !String::from_utf8_lossy(&out.stdout).contains("ok") {
             return Err(format!("the original engine failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
         }
+        // the trace is one file for the batch, `U <n>` before each utterance
+        let trace = std::fs::read_to_string(cache.join("batch.dec")).unwrap_or_default();
+        let mut per_text: Vec<String> = vec![String::new(); todo.len()];
+        let mut cur: Option<usize> = None;
+        for line in trace.lines() {
+            if let Some(n) = line.strip_prefix("U ") {
+                cur = n.trim().parse().ok().filter(|&n: &usize| n < todo.len());
+            } else if let (Some(i), true) = (cur, line.starts_with("D ")) {
+                per_text[i].push_str(line);
+                per_text[i].push('\n');
+            }
+        }
         for (i, t) in todo.iter().enumerate() {
             for ext in ["fon", "ev", "wav"] {
                 let _ = std::fs::rename(cache.join(format!("batch-{i}.{ext}")), cache.join(format!("{}.{ext}", key(voice, t))));
             }
+            let _ = std::fs::write(cache.join(format!("{}.dec", key(voice, t))), &per_text[i]);
             let _ = std::fs::write(cache.join(format!("{}.txt", key(voice, t))), t.as_bytes());
         }
     }
@@ -165,6 +185,13 @@ fn load(prefix: &Path, text: &str) -> Result<Reference, String> {
     let wav = read("wav")?;
     let data = wav.windows(4).position(|w| w == b"data").map(|p| p + 8).unwrap_or(44).min(wav.len());
     r.audio = wav[data..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+    // `D <codec> <decoder> <position> <samples> <rc> <cw> <mxcsr> <samples…>`
+    for line in std::fs::read_to_string(prefix.with_extension("dec")).unwrap_or_default().lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        if let (Some(dec), Some(pos)) = (f.get(2), f.get(3).and_then(|p| p.parse().ok())) {
+            r.decodes.push((dec.to_string(), pos, f.iter().skip(8).filter_map(|x| x.parse().ok()).collect()));
+        }
+    }
     Ok(r)
 }
 

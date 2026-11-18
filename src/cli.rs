@@ -39,6 +39,9 @@ pub struct LaunchOptions {
     /// `--compare-all`: every voice against the original on its language's
     /// benchmark, into oracle/out/dashboard.md
     compare_all: bool,
+    /// `--check-decode <file.dec> [--voice <v>]`: the original's decoder
+    /// requests (oracle/loqref.c LOQ_TRACE_DECODE) replayed through ours
+    check_decode: Option<PathBuf>,
 }
 
 pub fn parse_args() -> LaunchOptions {
@@ -93,6 +96,8 @@ pub fn parse_args() -> LaunchOptions {
             opts.list_installers = true;
         } else if a == "--compare-all" {
             opts.compare_all = true;
+        } else if a == "--check-decode" {
+            opts.check_decode = args.next().map(PathBuf::from);
         } else if a == "--store" {
             if let Some(dir) = args.next() {
                 install::set_store(dir.into());
@@ -312,9 +317,10 @@ fn compare_all() -> Result<(), String> {
             let (report, t) = pipeline::compare(&refs, &voice, Some(&out))?;
             let _ = std::fs::write(dir.join(format!("out/compare/{}.txt", v.name)), &report);
             Ok(format!(
-                "{} | {} | — | {:.1} dB | {:.1}% | {:.1}% |",
+                "{} | {} | {} | {:.1} dB | {:.1}% | {:.1}% |",
                 pct(t.same_phones, t.phones),
                 pct(t.same_halves, t.halves),
+                pct(t.dec_same, t.dec_requests),
                 mean(&t.inside_snr),
                 100.0 * mean(&t.replay_close),
                 100.0 * mean(&t.replay_exact)
@@ -368,6 +374,57 @@ fn check_marks(trace: &str, voice: Option<&str>) -> Result<(), String> {
         }
     }
     println!("{ok} of {n} half-phones with the same marks");
+    Ok(())
+}
+
+/// `--check-decode <file.dec>`: replay every request the original engine
+/// made of its decoder (oracle/loqref.c LOQ_TRACE_DECODE), in order, through
+/// `AudioBank::read`, and count the bit-identical ones.
+fn check_decode(trace: &std::path::Path, voice: Option<&str>) -> Result<(), String> {
+    let v = find_voice(voice)?;
+    let bank = v.db.audio.as_ref().ok_or("the voice has no recordings")?;
+    let text = std::fs::read_to_string(trace).map_err(|e| format!("{}: {e}", trace.display()))?;
+    let (mut same, mut n, mut samples, mut samples_same, mut other) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut decoder = None;
+    for line in text.lines().filter(|l| l.starts_with("D ")) {
+        let f: Vec<&str> = line.split(' ').collect();
+        let field = |i: usize| f.get(i).copied().unwrap_or("");
+        // one decoder per recordings file: the first in the trace is taken
+        // for the voice's own; extra databases (Gilded phrases) have theirs
+        if *decoder.get_or_insert(field(2).to_string()) != field(2) {
+            other += 1;
+            continue;
+        }
+        let pos: usize = field(3).parse().map_err(|_| format!("bad line: {}", &line[..line.len().min(80)]))?;
+        let len: usize = field(4).parse().map_err(|_| format!("bad line: {}", &line[..line.len().min(80)]))?;
+        let theirs: Vec<i16> = f.iter().skip(8).filter_map(|x| x.parse().ok()).collect();
+        let ours = bank.read(pos, len);
+        n += 1;
+        samples += len;
+        let differ: Vec<usize> = (0..len).filter(|&i| theirs.get(i) != ours.get(i)).collect();
+        samples_same += len - differ.len();
+        if differ.is_empty() {
+            same += 1;
+        } else {
+            let i = differ[0];
+            let worst = differ.iter().map(|&i| (ours[i] as i32 - *theirs.get(i).unwrap_or(&0) as i32).abs()).max().unwrap_or(0);
+            println!(
+                "request {n}: {pos}+{len} ({} cw {}): {} samples differ, first at {i} (ours {} theirs {}), largest by {worst}",
+                field(1),
+                field(6),
+                differ.len(),
+                ours[i],
+                theirs.get(i).copied().unwrap_or(0)
+            );
+        }
+    }
+    println!(
+        "{same} of {n} requests bit-identical ({:.2}%), {samples_same} of {samples} samples",
+        100.0 * same as f64 / n.max(1) as f64
+    );
+    if other > 0 {
+        println!("{other} requests to other decoders (extra databases) not checked");
+    }
     Ok(())
 }
 
@@ -426,6 +483,9 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
     };
     if let Ok(trace) = std::env::var("QQ_CHECK_MARKS") {
         return Some(done(check_marks(&trace, opts.voice.as_deref())));
+    }
+    if let Some(trace) = &opts.check_decode {
+        return Some(done(check_decode(trace, opts.voice.as_deref())));
     }
     if opts.list_installers {
         for i in &quoquendo::catalog::INSTALLERS {

@@ -125,6 +125,54 @@ static void *redirect(HMODULE dll, unsigned site, void *to) {
     return was;
 }
 
+/* LOQ_TRACE_DECODE=1: log every decoder request to <prefix>.dec. The codecs
+ * hand LoqTTS7.dll their functions through a name table (LTTS7Codec210.dll
+ * 0x1002e028, LTTS7CodecMsx.dll 0x10015ae0); the ELQDecode slot is swapped
+ * for a wrapper before the voice loads. ELQDecode (Codec210 0x10004530, Msx
+ * 0x10002780) is cdecl (decoder, position, samples, short *out, file) and
+ * returns 0; the decoder adds its delay to the position itself. One line per
+ * request, with the x87 control word and MXCSR the decode ran under:
+ *   D <codec> <decoder> <position> <samples> <rc> <x87 control word> <mxcsr> <samples...>
+ * `U <n>` before each utterance, and per codec loaded its C runtime's SSE2
+ * flags (exp/floor take their SSE2 routines when the first is set, _ftol2
+ * when the second is: Codec210 0x100300cc/0x100300d0, Msx 0x1001c184/
+ * 0x1001c18c):
+ *   S <codec> <flag> <flag> */
+FILE *declog;
+typedef int (__cdecl *fn_dec)(void *, unsigned, unsigned, short *, void *);
+static fn_dec real_dec210, real_decmsx;
+static int log_dec(fn_dec real, const char *codec, void *ctx, unsigned pos, unsigned n, short *out, void *file) {
+    unsigned short cw;
+    unsigned mxcsr;
+    __asm__ volatile("fnstcw %0\n stmxcsr %1" : "=m"(cw), "=m"(mxcsr));
+    int rc = real(ctx, pos, n, out, file);
+    fprintf(declog, "D %s %p %u %u %d %04x %04x", codec, ctx, pos, n, rc, cw, mxcsr);
+    for (unsigned i = 0; i < n && out; i++) fprintf(declog, " %d", out[i]);
+    fprintf(declog, "\n");
+    return rc;
+}
+static int __cdecl hook_dec210(void *ctx, unsigned pos, unsigned n, short *out, void *file) {
+    return log_dec(real_dec210, "Codec210", ctx, pos, n, out, file);
+}
+static int __cdecl hook_decmsx(void *ctx, unsigned pos, unsigned n, short *out, void *file) {
+    return log_dec(real_decmsx, "CodecMsx", ctx, pos, n, out, file);
+}
+/* swap the function pointer at `slot` (expected to hold `fn`) in codec `name` */
+static int hook_codec(const char *bin, const char *name, unsigned slot, unsigned fn, void *to, fn_dec *real, unsigned sse2, unsigned ftol) {
+    char path[MAX_PATH];
+    snprintf(path, sizeof path, "%s\\%s", bin, name);
+    HMODULE m = LoadLibraryA(path);
+    if (!m) return 0; /* not installed: no voice of this codec */
+    void **at = (void **)((char *)m + (slot - 0x10000000));
+    if ((char *)*at != (char *)m + (fn - 0x10000000)) { fprintf(stderr, "%s: ELQDecode slot not where expected\n", name); return -1; }
+    DWORD old;
+    VirtualProtect(at, 4, PAGE_READWRITE, &old);
+    *real = (fn_dec)*at;
+    *at = to;
+    fprintf(declog, "S %s %d %d\n", name, *(int *)((char *)m + (sse2 - 0x10000000)), *(int *)((char *)m + (ftol - 0x10000000)));
+    return 1;
+}
+
 typedef int (__cdecl *fn_add)(void *, void **, const char *, int, int, int, void *);
 static fn_add real_add;
 static const char *dump_prefix;
@@ -241,6 +289,13 @@ int main(int argc, char **argv) {
         real_join = redirect(dll, 0x1001f8a3, (void *)hook_join);
         real_marks = (fn_marks)redirect(dll, 0x1001fbd1, (void *)hook_marks);
     }
+    if (getenv("LOQ_TRACE_DECODE")) {
+        snprintf(path, sizeof path, "%s.dec", argv[4]);
+        declog = fopen(path, "wb");
+        if (hook_codec(argv[1], "LTTS7Codec210.dll", 0x1002e064, 0x10004530, (void *)hook_dec210, &real_dec210, 0x100300cc, 0x100300d0) < 0 ||
+            hook_codec(argv[1], "LTTS7CodecMsx.dll", 0x10015b1c, 0x10002780, (void *)hook_decmsx, &real_decmsx, 0x1001c184, 0x1001c18c) < 0)
+            return 2;
+    }
     CHECK(ttsLoadPersona(reader, argv[2], NULL, NULL));
     CHECK(ttsSetTextEncoding(reader, 65001));
     ttsSetParam(reader, "TaggedText", "FALSE");
@@ -297,7 +352,9 @@ int main(int argc, char **argv) {
         snprintf(path, sizeof path, "%s.wav", pre);
         CHECK(ttsSetAudio(reader, "LTTS7AudioFile", path, 32000, 0, 1, NULL));
         unsigned prompt = 0;
+        if (declog) { fprintf(declog, "U %d\n", i); fflush(declog); }
         CHECK(ttsRead(reader, text, 0, 0, &prompt));
+        if (declog) fflush(declog);
         fclose(ev);
         ev = NULL;
     }

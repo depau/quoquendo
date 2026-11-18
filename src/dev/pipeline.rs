@@ -251,6 +251,10 @@ pub struct Totals {
     pub replay_close: Vec<f64>,
     /// share of the replay's samples identical to the original's
     pub replay_exact: Vec<f64>,
+    /// the original's decoder requests (`LOQ_TRACE_DECODE`), and how many
+    /// ours answer bit for bit
+    pub dec_requests: usize,
+    pub dec_same: usize,
     pub orig_s: f64,
     pub ours_s: f64,
 }
@@ -323,6 +327,15 @@ pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&st
         );
         // SIG: the original's own pieces through our decoder and joins
         let replay = to_i16(&synth::render(&orig_plan, db, settings)?);
+        // the decoder alone: the original's requests, in order, through ours
+        // (its own recordings only; Gilded databases have other decoders)
+        if let (Some(bank), Some(first)) = (db.audio.as_ref(), r.decodes.first()) {
+            let mine: Vec<_> = r.decodes.iter().filter(|d| d.0 == first.0).collect();
+            let same = mine.iter().filter(|(_, pos, theirs)| bank.read(*pos, theirs.len()) == *theirs).count();
+            tot.dec_requests += mine.len();
+            tot.dec_same += same;
+            let _ = writeln!(rep, "  DEC  {same} of {} decoder requests bit-identical", mine.len());
+        }
         let (snr, close) = audio_match(&r.audio, &replay);
         tot.replay_snr.push(snr);
         tot.replay_close.push(close);

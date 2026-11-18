@@ -3,24 +3,29 @@
 #
 #   oracle/run.sh <voice> <utf-8 text file> <output prefix>
 #
-# First use of a voice installs its installer into oracle/prefix (LOQ_PREFIX
-# for another), a private Wine prefix (nothing outside it is touched). Inno
-# Setup installers run under Wine; the Wise/MSI ones (voice files only) are
-# unpacked by `quoquendo --unpack` over an engine an Inno voice installed
-# (Raffaele's, installed first when missing). The licence is put into that
-# prefix's registry whenever it changes or after an install (installers
-# overwrite it):
-#  - by default the one loquendo-keygen made for this computer and Wine user
-#    `wineuser` (LOQ_LICENCE to use another): the engine runs as it is;
-#  - without it, the loquendo-tts-server licence (from its git history), bound
-#    to the network card 7A:8B:9C:1D:2E:3F: the engine then runs in its own
-#    network namespace holding a dummy card with that address (no root).
+# First use of a voice installs it into oracle/prefix (LOQ_PREFIX for
+# another), a private Wine prefix (nothing outside it is touched): the
+# engine comes from Raffaele's Inno Setup installer run under Wine, every
+# other voice is its files unpacked over it by `quoquendo --unpack`. The
+# licence is put into that prefix's registry whenever it changes or after an
+# install (installers overwrite it):
+#  - by default the one the voice installers themselves write for this Wine
+#    user, exported to license-installer.reg in the repository root
+#    (`wine reg export 'HKLM\Software\Wow6432Node\Loquendo\LTTS7\LicenseCode'`
+#    after an install); it lists every voice of the pack;
+#  - else the one loquendo-keygen made for this computer and Wine user
+#    `wineuser`, license-wineuser.reg (Kate and Juliette crash under it);
+#  - LOQ_LICENCE to use another;
+#  - without any, the loquendo-tts-server licence (from its git history),
+#    bound to the network card 7A:8B:9C:1D:2E:3F: the engine then runs in its
+#    own network namespace holding a dummy card with that address (no root).
 # Writes <prefix>.fon/.ev/.wav (see loqref.c).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 VOICE=$1 TEXT=$2 OUT=$3
 INSTALLERS=${LOQ_INSTALLERS:-"$HOME/Downloads/BitTorrent/text-to-speech-oddcast-voices-pack-2024/Loquendo 7"}
-LICENCE=${LOQ_LICENCE:-"$HERE/../license-wineuser.reg"}
+LICENCE=${LOQ_LICENCE:-"$HERE/../license-installer.reg"}
+[ -f "$LICENCE" ] || [ -n "${LOQ_LICENCE:-}" ] || LICENCE="$HERE/../license-wineuser.reg"
 MAC=7A:8B:9C:1D:2E:3F
 
 export WINEPREFIX="${LOQ_PREFIX:-$HERE/prefix}" WINEDEBUG=-all USER=wineuser
@@ -29,15 +34,21 @@ LTTS7="$WINEPREFIX/drive_c/Program Files (x86)/Loquendo/LTTS7"
 
 install_voice() {
     local INSTALLER i
-    # installers are named "<Voice> - <Language>.exe" (Roberto ships as Raffaele)
+    # installers are named "<Voice> - <Language>.exe", some after another
+    # name than the voice they bring
     case "$1" in
     Roberto) INSTALLER="Raffaele - Italian.exe" ;;
     Linlin) INSTALLER="LinLin - Chinese.exe" ;;
+    Juliette) INSTALLER="Jolie - French.exe" ;;
+    Kate) INSTALLER="Catherine - UK English.exe" ;;
     *) INSTALLER=${LOQ_INSTALLER:-$(cd "$INSTALLERS" && ls "$1 - "*.[eE][xX][eE] 2>/dev/null | head -1)} ;;
     esac
     [ -n "$INSTALLER" ] || { echo "no installer for $1 in $INSTALLERS" >&2; exit 1; }
     echo "installing $1 into $WINEPREFIX (one time)..." >&2
-    if LC_ALL=C grep -qaF "$(printf 'rDlPtS\315\346\327{\013*')" "$INSTALLERS/$INSTALLER"; then
+    # the engine itself comes from one real installation (Roberto's); every
+    # other voice is only its files, laid over it (some installers crash
+    # under Wine)
+    if [ "$1" = Roberto ]; then
         # Inno Setup wants a display even when silent: give it a virtual one
         xvfb-run -a wine "$INSTALLERS/$INSTALLER" /VERYSILENT /SUPPRESSMSGBOXES >/dev/null 2>&1 &
         # the installer ends by starting the dongle registration tool: stop it
@@ -50,7 +61,6 @@ install_voice() {
         wait || true
         wineserver -w
     else
-        # Wise/MSI: voice files only, laid over an installed engine
         [ -f "$WINEPREFIX/.voice-Roberto" ] || install_voice Roberto
         QQ="$HERE/../target/release/quoquendo"
         [ -x "$QQ" ] || cargo build --release --bin quoquendo --manifest-path "$HERE/../Cargo.toml" >&2

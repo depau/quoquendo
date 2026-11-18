@@ -22,6 +22,37 @@ pub struct AudioBank {
     key: u8,
     /// CodecMsx: the file's own codebooks
     books: Option<msx::Codebooks>,
+    /// the decoder and the frames it keeps between requests
+    stream: std::sync::Mutex<Stream>,
+}
+
+enum FrameDecoder {
+    Codec210(Box<speex::Decoder>),
+    Msx(Box<msx::Decoder>),
+}
+
+/// What `ELQDecode` keeps between requests (LTTS7Codec210 0x10004340,
+/// LTTS7CodecMsx 0x100024d0): one decoder, the frame it decoded last and
+/// the one before. Frame numbers start at 0xfffffffe, "none"
+/// (ELQOpenDecoder 0x100046d3, 0x10002a22).
+struct Stream {
+    decoder: Option<FrameDecoder>,
+    cur: u32,
+    prev: u32,
+    cur_buf: Vec<i16>,
+    prev_buf: Vec<i16>,
+}
+
+impl Stream {
+    fn new(frame_samples: usize) -> Stream {
+        Stream {
+            decoder: None,
+            cur: 0xffff_fffe,
+            prev: 0xffff_fffe,
+            cur_buf: vec![0; frame_samples],
+            prev_buf: vec![0; frame_samples],
+        }
+    }
 }
 
 impl AudioBank {
@@ -88,6 +119,7 @@ impl AudioBank {
             variant,
             books: None,
             data,
+            stream: std::sync::Mutex::new(Stream::new(0)),
         };
         match variant {
             Variant::Codec210 if bank.rate != 32000 || bank.frame_samples != speex::FRAME_SAMPLES => {
@@ -108,6 +140,7 @@ impl AudioBank {
                 return Err("Speex frames of a layout no Loquendo 7 voice uses".into());
             }
         }
+        bank.stream = std::sync::Mutex::new(Stream::new(bank.frame_samples));
         Ok(bank)
     }
 
@@ -119,47 +152,76 @@ impl AudioBank {
     /// are decoded before a seek target to settle the decoder: 509 and 6
     /// (LTTS7Codec210 ELQOpenDecoder 0x100045e0); 510 and 9 at 44 kHz
     /// (LTTS7CodecMsx ELQOpenDecoder 0x10002820).
-    fn delay_and_warmup(&self) -> (usize, usize) {
+    fn delay_and_warmup(&self) -> (u32, u32) {
         match self.variant {
             Variant::Codec210 => (509, 6),
             Variant::Msx => (510, 9),
         }
     }
 
-    /// `len` samples of the original recording starting at sample `start`.
+    /// `len` samples of the original recording starting at sample `start`,
+    /// decoded as `ELQDecode` does (LTTS7Codec210 0x10004530 → 0x10004340,
+    /// LTTS7CodecMsx 0x10002780 → 0x100024d0): a request served from the
+    /// frame decoded last or the one before is copied, the frame after the
+    /// last is decoded by the same decoder, and anything else starts a fresh
+    /// decoder that many warm-up frames earlier. The result therefore
+    /// depends on the requests before it, as the original's does.
     pub fn read(&self, start: usize, len: usize) -> Vec<i16> {
         let (delay, warmup) = self.delay_and_warmup();
+        let fs = self.frame_samples as u32;
+        let mut st = self.stream.lock().unwrap_or_else(|e| e.into_inner());
         let mut out = Vec::with_capacity(len);
-        let pos = start + delay;
-        let first = pos / self.frame_samples;
-        let skip = pos - first * self.frame_samples;
-        let from = first.saturating_sub(warmup);
-        let mut pcm = vec![0i16; self.frame_samples];
-        let mut frame = vec![0u8; self.frame_bytes];
-        let mut decode: Box<dyn FnMut(usize, &[u8], &mut [i16])> = match &self.books {
-            Some(books) => {
-                let mut d = msx::Decoder::default();
-                Box::new(move |k, frame, pcm| d.decode(books, k, frame, pcm))
+        let mut pos = (start as u32).wrapping_add(delay);
+        while out.len() < len {
+            let mut f = pos / fs;
+            // CodecMsx: past the last frame the position loses the delay
+            // again (0x100024f1)
+            if self.variant == Variant::Msx && f >= self.frames as u32 {
+                pos = pos.wrapping_sub(delay);
+                f = pos / fs;
             }
-            None => {
-                let mut d = speex::Decoder::default();
-                Box::new(move |_, frame, pcm| d.decode(frame, pcm))
+            if f == st.cur || f == st.prev {
+                let buf = if f == st.cur { &st.cur_buf } else { &st.prev_buf };
+                let off = (pos - f * fs) as usize;
+                let n = (len - out.len()).min(fs as usize - off);
+                out.extend_from_slice(&buf[off..off + n]);
+                pos = pos.wrapping_add(n as u32);
+            } else if f == st.cur.wrapping_add(1) {
+                self.next_frame(&mut st, f);
+            } else {
+                // the reset (0x10004230, 0x10002390): a new decoder
+                st.decoder = Some(match &self.books {
+                    Some(_) => FrameDecoder::Msx(Box::default()),
+                    None => FrameDecoder::Codec210(Box::default()),
+                });
+                for k in f.saturating_sub(warmup)..=f {
+                    self.next_frame(&mut st, k);
+                }
             }
-        };
-        let mut k = from;
-        while out.len() < skip + len && k < self.frames {
-            let at = self.first_frame + k * self.frame_bytes;
-            frame.copy_from_slice(&self.data[at..at + self.frame_bytes]);
-            frame.iter_mut().for_each(|b| *b ^= self.key);
-            decode(k, &frame, &mut pcm);
-            if k >= first {
-                out.extend_from_slice(&pcm);
-            }
-            k += 1;
         }
-        out.drain(..skip.min(out.len()));
-        out.resize(len, 0);
         out
+    }
+
+    /// The frame after the current one: the current becomes the previous
+    /// (0x100042f0, 0x10002480), and frame `k` is decoded into the current
+    /// buffer, or silence past the end of the file.
+    fn next_frame(&self, st: &mut Stream, k: u32) {
+        let st = &mut *st;
+        std::mem::swap(&mut st.prev_buf, &mut st.cur_buf);
+        st.prev = st.cur;
+        st.cur = k;
+        let k = k as usize;
+        if k >= self.frames {
+            st.cur_buf.fill(0);
+            return;
+        }
+        let at = self.first_frame + k * self.frame_bytes;
+        let frame: Vec<u8> = self.data[at..at + self.frame_bytes].iter().map(|b| b ^ self.key).collect();
+        match (st.decoder.as_mut(), &self.books) {
+            (Some(FrameDecoder::Msx(d)), Some(books)) => d.decode(books, k, &frame, &mut st.cur_buf),
+            (Some(FrameDecoder::Codec210(d)), None) => d.decode(&frame, &mut st.cur_buf),
+            _ => unreachable!("the decoder is made with the bank's variant before any frame"),
+        }
     }
 }
 

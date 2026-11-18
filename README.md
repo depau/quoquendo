@@ -95,10 +95,11 @@ tool only, not needed to use quoquendo), on the benchmark sentences in
 | Jorge | Spanish | 99.8% | 98.9% | 88.9% |
 | Katrin | German | 100% (97.6% on unseen sentences) | 98.2% | 71.0% |
 
-Replaying the original engine's own choice of pieces, the audio decoder
-matches its output at 89–105 dB.
+The decoder returns the original's samples bit for bit on every request
+traced (both codecs, MECHANICS.md §2d). Every voice's row, stage by stage, is
+in `oracle/out/dashboard.md` (`quoquendo --compare-all`).
 
-See MECHANICS.md §4–§6 and §9.
+See MECHANICS.md §2d, §4–§6 and §9.
 
 ## Voices, names and licences
 

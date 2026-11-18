@@ -10,10 +10,12 @@
 //! Precision follows the DLLs' code: each expression is evaluated on the FPU
 //! at double precision and rounded to `float` when it is assigned (the
 //! compiler stores every assignment with `fstp dword`), so here expressions
-//! are computed in f64 and every assignment goes through [`f`].
+//! are computed in f64 and every assignment goes through [`f`]; `exp` and
+//! `sqrt` are the DLLs' C runtime's ([`crate::x87`]).
 
 pub mod msx;
 mod tables;
+use crate::x87;
 use std::f64::consts::PI;
 use tables::*;
 
@@ -205,7 +207,7 @@ fn compute_rms(x: &[f32]) -> f32 {
     for &v in x {
         sum = f(v as f64 * v as f64 + sum as f64);
     }
-    f((sum as f64 / x.len() as f64 + 0.1).sqrt())
+    f(x87::sqrt(sum as f64 / x.len() as f64 + 0.1))
 }
 
 /// h0 as stored in LTTS7Codec210.dll at 0x100240a8 (float bits).
@@ -364,7 +366,7 @@ impl Narrowband {
         if self.first {
             self.old_qlsp = qlsp;
         }
-        let ol_gain = f((bits.get(5) as f64 / 3.5).exp()) as f64;
+        let ol_gain = f(x87::exp(bits.get(5) as f64 / 3.5)) as f64;
         let mut interp = [0f32; NB_ORDER];
         for sub in 0..4 {
             let offset = NB_SUB * sub;
@@ -536,7 +538,7 @@ impl Decoder {
         self.wb.decode(&mut bits, &nb_out, &nb_pi_gain, &mut wb_out, |bits, sub, filter_ratio, exc| {
             let qgc = bits.get(4) as f64;
             let el = compute_rms(&nb_exc[sub * 40..sub * 40 + 40]) as f64;
-            let gc = f((qgc * 0.27027027027027023 - 0.15556).exp()) as f64;
+            let gc = f(x87::exp(qgc * 0.27027027027027023 - 0.15556)) as f64;
             let scale = f((el + 1.0) * (gc / filter_ratio as f64));
             split_cb_unquant(exc, bits, 8, 5, 7, true, &HEXC_TABLE, 0.03125);
             signal_mul(exc, scale);
@@ -555,7 +557,7 @@ impl Decoder {
         let mut out = [0f32; FRAME_SAMPLES];
         self.uwb.decode(&mut bits, &wb_out, &wb_pi_gain, &mut out, |bits, sub, filter_ratio, exc| {
             let quant = bits.get(5) as f64;
-            let g = f(f(((quant - 10.0) * 0.125).exp()) as f64 / filter_ratio as f64) as f64;
+            let g = f(f(x87::exp((quant - 10.0) * 0.125)) as f64 / filter_ratio as f64) as f64;
             let mut s = 1f32;
             for i in 0..80 {
                 exc[i] = f(s as f64 * g * 0.7f32 as f64 * wb_innov[sub * 80 + i] as f64);

@@ -115,13 +115,13 @@ File layout (all four Katrin/Roberto files checked):
 
 Decoder settings, from `ELQOpenDecoder` 0x100045e0 and the reset 0x10004230:
 UWB mode at 32000 Hz, enhancement **off**, positions shifted by **509
-samples** (decoder delay), and **6 frames** decoded before a seek target, with
-a fresh decoder per seek.
+samples** (decoder delay), and **6 frames** decoded before a seek target by
+a fresh decoder; what counts as a seek, and the rest of what the decoder
+keeps between requests, is in §2d.
 
-Result: replaying the pieces the original engine chose, our decoder matches
-its audio at a median **104.6 dB** inside the pieces on the Italian
-benchmark (English 98.1, French 93.6, German 89.2, Spanish 103.7; a port of
-Speex 1.2 gave 58–70 dB). A test pins the output for synthetic frames.
+Result: replaying the requests the original engine made of its decoder, our
+decoder returns the same samples **bit for bit** (§2d); a test pins the
+output for synthetic frames.
 
 ## 2b. The 44 kHz recordings — LTTS7CodecMsx (SIG input)
 
@@ -173,10 +173,12 @@ How it decodes, against Codec210 (§2):
   (0x10001500) are Codec210's.
 - Decoder settings (`ELQOpenDecoder` 0x10002820): enhancement off, delay
   **510** samples and **9** warm-up frames at 44 kHz (509 and 6 at 32 kHz).
+  Between requests it keeps what Codec210's keeps (§2d), with one addition:
+  a position whose frame is at or past the header's frame count (+0x11f0,
+  stored by 0x10001dab) has the delay taken off again (0x100024f1).
 
-Result: the original's own pieces through our decoder match its 44 kHz
-output (a loqref build asking for 44000 Hz) at a median **106.7 dB** inside
-the pieces, three benchmark sentences.
+Result: replaying the requests the original engine made of its decoder,
+ours returns the same samples bit for bit (§2d).
 
 ## 2c. Leaving the engine — the output resampler
 
@@ -208,6 +210,87 @@ samples per phone are not reproduced yet; with them our replay of the
 original's pieces scores **81.5 dB** inside pieces at 32 kHz on
 `oracle/bench-it.txt` (mean of the per-sentence medians, which run 45–91),
 against 106.7 dB at 44 kHz.
+
+## 2d. Decoding bit for bit
+
+`oracle/loqref.c` with `LOQ_TRACE_DECODE=1` logs every request LoqTTS7.dll
+makes of either codec, with the samples it got back, to `<prefix>.dec`: the
+codecs hand the engine their functions through their name tables, and the
+`ELQDecode` slot (LTTS7Codec210.dll 0x1002e064, LTTS7CodecMsx.dll
+0x10015b1c) is swapped for a wrapper before the voice loads. `ELQDecode`
+(0x10004530, 0x10002780) is cdecl `(decoder, position, samples, short *out,
+file)`. `quoquendo --check-decode <prefix>.dec --voice <v>` replays the
+requests in order through `AudioBank::read` and counts the bit-identical
+ones.
+
+**The decoder keeps state between requests** (0x10004340, CodecMsx
+0x100024d0). For a position, frame f = (position + delay) / 640:
+
+- f is the frame decoded last, or the one before it (both are kept; their
+  numbers start at 0xfffffffe, `ELQOpenDecoder` 0x100046d3 / 0x10002a22):
+  its samples are copied;
+- f is the frame after the last: the same decoder goes on to decode it, and
+  the last becomes the one before (0x100042f0 / 0x10002480);
+- anything else: a fresh decoder (0x10004230 / 0x10002390) decodes frames
+  max(0, f − warm-up) to f;
+- a frame past the end of the file is silence, without running the decoder.
+
+The engine fetches a phone run's units as overlapping requests (each with a
+margin either side of the unit, §10 unit fetch), so most requests carry
+on with the decoder of the request before. Decoding every request with a
+fresh decoder, as quoquendo did before, matched 20–24% of them; with the
+rules above, all of them:
+
+| voice | codec | benchmark | requests bit-identical, before | after |
+|---|---|---|---|---|
+| Roberto | Codec210 | `oracle/bench-it.txt` | 382 of 1930 (19.8%) | **1930 of 1930** |
+| Allison | Codec210 | `oracle/bench-en.txt` | 170 of 702 (24.2%) | **702 of 702** |
+| Marcello | CodecMsx | `oracle/bench-it.txt` | 412 of 1930 (21.3%) | **1930 of 1930** |
+
+Katrin (`bench-de`, 718 requests), Bernard (`bench-fr`, 576), Jorge
+(`bench-es`, 836), Afroditi (`bench-el`, 888) and Grace (CodecMsx,
+`bench-en`, 690) are bit-identical too. Each line of a benchmark is its own
+utterance (`LOQ_LINES=1`); the decoder carries on across them as well.
+`AudioBank::read` is therefore history-dependent, as the original is: a
+request gives the original's samples when the requests before it were the
+original's too.
+
+**Floating point.** The x87 control word is 0x027f before every request
+(precision control 53 bits, exceptions masked), MXCSR 0x1f80 then 0x1fa0. So
+every `fadd`/`fmul`/`fdiv` rounds to a double, which with the decoder's
+magnitudes is IEEE double arithmetic, and each `fstp dword` is a rounding to
+`float`: the port computes in `f64` and rounds each assignment, with no
+80-bit arithmetic. The decoders' own code (Codec210 0x10001000–0x1000ffff,
+CodecMsx up to 0x10005c00) holds no transcendental instruction; `f2xm1`,
+`fyl2x`, `fsin`, `fcos`, `fsqrt` occur only inside the statically linked
+MSVC runtime. What the decode path reaches of it (REA `get_call_graph` from
+nb_decode 0x10009520 and sb_decode 0x1000e170; CodecMsx 0x10003800 and
+0x10005080):
+
+| call | Codec210 | CodecMsx | as run |
+|---|---|---|---|
+| `_CIexp` | 0x10011aec | 0x10006dac | the SSE2 routine (below) |
+| `_CIsqrt` (compute_rms) | 0x100105c0 | 0x10005ed0 | `fsqrt` under the caller's control word: the correctly rounded double square root |
+| `floor` (16-bit rounding) | 0x10011c90 | 0x10005da0 | SSE2, exact |
+| `_ftol2` | 0x10011050 | 0x10005cf0 | SSE2 `cvttsd2si`, exact |
+
+`_CIexp` takes the runtime's SSE2 routine when its flag (0x100300cc /
+0x1001c184, set at load by 0x10015195 / 0x10007fd9 from CPUID and an OS
+check) is set, which loqref logs (`S` lines: 1), and every exception is
+masked in MXCSR and the control word. The routine (0x100175ee / 0x1000b1ce,
+the same code and constants in both DLLs) rounds x·64/ln 2 with the
+1.5·2⁵² shifter (0x10026ff0, 0x10027010), takes r = x − n·(ln 2/64) in two
+parts (0x10027020, 0x10027030), reads 2^(j/64) as a relative correction and
+mantissa bits from a 64-entry table (0x10027060; CodecMsx 0x10017980), and
+evaluates r + corr + r⁴(c₀ + c₁r) + r²(c₂ + c₃r) (0x10027040, 0x10027050)
+on two SSE lanes before scaling by 2^(j/64 + m). `x87::exp` is that routine
+operation by operation. Called under Wine, the DLL's `_CIexp` returns the
+same bits as `x87::exp` on 463 627 random arguments up to ±619 and on all 80
+the decoders pass (q/3.5, q·0.27027027027027023 − 0.15556, (q − 10)·0.125,
+pinned in a test); glibc's `exp` agrees on those 80 but not on 0.47% of the
+random ones, and other platforms' libraries need not agree at all.
+Arguments beyond ±619, where the routine finishes on the x87 at 64-bit
+precision, are not ported; the decoders never pass them.
 
 ## 3. The voice index — `<Voice>.sde`
 
@@ -549,6 +632,8 @@ piece up to ±5 ms to the best waveform match and cross-fades over 5 ms.
 - `quoquendo --compare <file|text>` scores every stage against the original
   engine and writes `oracle/out/compare/<n>-original/-replay/-ours.wav`.
 - `quoquendo --fon-list <words>` prints our transcription per line.
+- `quoquendo --check-decode <prefix>.dec [--voice <v>]` replays the
+  original's decoder requests (`LOQ_TRACE_DECODE`, §2d) through ours.
 - `quoquendo --selftest`, `quoquendo --screenshot file.png`.
 
 ## 8. The reference: the original engine under Wine
@@ -577,9 +662,11 @@ Tracing the original from inside (all in `oracle/loqref.c`, by redirecting a
 call's rel32 to a logging wrapper): `LOQ_DUMP_TABLES` (the CAT tables as
 built), `LOQ_TRACE_CAT` (+`LOQ_TRACE_CLASSES`: every candidate's context,
 class part, factor, prosody, the labels), `LOQ_TRACE_JOIN` (every voiced
-join's units before/after and every half-phone's pitch marks). quoquendo's
+join's units before/after and every half-phone's pitch marks),
+`LOQ_TRACE_DECODE` (every decoder request and its samples, §2d). quoquendo's
 counterparts: `QQ_TRACE_CAT=1`, `QQ_CHECK_MARKS=<trace.join>`,
-`QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
+`--check-decode <trace.dec>`, `QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules
+alone).
 
 `LOQ_LINES=1` treats every line as an utterance; `LOQ_FON_ONLY=1` writes
 `<prefix>.fonlist` with one transcription per line (87 421 words in 6 s).
@@ -647,8 +734,8 @@ when a speed/pitch change asks for it.
 - The browser build exists now (`trunk build`, web/index.html); the 44 kHz
   voices' last phone-end samples follow the engine's per-phone resampler
   calls (§2c), which needs our joins to match first.
-- The last decoder differences (89–105 dB inside pieces): likely exp() and
-  sqrt() rounding on the x87 against libm; they decide a few pitch marks.
+- `x87::exp` beyond ±619, where the DLLs' runtime finishes on the x87 at
+  64-bit precision (§2d); the decoders never pass such arguments.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
   and pitch controls, Gilded phrases.
 - Four voices have no LTTS7 language module in any installer of the pack:

@@ -33,6 +33,7 @@ pub mod speex;
 pub mod sqlite;
 pub mod synth;
 pub mod wise;
+pub mod x87;
 
 use std::collections::HashMap;
 use std::path::Path;

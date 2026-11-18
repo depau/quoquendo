@@ -668,6 +668,42 @@
    "source": "ELQOpenDecoder 0x10002977"
   },
   {
+   "name": "decoder between requests",
+   "group": "recordings",
+   "value": "one decoder per recordings file; the frame decoded last and the one before are kept and copied from, the frame after the last is decoded by the same decoder, any other frame resets the decoder and decodes from warm-up frames earlier; both frame numbers start at 0xfffffffe",
+   "source": "LTTS7Codec210.dll ELQDecode 0x10004530 -> 0x10004340 (frames at +0x11dc/+0x11e0, set by ELQOpenDecoder 0x100046d3; shift 0x100042f0; reset 0x10004230); LTTS7CodecMsx.dll 0x10002780 -> 0x100024d0 (+0x11e0/+0x11e4, 0x10002a22; shift 0x10002480; reset 0x10002390)"
+  },
+  {
+   "name": "CodecMsx position past the last frame",
+   "group": "recordings (CodecMsx)",
+   "value": "the decoder delay is taken off again",
+   "source": "LTTS7CodecMsx.dll 0x100024f1 compares the frame with the header frame count (+0x11f0, stored by 0x10001dab)"
+  },
+  {
+   "name": "x87 precision control while decoding",
+   "group": "recordings",
+   "value": "53 bits (control word 0x027f; MXCSR 0x1f80/0x1fa0, all exceptions masked)",
+   "source": "read before every ELQDecode request by oracle/loqref.c LOQ_TRACE_DECODE"
+  },
+  {
+   "name": "decoder exp",
+   "group": "recordings",
+   "value": "MSVC runtime SSE2 exp: x*64/ln2 rounded with the 1.5*2^52 shifter, ln2/64 in two parts, 64-entry 2^(j/64) table, degree-5 polynomial; ported as x87::exp",
+   "source": "_CIexp LTTS7Codec210.dll 0x10011aec -> 0x100175ee (constants 0x10026fc0-0x10027050, table 0x10027060); LTTS7CodecMsx.dll 0x10006dac -> 0x1000b1ce (table 0x10017980), same code and constants"
+  },
+  {
+   "name": "decoder SSE2 math flag",
+   "group": "recordings",
+   "value": 1,
+   "source": "LTTS7Codec210.dll 0x100300cc set by 0x10015195 (CPUID SSE2 and the OS check 0x10014ff0), LTTS7CodecMsx.dll 0x1001c184 by 0x10007fd9; logged as `S` lines by LOQ_TRACE_DECODE"
+  },
+  {
+   "name": "decoder sqrt",
+   "group": "recordings",
+   "value": "fsqrt at the caller's precision control (the correctly rounded double square root)",
+   "source": "_CIsqrt LTTS7Codec210.dll 0x100105c0, LTTS7CodecMsx.dll 0x10005ed0 (called from compute_rms 0x10002ec0 / 0x100016f0)"
+  },
+  {
    "name": "output resampler",
    "group": "output",
    "value": "Julius O. Smith resample, large filter, interpolated, when voice and output rates differ by more than 100 Hz",

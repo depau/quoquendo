@@ -189,7 +189,7 @@ impl Narrowband {
         if self.first {
             self.old_qlsp = qlsp;
         }
-        let ol_gain = f((bits.get(5) as f64 / 3.5).exp()) as f64;
+        let ol_gain = f(x87::exp(bits.get(5) as f64 / 3.5)) as f64;
         for sub in 0..4 {
             let base = EXC + NB_SUB * sub;
             self.exc_buf[base..base + NB_SUB].fill(0.0);
@@ -345,7 +345,7 @@ impl Decoder {
         self.wb.decode(&mut bits, &books.wb_lsp, class, &nb_out, &nb_pi_gain, &mut wb_out, |bits, sub, filter_ratio, exc| {
             let qgc = bits.get(4) as f64;
             let el = compute_rms(&nb_exc[sub * 40..sub * 40 + 40]) as f64;
-            let gc = f((qgc * 0.27027027027027023 - 0.15556).exp()) as f64;
+            let gc = f(x87::exp(qgc * 0.27027027027027023 - 0.15556)) as f64;
             let scale = f((el + 1.0) * (gc / filter_ratio as f64));
             split_cb_unquant(exc, bits, 8, 5, 7, true, books.hexc.entries(class), books.hexc_scale);
             signal_mul(exc, scale);
@@ -367,7 +367,7 @@ impl Decoder {
         let mut out = [0f32; FRAME_SAMPLES];
         self.uwb.decode(&mut bits, &books.uwb_lsp, class, &wb_out, &wb_pi_gain, &mut out, |bits, sub, filter_ratio, exc| {
             let quant = bits.get(5) as f64;
-            let g = f(f(((quant - 10.0) * 0.125).exp()) as f64 / filter_ratio as f64) as f64;
+            let g = f(f(x87::exp((quant - 10.0) * 0.125)) as f64 / filter_ratio as f64) as f64;
             let mut s = 1f32;
             for i in 0..80 {
                 exc[i] = f(s as f64 * g * 0.7f32 as f64 * wb_innov[sub * 80 + i] as f64);
