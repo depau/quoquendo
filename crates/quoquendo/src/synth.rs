@@ -870,6 +870,36 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
                 }
             }
         }
+        // a pick ending on a left half may take that phone's right half too
+        // (0x10046de0): unless the wanted phone is voiceless, the recording
+        // ends there, its next phone is the wanted one, or this phone isn't
+        // stronger than the next (weight class more than 1 above, distance
+        // under 1000); or anyway when the recording ends right after and a
+        // pause is wanted next
+        if let (Some(tab), Some(w), Some(&last)) = (&db.tables, &wanted_t, path.last()) {
+            if last.side == 0 && k < 2 * n && std::env::var_os("QQ_NO_EXTEND").is_none() {
+                let uid = &tab.unit_ids[last.unit as usize];
+                let pos = last.phone as usize;
+                let i = k / 2;
+                let wanted = tab.features[w.id(i) as usize];
+                let voiceless = wanted & 3 != 1 && wanted & 0x10 != 0;
+                let ends = uid.len() <= pos + 1;
+                let next_ti = (k + 1) / 2;
+                let next_is_wanted = !ends && uid[pos + 1] == w.id(next_ti) && !matches!(uid[pos + 1], 2 | 3);
+                let weaker = ends
+                    || tab.class[uid[pos] as usize] <= tab.class[uid[pos + 1] as usize] + 1
+                    || phone_distance(tab.features[uid[pos + 1] as usize], tab.features[w.id(next_ti) as usize]) > 999;
+                let extend = if voiceless || ends || next_is_wanted || weaker {
+                    pos + 2 == uid.len() && matches!(w.id(next_ti), 2 | 3)
+                } else {
+                    true
+                };
+                if extend {
+                    path.push(Half { side: 1, ..last });
+                    k += 1;
+                }
+            }
+        }
     }
     // runs of halves that carry straight on become pieces
     for (k, h) in path.iter().enumerate() {
