@@ -9,13 +9,11 @@
 # other voice is its files unpacked over it by `quoquendo --unpack`. The
 # licence is put into that prefix's registry whenever it changes or after an
 # install (installers overwrite it):
-#  - by default the one the voice installers themselves write for this Wine
-#    user, exported to license-installer.reg in the repository root
-#    (`wine reg export 'HKLM\Software\Wow6432Node\Loquendo\LTTS7\LicenseCode'`
-#    after an install); it lists every voice of the pack;
-#  - else the one loquendo-keygen made for this computer and Wine user
-#    `wineuser`, license-wineuser.reg (Kate and Juliette crash under it);
-#  - LOQ_LICENCE to use another;
+#  - by default the one loquendo-keygen made for this computer and Wine user
+#    `wineuser`, license-wineuser.reg in the repository root (LOQ_LICENCE to
+#    use another): the engine runs as it is, except Kate and Juliette, which
+#    crash under it (the licence the installers write instead makes every
+#    voice say only that the licence isn't valid for this system);
 #  - without any, the loquendo-tts-server licence (from its git history),
 #    bound to the network card 7A:8B:9C:1D:2E:3F: the engine then runs in its
 #    own network namespace holding a dummy card with that address (no root).
@@ -24,8 +22,7 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 VOICE=$1 TEXT=$2 OUT=$3
 INSTALLERS=${LOQ_INSTALLERS:-"$HOME/Downloads/BitTorrent/text-to-speech-oddcast-voices-pack-2024/Loquendo 7"}
-LICENCE=${LOQ_LICENCE:-"$HERE/../license-installer.reg"}
-[ -f "$LICENCE" ] || [ -n "${LOQ_LICENCE:-}" ] || LICENCE="$HERE/../license-wineuser.reg"
+LICENCE=${LOQ_LICENCE:-"$HERE/../license-wineuser.reg"}
 MAC=7A:8B:9C:1D:2E:3F
 
 export WINEPREFIX="${LOQ_PREFIX:-$HERE/prefix}" WINEDEBUG=-all USER=wineuser
