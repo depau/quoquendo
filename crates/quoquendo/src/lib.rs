@@ -19,6 +19,7 @@
 pub mod codec;
 pub mod french;
 pub mod g2p;
+pub mod german;
 pub mod gpr;
 pub mod loquendo;
 pub mod phoneset;

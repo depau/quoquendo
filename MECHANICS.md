@@ -33,8 +33,8 @@ Inno Setup 5.2.3; `quoquendo --install` unpacks it with `innoextract`):
 `data/languages/<Language>/` (`<MotherTongue>.dbl` dictionary and, for
 English, `.gpr` letter-to-sound model, §4). Nothing of the original is run.
 The optional `lexicons/<MotherTongue>.tsv` dictionaries are the only thing
-still made by running the original under Wine (§9); without them US English
-and Italian stay close (below), French does not.
+still made by running the original under Wine (§9); every language stays
+close without them (below).
 
 Stages hand each other plain data (`synth::TargetPhrase`, `synth::Phrase`,
 `synth::Speech`). FON output also has a text form, the original engine's own
@@ -191,9 +191,19 @@ elided word plus the rest; `est-ce` `` `E `` s.
 
 Sounds identical to the original on the benchmarks **without** the Wine-made
 dictionaries: Italian 96.6% (rules and learned ending tables), US English
-**97.7%** (its own data, above; 70.4% before), French 69.8% (rules only: its
-letter-to-sound rules are code, FonTrasParola 0x1000f730 in LTTS7French.dll,
-3 570 decompiled lines, not ported yet).
+**97.7%** (its own data, above; 70.4% before), French 97.9% (`french.rs`: its
+own rules are code, FonTrasParola 0x1000f730 in LTTS7French.dll, 3 570
+decompiled lines, not ported; ours were fitted to the original's output:
+88.0% of held-out words, 98.4% of their sounds). Spanish (Jorge, `spanish.rs`)
+99.8%: written accent or the usual stress rule, i/u gliding, c/z `Th`, ll
+`Gl`; b/d/g softened between vowels across words. German (Katrin,
+`german.rs`) 93.0%: be-/ge-/ver-/er-/ent- prefixes before a root stay
+unstressed, a vowel before one consonant or doubled/h is long, -e -en -er
+-el endings reduce (`HEh`, `Hn`, `AR`), ch `x` after back vowels else `c`,
+st-/sp- `$`; across words final b/d/g devoice, p/t/k aspirate before a
+vowel (not after s), stops before a consonant are unreleased (`Hut`…), n
+before k/g is `N`, a vowel-initial word inside a phrase starts with `Hk`.
+Left for German: stress on loanwords (Berlin), compounds (Bahn|hof).
 
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
@@ -208,7 +218,7 @@ picker is **greedy, left to right**, not a global search:
 | step | address | rule |
 |---|---|---|
 | driver | 0x10047ec0 | for each wanted half-phone: pick, then jump ahead by the count picked; at most 0x800 per phrase |
-| per step | 0x10046de0 | ask every database of the voice, **last first** (Gilded phrase lists before the main one); a score ≥ 5 000 000 takes the whole matching unit |
+| per step | 0x10046de0 | ask every database of the voice, **last first** (Gilded phrase lists before the main one); a score ≥ 5 000 000 takes the whole matching unit; a pick ending on a left half takes the recording's right half too when it is the wanted one |
 | scoring loop | 0x10046b20 | every recorded instance of the wanted phone; skip sentences on a 30-entry exclusion list; score = context (0x10045ad0), **+1** if it carries straight on from the previous pick; for `D`/`I` units or whole matches × a prosody factor (0x10046670: 10, 5, +2, +5); + pitch/duration closeness (0x100468c0); keep the maximum. At a right half take **2** half-phones when the recording's next phone is the wanted one (so most joins fall mid-phone) |
 | context score | 0x10045ad0 | similarity of neighbours outward while ≥ 30: left half right 6/3/1…, left 10/4/2/1…; right half right 10/6/3/1…, left 6/3/1…; plus a 16×16 prosodic-class table (0x10070f28) with the same weights; × a per-phone factor ÷ 10; question units ×1.5 when a question is wanted, else ÷3; a recorded sentence that is the whole phrase with the same tune 10 000 000 (`e`/`F` 5 000 000) |
 | prosody closeness | 0x100468c0 | (100 − Δf0)·3·2 when the pitch jump is under 100 Hz, + 100 − (ratio − 100) when durations are within 2× |
@@ -450,9 +460,9 @@ when a speed/pitch change asks for it.
 
 ## 11. Not done / unknown
 
-- French (and other rule-coded languages') letter-to-sound rules without
-  the Wine-made dictionary: the code is FonTrasParola (LTTS7French.dll
-  0x1000f730, 3 570 lines); Italian's exception and ending tables in
+- An exact port of French letter-to-sound (FonTrasParola, LTTS7French.dll
+  0x1000f730, 3 570 lines) instead of fitted rules (97.9%); German compounds
+  and loanword stress (93.0%); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
 - Reading the installers natively (Inno Setup 5.2.3 headers + LZMA) instead

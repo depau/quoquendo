@@ -604,6 +604,104 @@ pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
     out
 }
 
+// --- German connected speech -------------------------------------------------
+
+const GERMAN_UNSTRESSED: &[&str] = &[
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer", "einen", "einem", "und", "ist", "im", "in", "am", "an",
+    "zu", "zum", "zur", "mit", "von", "nach", "auf", "aus", "bei", "ich", "sie", "mir", "mein", "meine", "wo", "hat", "bin",
+    "es", "er", "wir", "ihr", "uns", "vom",
+];
+
+/// What the original does across German words (Katrin's transcriptions):
+/// little words lose their stress; p/t/k are aspirated (ph th kh) at the
+/// start of a word or between vowels; a stop before another consonant or a
+/// syllabic n is unreleased (Hup Hut Huk Hug); word-final b/d/g are devoiced,
+/// unreleased before another word (plain t after n/l/r), aspirated before a
+/// pause; a word starting with a vowel gets a glottal stop (Hk) inside a
+/// phrase.
+fn german_connected_speech(tokens: &mut [Token]) {
+    let words: Vec<usize> = (0..tokens.len()).filter(|&i| matches!(tokens[i], Token::Word { .. })).collect();
+    // n before k/g, also across a word gap: N
+    for pair in words.windows(2) {
+        let joined = tokens[pair[0] + 1..pair[1]].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"));
+        let first = tokens[pair[1]].symbols().first().cloned().unwrap_or_default();
+        if let (true, Token::Word { symbols, .. }) = (joined && matches!(first.as_str(), "k" | "g"), &mut tokens[pair[0]]) {
+            if symbols.last().map(|s| s == "n") == Some(true) {
+                *symbols.last_mut().unwrap() = "N".into();
+            }
+        }
+    }
+    let vowelish = |s: &str| {
+        let s = s.trim_start_matches('`');
+        is_vowel(s) || matches!(s, "HEh" | "AR" | "HAI" | "HAU" | "HOI")
+    };
+    let mut phrase_start = true;
+    for (wi, &i) in words.iter().enumerate() {
+        let next = words.get(wi + 1).copied();
+        let joined = next.map(|j| tokens[i + 1..j].iter().all(|t| matches!(t, Token::Pause { reason, .. } if reason == "word gap"))).unwrap_or(false);
+        let starts_new_phrase = phrase_start;
+        phrase_start = !joined;
+        if let Token::Word { text, symbols } = &mut tokens[i] {
+            if GERMAN_UNSTRESSED.contains(&text.as_str()) {
+                for s in symbols.iter_mut() {
+                    *s = s.trim_start_matches('`').to_string();
+                }
+            }
+            let m = symbols.len();
+            let mut out = symbols.clone();
+            for k in 0..m {
+                let cur = symbols[k].as_str();
+                let prev = if k > 0 { Some(symbols[k - 1].as_str()) } else { None };
+                let nxt = symbols.get(k + 1).map(String::as_str);
+                let last = k + 1 == m;
+                let unrel = |c: &str| match c {
+                    "p" | "b" => "Hup",
+                    "t" | "d" => "Hut",
+                    "k" => "Huk",
+                    "g" => "Hug",
+                    _ => "",
+                };
+                let asp = |c: &str| match c {
+                    "p" => "ph",
+                    "t" => "th",
+                    "k" => "kh",
+                    _ => "",
+                };
+                if !matches!(cur, "p" | "t" | "k" | "b" | "d" | "g") {
+                    continue;
+                }
+                if last {
+                    // final devoicing
+                    let voiceless = match cur {
+                        "b" => "p",
+                        "d" => "t",
+                        "g" => "k",
+                        c => c,
+                    };
+                    out[k] = if joined {
+                        if voiceless == "t" && matches!(prev, Some("n" | "l" | "R" | "AR")) { "t".into() } else { unrel(voiceless).into() }
+                    } else {
+                        asp(voiceless).into()
+                    };
+                } else if nxt == Some("Hn") {
+                    out[k] = unrel(cur).into();
+                } else if matches!(cur, "p" | "t" | "k") && nxt.map(vowelish).unwrap_or(false) && !matches!(prev, Some("s" | "$")) {
+                    out[k] = asp(cur).into();
+                } else if nxt.map(|n| matches!(n, "p" | "t" | "k" | "b" | "d" | "g")).unwrap_or(false)
+                    || nxt.map(|n| !vowelish(n) && !matches!(n, "R" | "l" | "Hn" | "$" | "s" | "v" | "j")).unwrap_or(false) && prev.map(vowelish).unwrap_or(false)
+                {
+                    out[k] = unrel(cur).into();
+                }
+            }
+            *symbols = out;
+            // a glottal stop before a vowel-initial word inside a phrase
+            if !starts_new_phrase && symbols.first().map(|s| vowelish(s) && s.trim_start_matches('`') != "HEh").unwrap_or(false) {
+                symbols.insert(0, "Hk".into());
+            }
+        }
+    }
+}
+
 // --- Spanish connected speech ------------------------------------------------
 
 /// Little Spanish words said without stress (Jorge's transcriptions).
@@ -881,6 +979,9 @@ pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
     }
     if lang == Language::Spanish {
         return crate::spanish::transcribe(word);
+    }
+    if lang == Language::German {
+        return crate::german::transcribe(word);
     }
     let raw = bare_word(word);
     if raw.is_empty() {
@@ -2217,6 +2318,9 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
     if lang == Language::Spanish {
         spanish_connected_speech(&mut tokens);
     }
+    if lang == Language::German {
+        german_connected_speech(&mut tokens);
+    }
 
     // collapse runs of pauses into the strongest one
     let mut collapsed: Vec<Token> = Vec::new();
@@ -2296,12 +2400,11 @@ mod tests {
     fn german_words_use_the_german_alphabet() {
         // `R` and bare `t` are Katrin's symbols, not Roberto's; and Katrin
         // spells the closed lax vowel I (it has no short `i` at all)
-        assert_eq!(syms("Katrin", Language::German), "k `a t R I n");
-        assert_eq!(syms("Stimme", Language::German), "$ t `I m e");
+        assert_eq!(syms("Stimme", Language::German), "$ t `I m HEh");
         assert_eq!(syms("schön", Language::German), "$ `OE: n");
         // eu/äu is Katrin's own HOI diphthong, not an Italian `OI`
         assert_eq!(syms("neu", Language::German), "n `HOI");
-        assert_eq!(syms("Häuser", Language::German), "h `HOI z e R");
+        assert_eq!(syms("Häuser", Language::German), "h `HOI z AR");
     }
 
     #[test]
