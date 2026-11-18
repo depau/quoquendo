@@ -200,3 +200,261 @@ impl Word {
         self.f[field::CLASS]
     }
 }
+
+impl Pe {
+    /// A language module's function table: the `count` (name, function)
+    /// pairs its one export walks (LTTS7Italian.dll 0x10031ff8, German
+    /// 0x100294a8…), as (name, address).
+    pub fn function_table(&self, table: u32, count: u32) -> Vec<(Vec<u8>, u32)> {
+        (0..count).map(|i| (self.cstr(self.u32(table + 8 * i)).to_vec(), self.u32(table + 8 * i + 4))).collect()
+    }
+}
+
+// --- The engine's side: LoqTTS7.dll, the same for every language ---------------
+
+use self::field::*;
+use crate::g2p::Token;
+
+/// What LoqTTS7.dll asks of a language module, by the names it binds them
+/// with (LES 0x10036140, FON 0x1002d5c0): each port implements these as
+/// its module does, and `analyse` runs them the way the engine does.
+pub trait Les {
+    /// The module's character classes for the tokenizer: (a letter, upper
+    /// case, its lower case).
+    fn letter(&self, c: u8) -> (bool, bool, u8);
+    /// A number's words, in order (the engine reads numbers with the
+    /// readers `LesIniNumeri` installs).
+    fn number_words(&self, digits: &str) -> Vec<Vec<u8>>;
+    /// `LesAnalizza`: word classes.
+    fn analizza(&self, w: &mut [Word]);
+    /// `LesAccenta`: the stress marked in the spelling.
+    fn accenta(&self, w: &mut [Word]);
+    /// `LesConfiniProsodici`: the boundary after each word; `mode` is the
+    /// sentence type (0 `.`, 3 `?`, 5 `:` `;`, 6 `!`).
+    fn confini(&self, w: &mut [Word], mode: i32);
+    /// `LesGradiAccentuali`: stress grades.
+    fn gradi(&self, w: &mut [Word]);
+    /// `FonTrasParola`: one word's phone codes.
+    fn tras_parola(&self, word: &[u8], grade: u8) -> Vec<u32>;
+    /// `FonTrasConfini`: the phones so far adjusted to the next word's
+    /// first phone, given the previous word's boundary.
+    fn tras_confini(&self, prev_bound: u8, phones: &mut [u32], first: u32);
+    /// The voice's symbol for a phone code.
+    fn symbol(&self, code: u32) -> Option<&str>;
+}
+
+/// The pauses the engine gives each kind of break (its ShortPauseLength
+/// for the pauses LesConfiniProsodici adds, MediumPauseLength after a
+/// comma, LongPauseLength at the end of a sentence).
+const ADDED_PAUSE_MS: u32 = crate::g2p::SHORT_PAUSE_MS;
+const COMMA_PAUSE_MS: u32 = crate::g2p::MEDIUM_PAUSE_MS;
+const END_PAUSE_MS: u32 = crate::g2p::LONG_PAUSE_MS;
+
+/// A word record as the engine's tokenizer makes it: no boundary or grade
+/// yet (0x15, 0x0e), `+0xc` 0xffff (0 after an elided word).
+pub fn record(text: Vec<u8>, class: u8, sub: u8, info: u8) -> Word {
+    let mut f = [0u8; 24];
+    f[0xc] = 0xff;
+    f[0xd] = 0xff;
+    f[CLASS] = class;
+    f[SUB] = sub;
+    f[INFO] = info;
+    f[BOUND] = 0x15;
+    f[GRADE] = 0x0e;
+    Word { text, tag: None, f }
+}
+
+/// One sentence for the LES stage: its records and its type (0 statement,
+/// 3 question, 5 `:`/`;`, 6 exclamation).
+pub struct Sentence {
+    pub words: Vec<Word>,
+    pub mode: i32,
+}
+
+/// A character in the engine's 8-bit (Windows-1252) text.
+pub fn to_8bit(c: char) -> Option<u8> {
+    let u = c as u32;
+    match u {
+        0..=0xff => Some(u as u8),
+        0x2019 | 0x2018 => Some(b'\''),
+        0x201c | 0x201d => Some(b'"'),
+        0x2013 | 0x2014 => Some(b'-'),
+        0x2026 => Some(b'.'),
+        _ => None,
+    }
+}
+
+/// Split text into sentences of word records, approximating LoqTTS7.dll's
+/// tokenizer (TOP/LES; not ported yet): lower case, a capitalised word
+/// inside a sentence a proper noun (0x15), an elided word (`l'`) its own
+/// record, numbers as their words (class 0x15, subclass `z`, the last
+/// `y`), punctuation records (class `2`, subclass `|` ending a sentence,
+/// `}` inside one).
+pub fn sentences<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Sentence> {
+    let mut out = Vec::new();
+    let mut cur: Vec<Word> = Vec::new();
+    let chars: Vec<u8> = text.chars().filter_map(to_8bit).collect();
+    let letter = |c: u8| l.letter(c).0;
+    let mut i = 0usize;
+    let end = |cur: &mut Vec<Word>, out: &mut Vec<Sentence>, p: u8| {
+        if cur.iter().all(|w| w.f[CLASS] == b'2') {
+            cur.clear();
+            return;
+        }
+        let mode = match p {
+            b'!' => 6,
+            b'?' => 3,
+            b':' | b';' => 5,
+            _ => 0,
+        };
+        cur.push(record(vec![p], b'2', b'|', 9));
+        out.push(Sentence { words: std::mem::take(cur), mode });
+    };
+    while i < chars.len() {
+        let c = chars[i];
+        if letter(c) {
+            let start = i;
+            while i < chars.len() && letter(chars[i]) {
+                i += 1;
+            }
+            let mut t: Vec<u8> = chars[start..i].iter().map(|&c| l.letter(c).2).collect();
+            let elided = i < chars.len() && chars[i] == b'\'' && chars.get(i + 1).is_some_and(|&n| letter(n));
+            if elided {
+                t.push(b'\'');
+                i += 1;
+            }
+            let capital = l.letter(chars[start]).1;
+            let first = cur.iter().all(|w| w.f[CLASS] == b'2');
+            let mut r = record(t, if capital && !first { 0x15 } else { 0x17 }, 0xc8, 0xc8);
+            if elided {
+                r.f[0xc] = 0;
+                r.f[0xd] = 0;
+            }
+            cur.push(r);
+        } else if c.is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            let parts = l.number_words(std::str::from_utf8(&chars[start..i]).unwrap_or("0"));
+            let n = parts.len();
+            for (k, t) in parts.into_iter().enumerate() {
+                cur.push(record(t, 0x15, if k + 1 == n { b'y' } else { b'z' }, 0x10));
+            }
+        } else if matches!(c, b'.' | b'!' | b'?' | b':' | b';') {
+            let start = i;
+            while i < chars.len() && chars[i] == c {
+                i += 1;
+            }
+            if c == b'.' && i - start > 1 {
+                cur.push(record(chars[start..i].to_vec(), b'2', b'}', 9));
+            } else {
+                end(&mut cur, &mut out, c);
+            }
+        } else if matches!(c, b',' | b'"' | b'(' | b')' | b'-') {
+            cur.push(record(vec![c], b'2', b'}', 9));
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    if !cur.is_empty() {
+        end(&mut cur, &mut out, b'.');
+    }
+    out
+}
+
+/// The FON stage on text: the module's LES functions on every sentence,
+/// then FonTrasParola word by word and FonTrasConfini at every word
+/// boundary, as LoqTTS7.dll's phrase loop (0x1002c300, phones added by
+/// 0x1002d060) runs them: phrases end at punctuation (code 0x17 `@` for
+/// `|`, 0x13 `#` otherwise), a boundary 0x0a (or 8, 0x0c–0x0e) adds a
+/// short pause, a word with boundary 0 (elision) shares the next one's.
+pub fn analyse<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Token> {
+    let mut tokens = Vec::new();
+    for mut s in sentences(l, text) {
+        let w = &mut s.words;
+        l.analizza(w);
+        l.accenta(w);
+        l.confini(w, s.mode);
+        l.gradi(w);
+        let mut phrase: Vec<u32> = Vec::new();
+        let mut phrase_start = 0usize;
+        let mut word_syms: Vec<String> = Vec::new();
+        let mut word_text: Vec<u8> = Vec::new();
+        for i in 0..w.len() {
+            let r = &w[i];
+            let punct = r.f[CLASS] == b'2';
+            let codes = if punct {
+                vec![if r.f[SUB] == b'|' { 0x17 } else { 0x13 }]
+            } else {
+                l.tras_parola(&r.text, r.f[GRADE])
+            };
+            if let Some(&first) = codes.first() {
+                if i > phrase_start && !phrase.is_empty() {
+                    let mut j = i - 1;
+                    while j > phrase_start && w[j].f[BOUND] == 0x16 {
+                        j -= 1;
+                    }
+                    l.tras_confini(w[j].f[BOUND], &mut phrase, first);
+                    // the assimilated phone belongs to the word before
+                    if let (Some(&last), Some(sym)) = (phrase.last(), word_syms.last_mut().or_else(|| last_word_sym(&mut tokens))) {
+                        *sym = l.symbol(last).unwrap_or("").to_string();
+                    }
+                }
+            }
+            if punct {
+                flush_word(&mut tokens, &mut word_text, &mut word_syms);
+                let (ms, reason) = if r.f[SUB] == b'|' {
+                    let reason = match s.mode {
+                        3 => "question",
+                        6 => "exclamation",
+                        _ => "sentence break",
+                    };
+                    (END_PAUSE_MS, reason)
+                } else {
+                    (COMMA_PAUSE_MS, "phrase break")
+                };
+                tokens.push(Token::Pause { ms, reason: reason.into() });
+                phrase.clear();
+                phrase_start = i + 1;
+                continue;
+            }
+            phrase.extend(&codes);
+            word_syms.extend(codes.iter().map(|&c| l.symbol(c).unwrap_or("").to_string()));
+            word_text.extend(&r.text);
+            if r.f[BOUND] != 0 {
+                flush_word(&mut tokens, &mut word_text, &mut word_syms);
+            }
+            if matches!(r.f[BOUND], 0x0a | 0x08 | 0x0e | 0x0c | 0x0d) {
+                phrase.push(0x13);
+                tokens.push(Token::Pause {
+                    ms: ADDED_PAUSE_MS,
+                    reason: "phrase break".into(),
+                });
+            }
+        }
+        flush_word(&mut tokens, &mut word_text, &mut word_syms);
+    }
+    tokens
+}
+
+/// The last phone of the last word already emitted.
+fn last_word_sym(tokens: &mut [Token]) -> Option<&mut String> {
+    match tokens.last_mut() {
+        Some(Token::Word { symbols, .. }) => symbols.last_mut(),
+        _ => None,
+    }
+}
+
+fn flush_word(tokens: &mut Vec<Token>, text: &mut Vec<u8>, syms: &mut Vec<String>) {
+    if syms.is_empty() {
+        text.clear();
+        return;
+    }
+    tokens.push(Token::Word {
+        text: text.iter().map(|&c| c as char).collect(),
+        symbols: std::mem::take(syms),
+    });
+    text.clear();
+}
