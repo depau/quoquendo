@@ -1,0 +1,27 @@
+[workspace]
+members = ["crates/quoquendo"]
+
+[package]
+name = "quoquendo-app"
+version = "0.1.0"
+edition = "2021"
+description = "Window and command line for quoquendo, the Loquendo 7 (LTTS7) voice engine rebuilt"
+
+[[bin]]
+name = "quoquendo"
+path = "src/main.rs"
+
+[dependencies]
+quoquendo = { path = "crates/quoquendo" }
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+rodio = "0.19"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = "0.30"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

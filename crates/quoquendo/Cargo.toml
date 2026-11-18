@@ -1,0 +1,10 @@
+[package]
+name = "quoquendo"
+version = "0.1.0"
+edition = "2021"
+description = "Loquendo 7 (LTTS7) text-to-speech for its original voice files, without the original engine"
+
+[dependencies]
+
+[build-dependencies]
+cc = "1.2"

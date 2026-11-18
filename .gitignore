@@ -1,0 +1,21 @@
+/target
+/shots
+*.wav
+/oracle/prefix
+/oracle/cache
+/oracle/out
+/lexicons
+/oracle/loqref.exe
+# Craft Anything's own records
+/agent-session.jsonl
+/build-activity.log
+/capture
+/checks
+/craft.json
+/feed.json
+/inbox
+/investigation.cany
+/pinned
+/transcript.json
+/usage.json
+*.mp3

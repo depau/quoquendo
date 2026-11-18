@@ -1,0 +1,495 @@
+{
+ "version": 1,
+ "values": [
+  {
+   "name": "audio codec",
+   "group": "recordings",
+   "value": "Speex ultra-wideband (libspeex)",
+   "source": "LTTS7Codec210.dll strings ('ultra-wideband (sub-band CELP)', libspeex error texts) + ELQOpenDecoder 0x100045e0 selects the UWB mode table for 32000 Hz"
+  },
+  {
+   "name": "audio sample rate",
+   "group": "recordings",
+   "value": 32000,
+   "unit": "Hz",
+   "source": "bin header word 4 and LTTS7Codec210.dll 0x100045e0 (param == 32000)"
+  },
+  {
+   "name": "frame length",
+   "group": "recordings",
+   "value": 640,
+   "unit": "samples",
+   "source": "bin header word 3; LTTS7Codec210.dll 0x100045e0 stores 0x280"
+  },
+  {
+   "name": "frame size",
+   "group": "recordings",
+   "value": 110,
+   "unit": "bytes",
+   "source": "bin header word 5; read as frame stride in LTTS7Codec210.dll 0x10004340"
+  },
+  {
+   "name": "bit rate",
+   "group": "recordings",
+   "value": 44000,
+   "unit": "bit/s",
+   "source": "bin header word 1 (110 bytes x 50 frames/s)"
+  },
+  {
+   "name": "Speex quality",
+   "group": "recordings",
+   "value": 10,
+   "source": "bin header word 2 and the '.10.' in the file name"
+  },
+  {
+   "name": "frames in Roberto",
+   "group": "recordings",
+   "value": 335637,
+   "unit": "frames",
+   "source": "bin header word 6; equals (file size - 156) / 110 exactly; checked in test roberto_index_ends_where_its_recordings_end"
+  },
+  {
+   "name": "text header XOR key",
+   "group": "recordings",
+   "value": "byte0 XOR byte1",
+   "source": "derived: makes 'LOQUENDOTTS7' appear at offset 2 in all four voice files (keys 0x61, 0xb9, 0x09, 0xe4)"
+  },
+  {
+   "name": "text header length",
+   "group": "recordings",
+   "value": "field id 1",
+   "source": "derived: (id u16le, len u16le) fields after the magic; id 1 holds the length (Roberto 128, Katrin 125)"
+  },
+  {
+   "name": "first frame offset",
+   "group": "recordings",
+   "value": "header length + 28",
+   "unit": "bytes",
+   "source": "LTTS7Codec210.dll 0x10004340: frame k read at k*frame_bytes + 0x1c + base"
+  },
+  {
+   "name": "frame XOR key",
+   "group": "recordings",
+   "value": "low byte of header word 7",
+   "source": "LTTS7Codec210.dll 0x10004530 reads header byte 0x1b into +0x11e4; 0x10004290 XORs every frame byte with it when non-zero (Roberto 0xc9)"
+  },
+  {
+   "name": "decoder enhancement",
+   "group": "recordings",
+   "value": "off",
+   "source": "LTTS7Codec210.dll 0x10004230: speex ctl 0 (SET_ENH) with 0"
+  },
+  {
+   "name": "decoder delay",
+   "group": "recordings",
+   "value": 509,
+   "unit": "samples",
+   "source": "LTTS7Codec210.dll 0x100045e0 stores 0x1fd at +0x34; ELQDecode 0x10004530 adds it to the start sample"
+  },
+  {
+   "name": "warm-up frames on seek",
+   "group": "recordings",
+   "value": 6,
+   "unit": "frames",
+   "source": "LTTS7Codec210.dll 0x100045e0 stores 6 at +0x38; 0x10004340 decodes from frame-6"
+  },
+  {
+   "name": "sde byte shift",
+   "group": "voice index",
+   "value": 128,
+   "source": "every byte >= 0x80 is the character + 0x80; line feeds are plain (Roberto.sde offset 0x20)"
+  },
+  {
+   "name": "sde number digits",
+   "group": "voice index",
+   "value": "base 93, '\"' .. '~'",
+   "source": "derived: makes every sentence start = previous start + its phone lengths + 1000, and the last end = frame count x 640 / 0.32"
+  },
+  {
+   "name": "sde time unit",
+   "group": "voice index",
+   "value": 10,
+   "unit": "microseconds",
+   "source": "derived: Roberto's last phone ends at 671271794 ticks = 214806974 samples, 706 samples (22 ms) before the end of its 335637 x 640 samples; test roberto_index_ends_where_its_recordings_end"
+  },
+  {
+   "name": "gap between sentences",
+   "group": "voice index",
+   "value": 1000,
+   "unit": "ticks (10 ms)",
+   "source": "derived from consecutive '!' starts (750 in a few places)"
+  },
+  {
+   "name": "records per sentence",
+   "group": "voice index",
+   "value": "one L + one R per phone, edges excluded",
+   "source": "derived: pairs = phones - 2 for all 4329 Roberto and 5298 Katrin sentences"
+  },
+  {
+   "name": "record fields",
+   "group": "voice index",
+   "value": "[!start] length pitch",
+   "source": "derived; pitch matches pitch measured in the decoded audio (117 Hz stored vs 118.5 measured on Roberto sentence 2)"
+  },
+  {
+   "name": "word boundary mark",
+   "group": "voice index",
+   "value": "-",
+   "source": "observed in U= lines: 'o-i' in 's `o n o-i n a v: ...' (sono inavvertitamente)"
+  },
+  {
+   "name": "sentence type line",
+   "group": "voice index",
+   "value": "S=I question, S=E exclamation",
+   "source": "observed: Roberto has 118 S=I and 5 S=E (e.g. after \"a tt: `E n Ts j `o n e\" = attenzione!), Katrin 34 / 16"
+  },
+  {
+   "name": "N= second number",
+   "group": "voice index",
+   "value": "phones including both edge silences",
+   "source": "derived: Roberto 89554 = 80896 timed + 2 x 4329"
+  },
+  {
+   "name": "Roberto sentences",
+   "group": "voice index",
+   "value": 4329,
+   "source": "Roberto.sde N= line"
+  },
+  {
+   "name": "Roberto recorded audio",
+   "group": "voice index",
+   "value": "1:51:52",
+   "source": "335637 frames x 20 ms"
+  },
+  {
+   "name": "short pause",
+   "group": "text",
+   "value": 50,
+   "unit": "ms",
+   "source": "original engine default ShortPauseLength; its transcription events show #50"
+  },
+  {
+   "name": "medium pause (comma)",
+   "group": "text",
+   "value": 120,
+   "unit": "ms",
+   "source": "original engine default MediumPauseLength (loquendo-tts-server parameter table)"
+  },
+  {
+   "name": "long pause (sentence)",
+   "group": "text",
+   "value": 500,
+   "unit": "ms",
+   "source": "original engine default LongPauseLength; its events show @500"
+  },
+  {
+   "name": "stress position table",
+   "group": "text",
+   "value": "630 endings, 95.8% on held-out words",
+   "source": "learned from the original engine's ttsPhoneticTranscription of 87421 Hunspell words (src/it-position.tsv)"
+  },
+  {
+   "name": "open/closed e-o table",
+   "group": "text",
+   "value": "302 endings, 91.5% on held-out words",
+   "source": "same transcriptions (src/it-quality.tsv)"
+  },
+  {
+   "name": "i glide after r / l",
+   "group": "text",
+   "value": "none (8% / 3% in the original)",
+   "source": "original transcriptions of 87421 words"
+  },
+  {
+   "name": "word-initial z",
+   "group": "text",
+   "value": "Dz",
+   "source": "original transcriptions: 272 Dz to 4 Ts"
+  },
+  {
+   "name": "single z between vowels",
+   "group": "text",
+   "value": "Ts:",
+   "source": "original transcriptions: 2745 Ts: to 203 Dz:"
+  },
+  {
+   "name": "words identical to the original",
+   "group": "text",
+   "value": "88.5 % of 87421",
+   "source": "quoquendo --fon-list vs oracle LOQ_FON_ONLY"
+  },
+  {
+   "name": "sentence words identical to the original",
+   "group": "text",
+   "value": "87.6 %",
+   "source": "quoquendo --compare oracle/bench-it.txt"
+  },
+  {
+   "name": "original unit",
+   "group": "selection",
+   "value": "runs of half-phones",
+   "source": "LoqTTS7 unit-selection event 19: sentence id at +4, half-phone count at +0x18"
+  },
+  {
+   "name": "original time/pitch change",
+   "group": "selection",
+   "value": "none",
+   "source": "event 3 phone durations equal the recorded ones within 1 ms (benchmark sentence 0)"
+  },
+  {
+   "name": "play offset",
+   "group": "joining",
+   "value": 160,
+   "unit": "samples (5 ms) after the .sde time",
+   "source": "measured: with it pieces match the original's audio at 70-80 dB, without it they don't"
+  },
+  {
+   "name": "join style (original)",
+   "group": "joining",
+   "value": "hard cut",
+   "source": "measured: joins rebuilt without any fade match at 79 and 49 dB"
+  },
+  {
+   "name": "excitation handed to the 8-16 kHz band",
+   "group": "recordings",
+   "value": "twice (exc + exc)",
+   "source": "LTTS7Codec210.dll decoder ctl 0x1000f0e0 case 0x66, constant at 0x10022e58; folding sign -1.0 at 0x100242f8"
+  },
+  {
+   "name": "decoder high-pass",
+   "group": "recordings",
+   "value": "off",
+   "source": "older Speex in LTTS7Codec210 has none; measured below 250 Hz: 10 dB with it, 40 dB without"
+  },
+  {
+   "name": "decoder match inside pieces",
+   "group": "recordings",
+   "value": "69.5 dB (median, 20 sentences)",
+   "source": "quoquendo --compare oracle/bench-it.txt"
+  },
+  {
+   "name": "smoothed cross-fade",
+   "group": "joining",
+   "value": 160,
+   "unit": "samples (5 ms)",
+   "estimated": true
+  },
+  {
+   "name": "smoothed join slide",
+   "group": "joining",
+   "value": 160,
+   "unit": "samples (±5 ms)",
+   "estimated": true
+  },
+  {
+   "name": "exact join rule",
+   "group": "joining",
+   "value": "not known (cuts move by a few to a few dozen samples)",
+   "estimated": true
+  },
+  {
+   "name": "ticks to samples",
+   "group": "voice index",
+   "value": "(t/100000)*rate + ((t%100000)*(rate/10))/10000",
+   "source": "LoqTTS7.dll 0x1001e3a0"
+  },
+  {
+   "name": "unit decode margin",
+   "group": "joining",
+   "value": "64 samples at 32 kHz ((rate/10*400)/20000; x4 for PSOLA units)",
+   "source": "LoqTTS7.dll 0x1001f580"
+  },
+  {
+   "name": "default algorithm for speech runs",
+   "group": "joining",
+   "value": "1 CONCATENAZIONE (plain copy)",
+   "source": "LoqTTS7.dll 0x100472f0 / 0x100470f0; names at 0x10043ec0"
+  },
+  {
+   "name": "max half-phones per phrase",
+   "group": "selection",
+   "value": "0x800 (2048)",
+   "source": "LoqTTS7.dll 0x100472f0 'Too many demiphones in this phrase'"
+  },
+  {
+   "name": "unvoiced pitch-mark spacing",
+   "group": "joining",
+   "value": "rate/125 (256 samples)",
+   "source": "LoqTTS7.dll 0x1001e3a0"
+  },
+  {
+   "name": "default pitch period",
+   "group": "joining",
+   "value": "150 samples, searched in [50,199]",
+   "source": "LoqTTS7.dll 0x1001e3a0"
+  },
+  {
+   "name": "PSOLA period cap",
+   "group": "joining",
+   "value": "rate/40 (800 samples)",
+   "source": "LoqTTS7.dll 0x1001df70"
+  },
+  {
+   "name": "main program",
+   "group": "recordings",
+   "value": "Inno Setup 5.2.3 installer",
+   "source": "Raffaele - Italian.exe string 0x40b188 used from entry"
+  },
+  {
+   "name": "picker",
+   "group": "selection",
+   "value": "greedy, left to right, jump ahead by the count picked",
+   "source": "LoqTTS7.dll 0x10047ec0 / 0x10046de0"
+  },
+  {
+   "name": "context weights, left half",
+   "group": "selection",
+   "value": "right 6/3/1, left 10/4/2/1",
+   "source": "LoqTTS7.dll 0x10045ad0"
+  },
+  {
+   "name": "context weights, right half",
+   "group": "selection",
+   "value": "right 10/6/3/1, left 6/3/1",
+   "source": "LoqTTS7.dll 0x10045ad0"
+  },
+  {
+   "name": "context continues while similarity",
+   "group": "selection",
+   "value": ">= 30",
+   "source": "LoqTTS7.dll 0x10045ad0 (0x1e)"
+  },
+  {
+   "name": "question unit factor",
+   "group": "selection",
+   "value": "x1.5 if a question is wanted, else /3",
+   "source": "LoqTTS7.dll 0x10045ad0"
+  },
+  {
+   "name": "whole-phrase match score",
+   "group": "selection",
+   "value": "10000000 (e/F 5000000)",
+   "source": "LoqTTS7.dll 0x10045ad0"
+  },
+  {
+   "name": "continuation bonus",
+   "group": "selection",
+   "value": "+1",
+   "source": "LoqTTS7.dll 0x10046b20"
+  },
+  {
+   "name": "pitch closeness",
+   "group": "selection",
+   "value": "(100 - df0)*3*2 under 100 Hz, + 100 - (ratio - 100) for durations within 2x",
+   "source": "LoqTTS7.dll 0x100468c0"
+  },
+  {
+   "name": "prosodic class table",
+   "group": "selection",
+   "value": "16x16 ints, diagonal 20-25",
+   "source": "LoqTTS7.dll 0x10070f28 (classes per phone not decoded; unused)"
+  },
+  {
+   "name": "pieces same as original",
+   "group": "selection",
+   "value": "39.6% of half-phones (benchmark)",
+   "source": "quoquendo --compare oracle/bench-it.txt"
+  },
+  {
+   "name": "English/French symbol mapping",
+   "group": "text",
+   "value": "t->th k->kh p->ph r->Hr a->Ae (en); t->tt d->dd r->HRF (fr)",
+   "source": "Allison.sde / Bernard.sde inventories"
+  },
+  {
+   "name": "English weak forms and linking",
+   "group": "FON",
+   "value": "the → Dh HEh / Dh i; to → th HEh; final t k p d → Hut Huk Hup Hud before a word; Hj / Hw / Hg links",
+   "source": "Allison's transcriptions of oracle/bench-en.txt (oracle/out/compare)"
+  },
+  {
+   "name": "French liaison and unstressed words",
+   "group": "FON",
+   "value": "z after les/des/mes/nous/vous..., t after est/sont/petit..., n after un/mon/on...; little words lose stress (`OE → HEh)",
+   "source": "Bernard's transcriptions of oracle/bench-fr.txt (oracle/out/compare)"
+  },
+  {
+   "name": "licence for the reference engine",
+   "group": "reference",
+   "value": "loquendo-keygen license-wineuser.reg imported into oracle/prefix only (Wine user wineuser)",
+   "source": "oracle/run.sh; fallback: loquendo-tts-server git e44e1e9 docker/license.reg in unshare -rn with MAC 7A:8B:9C:1D:2E:3F"
+  },
+  {
+   "name": "phonetic similarity of the same phone",
+   "group": "selection",
+   "value": 30,
+   "source": "LoqTTS7.dll 0x100495b0 (returns 0x1e for equal feature words), dumped matrix lexicons/<Voice>.sim"
+  },
+  {
+   "name": "phonetic similarity table",
+   "group": "selection",
+   "value": "N×N bytes per voice, built at load by 0x10049a70 → 0x100495b0 (SomiglianzaFonetica_)",
+   "source": "LoqTTS7.dll 0x10043720 registers the constructor; dumped via ELQSharedResourceAdd hook (oracle/loqref.c)"
+  },
+  {
+   "name": "phone weight class",
+   "group": "selection",
+   "value": "0..10 per phone (TabelleFonetiche_), left context × class / 10",
+   "source": "LoqTTS7.dll 0x100457b0, used in 0x10045ad0"
+  },
+  {
+   "name": "prosodic class labeller",
+   "group": "selection",
+   "value": "15 leading silence, 7 before first stress, 0 between, 3/1 after last stress, 4/2 before edge, 5 first",
+   "source": "LoqTTS7.dll 0x1004bf00 (default CatVidCalcProsLab)"
+  },
+  {
+   "name": "class-match score table",
+   "group": "selection",
+   "value": "16×16 ints",
+   "source": "LoqTTS7.dll 0x10070f28"
+  },
+  {
+   "name": "picker factor base",
+   "group": "selection",
+   "value": 10,
+   "source": "LoqTTS7.dll 0x10046670"
+  },
+  {
+   "name": "picker factor, right half alone",
+   "group": "selection",
+   "value": 5,
+   "source": "LoqTTS7.dll 0x10046670"
+  },
+  {
+   "name": "class score needed to take two halves",
+   "group": "selection",
+   "value": 10,
+   "source": "LoqTTS7.dll 0x10046b20"
+  },
+  {
+   "name": "phone distance, unrelated",
+   "group": "selection",
+   "value": 1000,
+   "source": "LoqTTS7.dll 0x100464b0"
+  },
+  {
+   "name": "prosodic class of a word's last phone",
+   "group": "selection",
+   "value": 6,
+   "source": "LoqTTS7.dll 0x10049cd0 (target 'w' mark) and 0x10049f10 + 0x1004bf00 (recordings, '-' in U= lines); confirmed by LOQ_TRACE_CAT"
+  },
+  {
+   "name": "phone table record size in the voice library",
+   "group": "voice files",
+   "value": 16,
+   "source": "LTTS7Roberto.dll .rdata (records read by LoqTTS7.dll 0x1004bd60)"
+  },
+  {
+   "name": "files a voice needs",
+   "group": "voice files",
+   "value": "data/<Voice>.vcf, data/voices/<Voice>/ (.sde .bin .vde), bin/LTTS7<Voice>.dll",
+   "source": "innoextract listing of the installers; phoneset.rs, loquendo.rs"
+  }
+ ]
+}
