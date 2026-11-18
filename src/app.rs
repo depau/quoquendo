@@ -48,6 +48,19 @@ pub fn sample_text(v: &VoiceDescriptor) -> String {
 enum Tab {
     Speak,
     Voices,
+    Explore,
+}
+
+/// The recordings explorer's state: a phone and its takes, or one recorded
+/// sentence.
+#[derive(Default)]
+struct Explore {
+    filter: String,
+    phone: Option<String>,
+    unit: Option<usize>,
+    page: usize,
+    /// for the loaded voice: each phone with every take of it (sentence, phone index)
+    index: Option<(String, Vec<(String, Vec<(u32, u16)>)>)>,
 }
 
 enum DownloadState {
@@ -107,6 +120,7 @@ pub struct App {
     speech: Option<synth::Speech>,
     player: Player,
     show_curtain: bool,
+    explore: Explore,
     status: String,
     error: Option<String>,
 
@@ -179,6 +193,7 @@ impl App {
             speech: None,
             player: Player::new(),
             show_curtain: get("show_curtain").is_some_and(|v| v == "true"),
+            explore: Explore::default(),
             status: "Looking for voices…".into(),
             error: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -479,6 +494,7 @@ impl App {
                 ui.add_space(8.0);
                 ui.selectable_value(&mut self.tab, Tab::Speak, "Speak");
                 ui.selectable_value(&mut self.tab, Tab::Voices, "Voices");
+                ui.selectable_value(&mut self.tab, Tab::Explore, "Explore");
                 #[cfg(not(target_arch = "wasm32"))]
                 if self.dev.on {
                     ui.separator();
@@ -698,17 +714,21 @@ impl App {
             ui.label(RichText::new(format!("never recorded by {who}, skipped: {}", list.join(", "))).color(RED));
         }
         let rate = db.audio_rate() as f32;
+        let mut play = None;
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
             egui::ScrollArea::vertical().id_salt("pieces").max_height(260.0).show(ui, |ui| {
-                egui::Grid::new("pieces_grid").num_columns(6).striped(true).spacing([18.0, 4.0]).show(ui, |ui| {
-                    for h in ["sounds", "sentence", "", "at", "length", "pitch"] {
+                egui::Grid::new("pieces_grid").num_columns(7).striped(true).spacing([18.0, 4.0]).show(ui, |ui| {
+                    for h in ["", "sounds", "sentence", "", "at", "length", "pitch"] {
                         ui.label(RichText::new(h).small().color(MUTED));
                     }
                     ui.end_row();
                     for phrase in &self.plan {
                         for p in &phrase.pieces {
                             let u = &db.units[p.unit as usize];
+                            if ui.small_button("▶").on_hover_text("Play this piece as recorded").clicked() {
+                                play = Some((p.from, p.to));
+                            }
                             ui.label(RichText::new(p.covers.join(" ")).monospace().color(if p.hard { LILAC } else { GREEN }));
                             ui.label(RichText::new(format!("#{}", p.unit)).monospace().color(MUTED));
                             let said: String = u.symbols[1..u.symbols.len().saturating_sub(1)].join(" ").chars().take(40).collect();
@@ -724,6 +744,7 @@ impl App {
                                 Some('E') => "exclamation ",
                                 _ => "",
                             };
+                            ui.label("");
                             ui.label(RichText::new(format!("— {tune}pause {} ms", phrase.pause_ms)).small().color(MUTED));
                             ui.end_row();
                         }
@@ -731,6 +752,10 @@ impl App {
                 });
             });
         });
+        if let Some((from, to)) = play {
+            self.play_span(from, to);
+            return;
+        }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new("Audio").strong());
@@ -973,6 +998,211 @@ impl App {
                 installer: inst,
                 state: DownloadState::Queued,
             });
+        }
+    }
+}
+
+/// The recordings explorer and playing stretches of the recordings.
+impl App {
+    /// Play samples `from..to` of the voice's recordings as they are.
+    fn play_span(&mut self, from: u32, to: u32) {
+        let Some(bank) = self.voice.as_ref().and_then(|v| v.db.audio.as_ref()) else {
+            self.error = Some("This voice's recordings can't be decoded.".into());
+            return;
+        };
+        let pcm = bank.read(from as usize, to.saturating_sub(from) as usize);
+        let speech = synth::Speech {
+            samples: pcm.iter().map(|&s| s as f32 / 32768.0 * self.settings.volume).collect(),
+            rate: bank.rate,
+        };
+        match self.player.play(&speech) {
+            Ok(()) => self.status = format!("Playing {:.0} ms of the recordings", speech.duration_s() * 1000.0),
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Each phone of the voice with every recorded take of it.
+    fn explore_index(&mut self) {
+        let Some(v) = &self.voice else { return };
+        if self.explore.index.as_ref().is_some_and(|(n, _)| *n == v.descriptor.name) {
+            return;
+        }
+        let mut map: std::collections::BTreeMap<String, Vec<(u32, u16)>> = Default::default();
+        for (u, unit) in v.db.units.iter().enumerate() {
+            for (i, p) in unit.phones.iter().enumerate().filter(|(_, p)| p.timed) {
+                map.entry(p.sym.clone()).or_default().push((u as u32, i as u16));
+            }
+        }
+        self.explore = Explore {
+            index: Some((v.descriptor.name.clone(), map.into_iter().collect())),
+            ..Default::default()
+        };
+    }
+
+    fn explore_tab(&mut self, ui: &mut egui::Ui) {
+        if self.voice.is_none() {
+            ui.label(RichText::new("Pick a voice in the Speak tab to explore its recordings.").color(MUTED));
+            return;
+        }
+        self.explore_index();
+        let Some(voice) = &self.voice else { return };
+        let db = &voice.db;
+        let rate = db.audio_rate() as f32;
+        let ms = |a: u32, b: u32| (b.saturating_sub(a)) as f32 * 1000.0 / rate;
+        let Some((_, index)) = &self.explore.index else { return };
+        let mut play: Option<(u32, u32)> = None;
+        let mut open_unit: Option<Option<usize>> = None;
+        let mut pick_phone: Option<String> = None;
+        let mut page = self.explore.page;
+        ui.horizontal(|ui| {
+            ui.heading(format!("{}'s recordings", voice.descriptor.name));
+            let secs = db.audio.as_ref().map(|a| a.total_samples() / a.rate as usize).unwrap_or(0);
+            ui.label(
+                RichText::new(format!(
+                    "· {} recorded sentences · {} phones · {} takes · {}:{:02}:{:02} of audio",
+                    db.units.len(),
+                    index.len(),
+                    db.instance_count(),
+                    secs / 3600,
+                    secs / 60 % 60,
+                    secs % 60
+                ))
+                .color(MUTED),
+            );
+        });
+        if db.audio.is_none() {
+            ui.label(RichText::new("This voice's recordings can't be played yet.").color(AMBER));
+        }
+        ui.horizontal(|ui| {
+            ui.label("Sentence #");
+            let mut n = self.explore.unit.unwrap_or(0);
+            if ui.add(egui::DragValue::new(&mut n).range(0..=db.units.len().saturating_sub(1))).changed() {
+                open_unit = Some(Some(n));
+            }
+            if ui.button("Open").clicked() {
+                open_unit = Some(Some(n));
+            }
+        });
+        ui.separator();
+        let height = ui.available_height();
+        ui.horizontal_top(|ui| {
+            // the phones, with how often each was recorded
+            ui.vertical(|ui| {
+                ui.set_width(170.0);
+                ui.add(egui::TextEdit::singleline(&mut self.explore.filter).hint_text("Filter phones").desired_width(160.0));
+                egui::ScrollArea::vertical().id_salt("phones").max_height(height - 40.0).show(ui, |ui| {
+                    for (sym, takes) in index.iter().filter(|(s, _)| self.explore.filter.is_empty() || s.contains(self.explore.filter.as_str())) {
+                        let chosen = self.explore.phone.as_deref() == Some(sym.as_str()) && self.explore.unit.is_none();
+                        let label = RichText::new(format!("{sym:<6} {:>6}", takes.len())).monospace();
+                        if ui.selectable_label(chosen, label).clicked() {
+                            pick_phone = Some(sym.clone());
+                        }
+                    }
+                });
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                if let Some(u) = self.explore.unit.filter(|&u| u < db.units.len()) {
+                    // one recorded sentence: each phone plays on its own
+                    let unit = &db.units[u];
+                    let timed: Vec<&quoquendo::loquendo::Phone> = unit.phones.iter().filter(|p| p.timed).collect();
+                    ui.horizontal(|ui| {
+                        if ui.button("◀ Back").clicked() {
+                            open_unit = Some(None);
+                        }
+                        ui.label(RichText::new(format!("Sentence #{u}")).strong());
+                        let mood = match unit.mood {
+                            Some('I') => "question",
+                            Some('E') => "exclamation",
+                            _ => "statement",
+                        };
+                        ui.label(RichText::new(format!("· {mood} · {} phones", timed.len())).color(MUTED));
+                        if let (Some(a), Some(b)) = (timed.first(), timed.last()) {
+                            if ui.button(format!("▶ whole sentence ({:.2} s)", ms(a.start, b.end) / 1000.0)).clicked() {
+                                play = Some((a.start, b.end));
+                            }
+                        }
+                    });
+                    ui.label(RichText::new(unit.symbols.join(" ")).monospace().color(MUTED));
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        for p in &timed {
+                            if p.word_start {
+                                ui.label(RichText::new("|").color(MUTED));
+                            }
+                            let b = ui
+                                .button(RichText::new(&p.sym).monospace().color(GREEN))
+                                .on_hover_text(format!("{:.0} ms · {}–{} Hz · click to play", ms(p.start, p.end), p.pitch_l, p.pitch_r));
+                            if b.clicked() {
+                                play = Some((p.start, p.end));
+                            }
+                        }
+                    });
+                } else if let Some((sym, takes)) = self.explore.phone.as_ref().and_then(|s| index.iter().find(|(x, _)| x == s)) {
+                    // every take of one phone, with its neighbours
+                    const PAGE: usize = 100;
+                    let pages = takes.len().div_ceil(PAGE).max(1);
+                    page = page.min(pages - 1);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("“{sym}”")).monospace().strong().color(AMBER));
+                        ui.label(RichText::new(format!("· {} takes", takes.len())).color(MUTED));
+                        if ui.add_enabled(page > 0, egui::Button::new("◀")).clicked() {
+                            page -= 1;
+                        }
+                        ui.label(format!("{} / {pages}", page + 1));
+                        if ui.add_enabled(page + 1 < pages, egui::Button::new("▶")).clicked() {
+                            page += 1;
+                        }
+                    });
+                    egui::ScrollArea::vertical().id_salt("takes").max_height(height - 60.0).show(ui, |ui| {
+                        egui::Grid::new("takes_grid").num_columns(7).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
+                            for h in ["", "", "in context", "sentence", "length", "pitch", ""] {
+                                ui.label(RichText::new(h).small().color(MUTED));
+                            }
+                            ui.end_row();
+                            for &(u, i) in takes.iter().skip(page * PAGE).take(PAGE) {
+                                let phones = &db.units[u as usize].phones;
+                                let p = &phones[i as usize];
+                                let prev = phones[..i as usize].iter().rev().find(|q| q.timed);
+                                let next = phones[i as usize + 1..].iter().find(|q| q.timed);
+                                if ui.small_button("▶").on_hover_text("Play this take").clicked() {
+                                    play = Some((p.start, p.end));
+                                }
+                                if ui.small_button("▶▶").on_hover_text("Play it with its neighbours").clicked() {
+                                    play = Some((prev.map(|q| q.start).unwrap_or(p.start), next.map(|q| q.end).unwrap_or(p.end)));
+                                }
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.label(RichText::new(prev.map(|q| q.sym.as_str()).unwrap_or("#")).monospace().color(MUTED));
+                                    ui.label(RichText::new(&p.sym).monospace().color(GREEN));
+                                    ui.label(RichText::new(next.map(|q| q.sym.as_str()).unwrap_or("@")).monospace().color(MUTED));
+                                });
+                                if ui.link(RichText::new(format!("#{u}")).monospace()).clicked() {
+                                    open_unit = Some(Some(u as usize));
+                                }
+                                ui.label(RichText::new(format!("{:.0} ms", ms(p.start, p.end))).monospace());
+                                ui.label(RichText::new(format!("{}–{} Hz", p.pitch_l, p.pitch_r)).monospace());
+                                ui.label(RichText::new(if p.word_start { "word start" } else { "" }).small().color(MUTED));
+                                ui.end_row();
+                            }
+                        });
+                    });
+                } else {
+                    ui.label(RichText::new("Pick a phone to hear every take of it, or open a recorded sentence by number.").color(MUTED));
+                }
+            });
+        });
+        self.explore.page = page;
+        if let Some(s) = pick_phone {
+            self.explore.phone = Some(s);
+            self.explore.unit = None;
+            self.explore.page = 0;
+        }
+        if let Some(u) = open_unit {
+            self.explore.unit = u;
+        }
+        if let Some((a, b)) = play {
+            self.play_span(a, b);
         }
     }
 }
@@ -1293,6 +1523,7 @@ impl eframe::App for App {
             Tab::Voices => {
                 egui::ScrollArea::vertical().id_salt("voices").show(ui, |ui| self.voices_tab(ui));
             }
+            Tab::Explore => self.explore_tab(ui),
         });
         #[cfg(not(target_arch = "wasm32"))]
         self.screenshot(ctx);
