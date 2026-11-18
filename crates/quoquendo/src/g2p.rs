@@ -419,9 +419,9 @@ pub struct Frontend {
     pub lang: Language,
     data: Option<std::sync::Arc<LanguageData>>,
     lexicon: Option<std::sync::Arc<Lexicon>>,
-    /// the original's Italian module, ported (`lang::italian`), reading its
-    /// tables from `LTTS7Italian.dll`
-    italian: Option<std::sync::Arc<crate::lang::italian::Italian>>,
+    /// the original's language module, ported (`lang`), reading its tables
+    /// from the language pack's DLL
+    module: Option<std::sync::Arc<dyn crate::lang::Module>>,
 }
 
 impl Frontend {
@@ -431,22 +431,22 @@ impl Frontend {
             lang,
             data: None,
             lexicon: None,
-            italian: None,
+            module: None,
         }
     }
 
     /// Use the language module the voice's `.lde` names (its DLL's bytes)
     /// when it is one quoquendo has ported; otherwise keep this front end.
-    pub fn with_module(mut self, dll: Vec<u8>) -> Frontend {
-        if self.lang == Language::Italian {
-            self.italian = crate::lang::italian::Italian::from_dll(dll).map(std::sync::Arc::new);
+    pub fn with_module(mut self, files: &crate::lang::ModuleFiles) -> Frontend {
+        if let Some(m) = crate::lang::load(self.lang, files) {
+            self.module = Some(m);
         }
         self
     }
 
     /// Whether the original's language module drives this front end.
     pub fn has_module(&self) -> bool {
-        self.italian.is_some()
+        self.module.is_some()
     }
 
     /// Read a language's dictionary and letter-to-sound model from its
@@ -491,7 +491,7 @@ impl Frontend {
             lang,
             data: Some(std::sync::Arc::new(data)),
             lexicon: None,
-            italian: None,
+            module: None,
         }
     }
 
@@ -2166,8 +2166,8 @@ pub fn italian_number(n: u64) -> String {
 
 pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
     // the original's own module, when the voice's language pack has it
-    if let Some(it) = &fe.italian {
-        return it.analyse(text);
+    if let Some(m) = &fe.module {
+        return m.analyse(text);
     }
     let lang = fe.lang;
     let mut tokens: Vec<Token> = Vec::new();

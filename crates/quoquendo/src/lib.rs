@@ -377,7 +377,13 @@ impl Voice {
             _ => g2p::Frontend::rules(lang),
         };
         let frontend = match files.language_library {
-            Some(module) => frontend.with_module(module),
+            Some(dll) => frontend.with_module(&lang::ModuleFiles {
+                dll,
+                mother_tongue: descriptor.mother_tongue.clone(),
+                dbl: files.dbl,
+                gpr: files.gpr,
+                phones: db.tables.as_ref().map(|t| t.phone_features()).unwrap_or_default(),
+            }),
             None => frontend,
         };
         Ok(Voice {

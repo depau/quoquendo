@@ -2322,6 +2322,15 @@ impl Italian {
         out
     }
 
+}
+
+impl super::Module for Italian {
+    fn analyse(&self, text: &str) -> Vec<Token> {
+        Italian::analyse(self, text)
+    }
+}
+
+impl Italian {
     /// The FON stage on text: the module's LES functions on every sentence,
     /// then FonTrasParola word by word and FonTrasConfini at every word
     /// boundary, as LoqTTS7.dll's phrase loop (0x1002c300) runs them:
