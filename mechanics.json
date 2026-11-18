@@ -608,6 +608,94 @@
    "group": "recordings",
    "value": 32767,
    "source": "0x1000c290 and the end of nb_decode (constants 0x10023658, 0x10023ed0)"
+  },
+  {
+   "name": "CodecMsx sample rate",
+   "group": "recordings (CodecMsx)",
+   "value": 44000,
+   "unit": "Hz",
+   "source": "bin header word 4; LTTS7CodecMsx.dll ELQOpenDecoder 0x10002820 picks the ultra-wideband mode (0x100161c0) for 32000/44000/44100"
+  },
+  {
+   "name": "CodecMsx frame size",
+   "group": "recordings (CodecMsx)",
+   "value": 106,
+   "unit": "bytes",
+   "source": "bin header word 5; 848 bits = narrowband 472 + wideband 344 + ultra-wideband 32 (submode bits_per_frame at 0x10015e20, 0x10015fe0, 0x1001610c)"
+  },
+  {
+   "name": "CodecMsx submodes",
+   "group": "recordings (CodecMsx)",
+   "value": "narrowband 8 (0x10015df8), wideband 5 (0x10015fb8), ultra-wideband 2 (0x100160e4)",
+   "source": "chosen from the frame size 106, not from frame bits: nb_decoder_init 0x10003450, sb_decode 0x10005080"
+  },
+  {
+   "name": "CodecMsx header",
+   "group": "recordings (CodecMsx)",
+   "value": "31 big-endian words: 0-6 as Codec210, 7 version 2, 8 offset of the first frame from the header, 9 codebook sets, 10-18 bytes per set of each codebook, 19/20 innovation divisors (128), 21-29 codebook entry sizes",
+   "source": "ELQDecoderFileChanged 0x10001d40"
+  },
+  {
+   "name": "CodecMsx codebooks",
+   "group": "recordings (CodecMsx)",
+   "value": "per set: nb LSP 128x10, 16x5, 16x5; nb innovation 64x5; wb LSP 32x8, 8x8; uwb LSP 64x8, 64x8; wb innovation 128x8; a byte per frame names its set",
+   "source": "laid out by 0x10001d40; read by 0x100046d0 (nb LSP), 0x100048a0 (wb), 0x10004a10 (uwb), 0x10001190 (innovation)"
+  },
+  {
+   "name": "CodecMsx innovation scale",
+   "group": "recordings (CodecMsx)",
+   "value": "1/128",
+   "source": "header words 19/20; split_cb 0x10001190 multiplies by 1.0/divisor"
+  },
+  {
+   "name": "CodecMsx second-codebook gain",
+   "group": "recordings (CodecMsx)",
+   "value": 0.454545,
+   "source": "double at 0x100162e0 (nb_decode 0x10003df9)"
+  },
+  {
+   "name": "CodecMsx decoder delay",
+   "group": "recordings (CodecMsx)",
+   "value": 510,
+   "unit": "samples",
+   "source": "ELQOpenDecoder 0x10002959 (0x1fe for 44000/44100)"
+  },
+  {
+   "name": "CodecMsx warm-up frames",
+   "group": "recordings (CodecMsx)",
+   "value": 9,
+   "unit": "frames",
+   "source": "ELQOpenDecoder 0x10002977"
+  },
+  {
+   "name": "output resampler",
+   "group": "output",
+   "value": "Julius O. Smith resample, large filter, interpolated, when voice and output rates differ by more than 100 Hz",
+   "source": "LoqTTS7.dll 0x10028ee0 (VoiceResamplerRun) -> 0x1001c370, SrcUD 0x1001be70, FilterUD 0x1001bae0"
+  },
+  {
+   "name": "resampler filter",
+   "group": "output",
+   "value": "8192-tap wing, 256 per sample, lowpass 0.90, Kaiser beta 9, max 32767",
+   "source": "tables 0x1007ad88 (Imp) and 0x1007ed88 (ImpD); regenerated value for value (codec::tests::large_filter_is_the_dlls)"
+  },
+  {
+   "name": "resampler gain",
+   "group": "output",
+   "value": "LpScl 14746 x factor + 0.5 (10724 for 44000 -> 32000)",
+   "source": "0x1001c9a0 (14746.0 at 0x100a5cd8), 0x1001c3ad"
+  },
+  {
+   "name": "resampler steps",
+   "group": "output",
+   "value": "dtb = 32768/factor + 0.5 (45056); dhb = min(256, 256 factor) x 128 + 0.5 (23831)",
+   "source": "SrcUD 0x1001be70 (32768.0 0x100a5c60, 256.0 0x100a5c58, 128.0 0x100a5c50)"
+  },
+  {
+   "name": "resampler output count",
+   "group": "output",
+   "value": "floor(pending input x out/in) - 16 per call",
+   "source": "0x10028c00 (floor 0x10069b40, minus 0x10)"
   }
  ]
 }

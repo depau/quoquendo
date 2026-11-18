@@ -988,6 +988,9 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
 /// a hard cut; phrases are separated by exactly their pause. `Smooth`: joins
 /// are cross-faded over 5 ms after sliding the new piece up to ±5 ms so its
 /// waveform lines up with the old, and phrase edges fade in/out.
+///
+/// Everything is joined at the recordings' rate; 44 kHz voices then go
+/// through the original's resampler to 32 kHz (`codec::resample`).
 pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result<Speech, String> {
     let bank = db
         .audio
@@ -996,9 +999,17 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
     let rate = bank.rate;
     let ms = |m: u32| (m as usize) * rate as usize / 1000;
     let gain = settings.volume / 32768.0;
+    let resampled = rate != crate::codec::OUTPUT_RATE;
     if settings.join == JoinStyle::Original {
-        let out = join_like_original(plan, db, bank).into_iter().map(|v| v as f32 * gain).collect();
-        return Ok(Speech { samples: out, rate });
+        let mut out = join_like_original(plan, db, bank);
+        if resampled {
+            out = crate::codec::resample(&out, rate, crate::codec::OUTPUT_RATE);
+        }
+        let out = out.into_iter().map(|v| v as f32 * gain).collect();
+        return Ok(Speech {
+            samples: out,
+            rate: if resampled { crate::codec::OUTPUT_RATE } else { rate },
+        });
     }
     let mut out: Vec<f32> = Vec::new();
     for phrase in plan {
@@ -1054,16 +1065,26 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
         }
         out.extend(std::iter::repeat_n(0.0, ms(phrase.pause_ms)));
     }
+    if resampled {
+        let pcm: Vec<i16> = out.iter().map(|v| (v / gain).round().clamp(-32768.0, 32767.0) as i16).collect();
+        let out = crate::codec::resample(&pcm, rate, crate::codec::OUTPUT_RATE).into_iter().map(|v| v as f32 * gain).collect();
+        return Ok(Speech {
+            samples: out,
+            rate: crate::codec::OUTPUT_RATE,
+        });
+    }
     Ok(Speech { samples: out, rate })
 }
 
 /// Samples decoded on each side of a unit, as LoqTTS7.dll's unit fetch
-/// (0x1001f580) asks for: `(rate/10 · 400) / 20000` = 64 at 32 kHz.
-pub const UNIT_MARGIN: usize = 64;
+/// (0x1001f580) asks for: `(rate/10 · 400) / 20000`, 64 at 32 kHz, 88 at 44.
+pub fn unit_margin(rate: u32) -> usize {
+    (rate as usize / 10 * 400) / 20000
+}
 
 /// The whole utterance joined the way the original does with plain-copy
 /// units (algorithm 1, CONCATENAZIONE). Every unit is decoded with
-/// `UNIT_MARGIN` samples on each side; pauses are zero-filled units. At each
+/// `unit_margin` samples on each side; pauses are zero-filled units. At each
 /// join between two voiced half-phones the pitch-synchronous join
 /// (`sig::voiced_join`); at every other join (0x10024660 → 0x100244a0) the
 /// previous unit's last samples and tail margin are cross-faded with the next
@@ -1074,7 +1095,7 @@ pub const UNIT_MARGIN: usize = 64;
 /// one it fades the speech in over about 8 ms.
 fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::AudioBank) -> Vec<i16> {
     use crate::sig::{pitch_marks, voiced_join, JoinHalf, Voicing};
-    let m = UNIT_MARGIN;
+    let m = unit_margin(bank.rate);
     let rate = bank.rate;
     // every unit in order: the phrases' pieces, each followed by its pause
     // (a zero-filled unit: no lead-in margin, a 4× tail margin, 0x1001f580)
@@ -1266,6 +1287,7 @@ mod tests {
         crate::loquendo::parse_sde(
             "14,4\nN=2,9\nU=# a-b c @\nL# !\" #- n\nR# #- n\nL$ #- n\nR$ #- n\nL% #- n\nR% #- n\n\
              U=# c d @\nL# !#- #- n\nR# #- n\nL$ #- n\nR$ #- n\n",
+            crate::loquendo::VOICE_SAMPLE_RATE,
         )
     }
 

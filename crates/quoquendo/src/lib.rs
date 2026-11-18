@@ -161,7 +161,7 @@ pub struct VoiceInfo {
     pub language_library: Option<String>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
-    /// why the voice can't speak yet (`codec LTTS7CodecMsx`, `no Catalan module`)
+    /// why the voice can't speak yet (`no Catalan module`)
     pub unsupported: Option<String>,
 }
 
@@ -235,7 +235,6 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
     let language_missing = lde.is_none().then(|| descriptor.mother_tongue.clone());
     let unsupported = match &language_missing {
         Some(t) if catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(t)) => Some(format!("no {t} module")),
-        _ if descriptor.bin_name.contains("LTTS7CodecMsx") => Some("codec LTTS7CodecMsx".to_string()),
         _ => None,
     };
     Ok(VoiceInfo {
@@ -332,17 +331,12 @@ impl Voice {
     pub fn from_bytes(files: VoiceFiles) -> Result<Voice, String> {
         let mut descriptor = VoiceDescriptor::from_ini(&ini(&files.vcf), &ini(&files.vde));
         descriptor.set_bin_name(&files.bin_name);
-        let mut db = loquendo::parse_sde(&loquendo::latin1(&files.sde));
+        let mut db = loquendo::parse_sde(&loquendo::latin1(&files.sde), descriptor.audio_rate);
         db.size_bytes = files.sde.len() as u64;
         db.audio_size = files.bin.len() as u64;
-        db.audio_rate_hz = descriptor.audio_rate;
-        if files.bin_name.contains("LTTS7CodecMsx") {
-            db.audio_error = Some("codec LTTS7CodecMsx not supported yet".into());
-        } else {
-            match codec::AudioBank::parse(files.bin) {
-                Ok(bank) => db.audio = Some(bank),
-                Err(e) => db.audio_error = Some(e),
-            }
+        match codec::AudioBank::parse(files.bin) {
+            Ok(bank) => db.audio = Some(bank),
+            Err(e) => db.audio_error = Some(e),
         }
         db.tables = files.library.as_deref().and_then(|l| synth::PhoneTables::from_library(l, &db));
         let lang = descriptor.language();

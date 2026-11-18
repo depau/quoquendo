@@ -1,17 +1,29 @@
-//! Speex ultra-wideband decoding as LTTS7Codec210.dll does it: Speex 1.1
-//! (licence in LICENSE-speex) compiled for 32-bit x87, read from the DLL
-//! (MECHANICS.md §2). Only the one frame layout Loquendo 7 voices use:
-//! narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1
-//! (492 + 352 + 36 = 880 bits, 110 bytes; every frame of 19 voice files).
+//! Speex ultra-wideband decoding as Loquendo's two codecs do it.
 //!
-//! Precision follows the DLL's code: each expression is evaluated on the FPU
+//! LTTS7Codec210.dll (the 32 kHz voices) is Speex 1.1 (licence in
+//! LICENSE-speex) compiled for 32-bit x87, read from the DLL (MECHANICS.md
+//! §2). Only the one frame layout Loquendo 7 voices use: narrowband submode
+//! 7 + wideband submode 4 + ultra-wideband submode 1 (492 + 352 + 36 = 880
+//! bits, 110 bytes; every frame of 19 voice files). LTTS7CodecMsx.dll (the 44
+//! kHz voices) is in [`msx`].
+//!
+//! Precision follows the DLLs' code: each expression is evaluated on the FPU
 //! at double precision and rounded to `float` when it is assigned (the
 //! compiler stores every assignment with `fstp dword`), so here expressions
 //! are computed in f64 and every assignment goes through [`f`].
 
+pub mod msx;
 mod tables;
 use std::f64::consts::PI;
 use tables::*;
+
+/// Which of Loquendo's two Speex builds a recordings file is for, named in
+/// its text header (field 5: `LTTS7Codec210` or `LTTS7CodecMsx`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Variant {
+    Codec210,
+    Msx,
+}
 
 /// Samples per decoded frame at 32 kHz.
 pub const FRAME_SAMPLES: usize = 640;
@@ -22,6 +34,17 @@ pub const FRAME_BYTES: usize = 110;
 #[inline]
 fn f(x: f64) -> f32 {
     x as f32
+}
+
+/// A sample to 16 bits: `floor(x + 0.5)`, clamped (0x1000f640, 0x10001500).
+fn to_i16(v: f32) -> i16 {
+    if v > 32767.0 {
+        32767
+    } else if v < -32768.0 {
+        -32768
+    } else {
+        (v as f64 + 0.5).floor() as i16
+    }
 }
 
 struct Bits<'a> {
@@ -138,15 +161,16 @@ fn lsp_unquant_high(bits: &mut Bits) -> [f32; 8] {
     lsp
 }
 
-/// split_cb_shape_sign_unquant (0x100029c0): `exc += shape·(s·0.03125)`.
-fn split_cb_unquant(exc: &mut [f32], bits: &mut Bits, subvect: usize, nb_subvect: usize, shape_bits: usize, have_sign: bool, cb: &[i8]) {
+/// split_cb_shape_sign_unquant (0x100029c0): `exc += shape·(s·scale)`;
+/// Codec210's scale is 0.03125, CodecMsx's 1/128 from the file (0x10001190).
+fn split_cb_unquant(exc: &mut [f32], bits: &mut Bits, subvect: usize, nb_subvect: usize, shape_bits: usize, have_sign: bool, cb: &[i8], scale: f64) {
     let mut picks = [(0u32, 0usize); 8];
     for p in picks.iter_mut().take(nb_subvect) {
         let sign = if have_sign { bits.get(1) } else { 0 };
         *p = (sign, bits.get(shape_bits) as usize);
     }
     for (i, &(sign, ind)) in picks.iter().take(nb_subvect).enumerate() {
-        let s = if sign != 0 { -1.0 } else { 1.0 } * 0.03125;
+        let s = if sign != 0 { -1.0 } else { 1.0 } * scale;
         for j in 0..subvect {
             let e = &mut exc[subvect * i + j];
             *e = f(cb[ind * subvect + j] as f64 * s + *e as f64);
@@ -358,13 +382,13 @@ impl Narrowband {
             let ener = f(EXC_GAIN_QUANT_SCAL3[bits.get(3) as usize] as f64 * ol_gain);
             let innov = &mut self.innov[offset..offset + NB_SUB];
             innov.fill(0.0);
-            split_cb_unquant(innov, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
+            split_cb_unquant(innov, bits, 5, 8, 6, false, &EXC_5_64_TABLE, 0.03125);
             signal_mul(innov, ener);
             for i in 0..NB_SUB {
                 self.exc_buf[base + i] = f(innov[i] as f64 + self.exc_buf[base + i] as f64);
             }
             let mut innov2 = [0f32; NB_SUB];
-            split_cb_unquant(&mut innov2, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
+            split_cb_unquant(&mut innov2, bits, 5, 8, 6, false, &EXC_5_64_TABLE, 0.03125);
             signal_mul(&mut innov2, f(ener as f64 * 0.45454545454545453));
             for i in 0..NB_SUB {
                 self.exc_buf[base + i] = f(innov2[i] as f64 + self.exc_buf[base + i] as f64);
@@ -514,10 +538,10 @@ impl Decoder {
             let el = compute_rms(&nb_exc[sub * 40..sub * 40 + 40]) as f64;
             let gc = f((qgc * 0.27027027027027023 - 0.15556).exp()) as f64;
             let scale = f((el + 1.0) * (gc / filter_ratio as f64));
-            split_cb_unquant(exc, bits, 8, 5, 7, true, &HEXC_TABLE);
+            split_cb_unquant(exc, bits, 8, 5, 7, true, &HEXC_TABLE, 0.03125);
             signal_mul(exc, scale);
             let mut innov2 = [0f32; 40];
-            split_cb_unquant(&mut innov2, bits, 8, 5, 7, true, &HEXC_TABLE);
+            split_cb_unquant(&mut innov2, bits, 8, 5, 7, true, &HEXC_TABLE, 0.03125);
             let scale2 = scale as f64 * 0.4;
             for i in 0..40 {
                 innov2[i] = f(innov2[i] as f64 * scale2);
@@ -539,13 +563,7 @@ impl Decoder {
             }
         });
         for (p, &v) in pcm.iter_mut().zip(out.iter()) {
-            *p = if v > 32767.0 {
-                32767
-            } else if v < -32768.0 {
-                -32768
-            } else {
-                (v as f64 + 0.5).floor() as i16
-            };
+            *p = to_i16(v);
         }
     }
 }

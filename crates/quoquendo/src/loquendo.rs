@@ -230,12 +230,14 @@ pub fn base93(token: &str) -> Option<u64> {
     Some(v)
 }
 
-pub fn parse_sde(text: &str) -> VoiceDatabase {
+/// The voice index; sample positions are at `rate`, the recordings' rate
+/// (32000 or 44000, from the `.bin` name), as the original's are.
+pub fn parse_sde(text: &str, rate: u32) -> VoiceDatabase {
     let mut db = VoiceDatabase {
-        audio_rate_hz: VOICE_SAMPLE_RATE,
+        audio_rate_hz: rate,
         ..Default::default()
     };
-    let rate = db.audio_rate_hz as u64;
+    let rate = rate as u64;
     let to_sample = |ticks: u64| ticks_to_samples(ticks, rate);
     // per sentence: the next phone to fill, the clock in ticks, and whether
     // the next record is a left half
@@ -372,7 +374,7 @@ pub fn load_extras(voice_dir: &Path) -> VoiceExtras {
         for p in paths {
             let Ok(bytes) = fs::read(&p) else { continue };
             let text = latin1(&bytes);
-            let db = parse_sde(&text);
+            let db = parse_sde(&text, VOICE_SAMPLE_RATE);
             let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("extras").to_string();
             extras.sets.push((name, db.units.len(), db.instance_count()));
         }
@@ -588,7 +590,7 @@ mod tests {
         // "# a-b @": edges # and @ have no records, a and b have an L/R pair;
         // "!" marks a's absolute start
         let text = "14,4\nLTTSComponentVersion=7.0.0\nN=1,4\nU=# a-b @\nS=I\nL# !,, #- n\nR# #- n\nL$ #- p\nR$ #- p\n";
-        let db = parse_sde(text);
+        let db = parse_sde(text, VOICE_SAMPLE_RATE);
         assert_eq!(db.declared_units, 1);
         let u = &db.units[0];
         assert_eq!(u.mood, Some('I'));

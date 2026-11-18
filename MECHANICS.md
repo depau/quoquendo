@@ -123,6 +123,92 @@ its audio at a median **104.6 dB** inside the pieces on the Italian
 benchmark (English 98.1, French 93.6, German 89.2, Spanish 103.7; a port of
 Speex 1.2 gave 58–70 dB). A test pins the output for synthetic frames.
 
+## 2b. The 44 kHz recordings — LTTS7CodecMsx (SIG input)
+
+Eleven voices (Alan, Carmela, Dmitri, Empar, Florence, Grace, Jordi,
+Marcello, Olga, Willem, Ximena) ship `<Voice>.44000.LTTS7CodecMsx.58300.10.bin`,
+named in the text header's field 5. `LTTS7CodecMsx.dll` exports
+`LTTS7CodecMsx` (0x10002a90), the same name→function table as Codec210's at
+0x10015ae0 (`ELQOpenDecoder` 0x10002820, `ELQDecode` 0x10002780,
+`ELQDecoderFileChanged` 0x10001d40, `ELQCloseDecoder` 0x10002710). It is
+Speex ultra-wideband again, but built from a later Speex (1.2's decoder
+loops) and changed by Loquendo. `speex/msx.rs` decodes it.
+
+File layout (all 31 CodecMsx files checked):
+
+| part | content | source |
+|---|---|---|
+| text header | as Codec210's; field 5 `LTTS7CodecMsx` | — |
+| 124 bytes | 31 big-endian words: 58300 bit/s, quality 10, 640 samples/frame, 44000 Hz, **106 bytes/frame**, frame count, key word, version 2, offset of the first frame from here, number of codebook sets (Marcello 79), bytes per set of each codebook (1280, 80, 80, 320, 256, 64, 512, 512, 1024), divisors 128 and 128, entry sizes (10, 5, 5, 8, 8, 8, 8, 5, 8) | `ELQDecoderFileChanged` 0x10001d40 |
+| one byte per frame | which codebook set the frame uses | read at `ctx[0] + frame` in 0x10001190, 0x100046d0, 0x100048a0, 0x10004a10 |
+| codebooks | per set, in this order: narrowband LSP 128×10, 16×5, 16×5; narrowband innovation 64×5; wideband LSP 32×8, 8×8; ultra-wideband LSP 64×8, 64×8; wideband innovation 128×8 (signed bytes) | 0x10001d40 |
+| frames | frame k at header + word 8 + 106·k, XOR the key word's low byte | `ELQDecode` → 0x100024d0, XOR 0x10002420 |
+
+How it decodes, against Codec210 (§2):
+
+- **No mode bits.** The submode of each layer follows from the frame size
+  (nb_decoder_init 0x10003450, sb_decode 0x10005080): 106 bytes gives
+  narrowband submode 8 (table 0x10015df8: 472 bits), wideband 5 (0x10015fb8:
+  344 bits), ultra-wideband 2 (0x100160e4: 32 bits).
+- **Codebooks from the file**, the set the frame's byte names. LSPs:
+  narrowband 7 + 4 + 4 bits (stage one over all ten, the next two over LSPs
+  0–4 and 5–9, ×0.0039062 then ×0.0019531; 0x100046d0), wideband 5 + 3
+  (0x100048a0), ultra-wideband 6 + 6 (0x10004a10); start values as Speex's
+  (0x10004400, 0x10004420, 0x10004440; steps set by 0x100042d0). Innovation
+  `shape · sign / 128` (0x10001190, divisors from the header). The pitch gain
+  table is Speex's (0x100152e0, 4 values per entry as in 1.2).
+- **Speex 1.2's loops** (nb_decode 0x10003800, sb_decode 0x10005080): the
+  pitch taps are added one at a time into a zeroed buffer (0x10003120); the
+  frame's output is the excitation from one subframe earlier, each subframe
+  filtered with the previous subframe's LPCs, and the band π-gains and
+  ratios come from those previous LPCs too; the sub-bands play their
+  excitation one subframe late the same way.
+- Kept from Codec210: excitation `exc32 + innov`, then `+ innov2` (second
+  codebook ×**0.454545**, a double at 0x100162e0); wideband gains
+  `exp(q·0.27027027027027023 − 0.15556)` and (1 + RMS of the narrowband
+  excitation), second codebook ×0.4; folding `exp((q − 10)·0.125)`/ratio ×
+  0.7. The wideband hands its innovation up **without** Codec210's factor 2
+  (`innov_save[2i] = exc[i]`, 0x100056a0). No output clamp in the
+  narrowband; the sub-band combine (0x10004b80) and 16-bit rounding
+  (0x10001500) are Codec210's.
+- Decoder settings (`ELQOpenDecoder` 0x10002820): enhancement off, delay
+  **510** samples and **9** warm-up frames at 44 kHz (509 and 6 at 32 kHz).
+
+Result: the original's own pieces through our decoder match its 44 kHz
+output (a loqref build asking for 44000 Hz) at a median **106.7 dB** inside
+the pieces, three benchmark sentences.
+
+## 2c. Leaving the engine — the output resampler
+
+The engine joins units at the voice's rate (positions from the `.sde` at
+44000 Hz too) and converts the stream to the rate asked for, here the
+32000 Hz `oracle/loqref.c` sets, when the two differ by more than 100 Hz
+(`VoiceResamplerRun` 0x10028ee0). The resampler (0x1001c370, `SrcUD`
+0x1001be70, `FilterUD` 0x1001bae0) is Julius O. Smith's `resample`, fixed
+point, "large filter", interpolated coefficients:
+
+- filter: one 8192-tap wing, 256 taps per input sample, lowpass 0.90 under
+  a Kaiser window β = 9, largest tap 32767 (`Imp` 0x1007ad88, `ImpD`
+  0x1007ed88); `codec.rs` designs it and a test checks it equals the DLL's;
+- gain `LpScl` = 14746 (0x100a5cd8) × factor + 0.5 = 10724; time step
+  `dtb` = 32768/factor + 0.5 = 45056; filter step `dhb` = min(256, 256·factor)
+  × 128 + 0.5 = 23831; each product rounded to 14 fraction bits, the sum
+  shifted by 2, scaled, rounded by 13 bits and clamped;
+- the right wing's phase is `(−time) & 0x7fff` (Smith's original uses
+  `(time ^ 0x7fff) + 1`).
+
+`codec::resample` does this over the whole utterance and matches the
+original's 32 kHz output, fed the original's own 44 kHz output, sample for
+sample except at phone ends: the engine runs the resampler once per phone,
+asking for `floor(pending · 32/44) − 16` samples (0x10028c00) and keeping
+the input from the next output's position on, so the ~10 samples before
+each phone end are computed with whatever stale samples the 4096-sample
+input buffer holds past the new data (the first call: zeros). Those few
+samples per phone are not reproduced yet; with them our replay of the
+original's pieces scores **81.5 dB** inside pieces at 32 kHz on
+`oracle/bench-it.txt` (mean of the per-sentence medians, which run 45–91),
+against 106.7 dB at 44 kHz.
+
 ## 3. The voice index — `<Voice>.sde`
 
 Text with every byte ≥ 0x80 shifted up by 0x80 (line feeds are not). Read as
@@ -544,7 +630,7 @@ The program the voice ships as (`Raffaele - Italian.exe`) is an Inno Setup
 | PSOLA period | 0x1001df70 | output period k uses source mark `((n−1) + (marks−1)·k·2)/(2n−2)`; target period = source period·100 / pitch-percent, interpolated between the unit's start and end percentages; capped at `rate/40` (800) | documented |
 | PSOLA window | 0x1001f210 | windows at 0x1007a810 and 0x1007a328 (the second when the period shrinks) | not yet |
 | unit fields | 0x10048930 (debug dump) | ALGO, FONEMA, PHONEMELABEL, CONFINI (boundaries), DURATA, F0 start/end, GUADAGNO (gain) start/end, TIMBRO, TIPOVOC | — |
-| output resampler | 0x10028ee0 | resamples when voice and output rates differ by more than 100 Hz | not needed (both 32 kHz) |
+| output resampler | 0x10028ee0 | resamples when voice and output rates differ by more than 100 Hz | ported for the 44 kHz CodecMsx voices (§2c); 32 kHz voices pass through |
 
 So for normal speech the original copies recorded runs untouched, which is why
 pieces match at ~70 dB. The few-sample cut shifts are still unexplained by
@@ -558,9 +644,9 @@ when a speed/pitch change asks for it.
   stress (97.6% held out); Italian's exception and ending tables in
   LTTS7Italian.dll's data (`vits$1`, `en$1`… reversed endings with codes)
   are readable but not decoded — our learned tables stand in (96.6%).
-- A browser build: the library is all Rust on bytes now (installers and
-  Speex included) but hasn't been built for `wasm32` here (the target isn't
-  installed); the app's file and audio parts need web counterparts.
+- The browser build exists now (`trunk build`, web/index.html); the 44 kHz
+  voices' last phone-end samples follow the engine's per-phone resampler
+  calls (§2c), which needs our joins to match first.
 - The last decoder differences (89–105 dB inside pieces): likely exp() and
   sqrt() rounding on the x87 against libm; they decide a few pitch marks.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
