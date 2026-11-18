@@ -340,7 +340,9 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_pieceSamples<'l>(
         if from < 0 || to < from {
             return Err(format!("bad piece range {from}..{to}"));
         }
-        let pcm = bank(v)?.read(from as usize, (to - from) as usize);
+        // Gilded phrase databases have their own recordings
+        let bank = v.db.bank(unit as u32).ok_or("this piece's recordings can't be decoded")?;
+        let pcm = bank.read(from as usize, (to - from) as usize);
         let array = env.new_short_array(pcm.len() as i32).map_err(|e| e.to_string())?;
         env.set_short_array_region(&array, 0, &pcm).map_err(|e| e.to_string())?;
         Ok(array.into_raw())

@@ -727,7 +727,7 @@ impl App {
                         for p in &phrase.pieces {
                             let u = &db.units[p.unit as usize];
                             if ui.small_button("▶").on_hover_text("Play this piece as recorded").clicked() {
-                                play = Some((p.from, p.to));
+                                play = Some((p.unit, p.from, p.to));
                             }
                             ui.label(RichText::new(p.covers.join(" ")).monospace().color(if p.hard { LILAC } else { GREEN }));
                             ui.label(RichText::new(format!("#{}", p.unit)).monospace().color(MUTED));
@@ -752,8 +752,8 @@ impl App {
                 });
             });
         });
-        if let Some((from, to)) = play {
-            self.play_span(from, to);
+        if let Some((unit, from, to)) = play {
+            self.play_span(unit, from, to);
             return;
         }
         ui.add_space(8.0);
@@ -1005,8 +1005,9 @@ impl App {
 /// The recordings explorer and playing stretches of the recordings.
 impl App {
     /// Play samples `from..to` of the voice's recordings as they are.
-    fn play_span(&mut self, from: u32, to: u32) {
-        let Some(bank) = self.voice.as_ref().and_then(|v| v.db.audio.as_ref()) else {
+    fn play_span(&mut self, unit: u32, from: u32, to: u32) {
+        // Gilded phrase databases have their own recordings
+        let Some(bank) = self.voice.as_ref().and_then(|v| v.db.bank(unit)) else {
             self.error = Some("This voice's recordings can't be decoded.".into());
             return;
         };
@@ -1050,7 +1051,7 @@ impl App {
         let rate = db.audio_rate() as f32;
         let ms = |a: u32, b: u32| (b.saturating_sub(a)) as f32 * 1000.0 / rate;
         let Some((_, index)) = &self.explore.index else { return };
-        let mut play: Option<(u32, u32)> = None;
+        let mut play: Option<(u32, u32, u32)> = None;
         let mut open_unit: Option<Option<usize>> = None;
         let mut pick_phone: Option<String> = None;
         let mut page = self.explore.page;
@@ -1119,7 +1120,7 @@ impl App {
                         ui.label(RichText::new(format!("· {mood} · {} phones", timed.len())).color(MUTED));
                         if let (Some(a), Some(b)) = (timed.first(), timed.last()) {
                             if ui.button(format!("▶ whole sentence ({:.2} s)", ms(a.start, b.end) / 1000.0)).clicked() {
-                                play = Some((a.start, b.end));
+                                play = Some((u as u32, a.start, b.end));
                             }
                         }
                     });
@@ -1134,7 +1135,7 @@ impl App {
                                 .button(RichText::new(&p.sym).monospace().color(GREEN))
                                 .on_hover_text(format!("{:.0} ms · {}–{} Hz · click to play", ms(p.start, p.end), p.pitch_l, p.pitch_r));
                             if b.clicked() {
-                                play = Some((p.start, p.end));
+                                play = Some((u as u32, p.start, p.end));
                             }
                         }
                     });
@@ -1166,10 +1167,10 @@ impl App {
                                 let prev = phones[..i as usize].iter().rev().find(|q| q.timed);
                                 let next = phones[i as usize + 1..].iter().find(|q| q.timed);
                                 if ui.small_button("▶").on_hover_text("Play this take").clicked() {
-                                    play = Some((p.start, p.end));
+                                    play = Some((u, p.start, p.end));
                                 }
                                 if ui.small_button("▶▶").on_hover_text("Play it with its neighbours").clicked() {
-                                    play = Some((prev.map(|q| q.start).unwrap_or(p.start), next.map(|q| q.end).unwrap_or(p.end)));
+                                    play = Some((u, prev.map(|q| q.start).unwrap_or(p.start), next.map(|q| q.end).unwrap_or(p.end)));
                                 }
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -1201,8 +1202,8 @@ impl App {
         if let Some(u) = open_unit {
             self.explore.unit = u;
         }
-        if let Some((a, b)) = play {
-            self.play_span(a, b);
+        if let Some((unit, a, b)) = play {
+            self.play_span(unit, a, b);
         }
     }
 }
