@@ -237,13 +237,6 @@
    "source": "event 3 phone durations equal the recorded ones within 1 ms (benchmark sentence 0)"
   },
   {
-   "name": "play offset",
-   "group": "joining",
-   "value": 160,
-   "unit": "samples (5 ms) after the .sde time",
-   "source": "measured: with it pieces match the original's audio at 70-80 dB, without it they don't"
-  },
-  {
    "name": "join style (original)",
    "group": "joining",
    "value": "hard cut",
@@ -259,13 +252,13 @@
    "name": "decoder high-pass",
    "group": "recordings",
    "value": "off",
-   "source": "older Speex in LTTS7Codec210 has none; measured below 250 Hz: 10 dB with it, 40 dB without"
+   "source": "Speex 1.1 in LTTS7Codec210 has no output high-pass (nb_decode 0x10009520 ends with a ±32767 clamp only)"
   },
   {
    "name": "decoder match inside pieces",
    "group": "recordings",
-   "value": "69.5 dB (median, 20 sentences)",
-   "source": "quoquendo --compare oracle/bench-it.txt"
+   "value": "104.6 dB (median, Italian benchmark)",
+   "source": "quoquendo --compare oracle/bench-it.txt, with the Speex 1.1 / x87 port"
   },
   {
    "name": "smoothed cross-fade",
@@ -585,6 +578,36 @@
    "group": "recordings",
    "value": "narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1 (492 + 352 + 36 bits)",
    "source": "every frame of 19 voice files read; speex::Decoder::supports"
+  },
+  {
+   "name": "Speex version in LTTS7Codec210",
+   "group": "recordings",
+   "value": "1.1 (no one-subframe delay, fir_mem_up QMF, iir_mem2 with the current LPCs)",
+   "source": "LTTS7Codec210.dll nb_decode 0x10009520, sb_decode 0x1000e170, fir_mem_up 0x10003960"
+  },
+  {
+   "name": "decoder arithmetic",
+   "group": "recordings",
+   "value": "x87 at double precision, rounded to float on every assignment",
+   "source": "fstp dword after each statement in iir_mem2 0x100030e0, fir_mem_up 0x10003960, lsp_to_lpc 0x10005080"
+  },
+  {
+   "name": "wideband innovation gain",
+   "group": "recordings",
+   "value": "exp(q*0.27027027027027023 - 0.15556) * (1 + rms of the low excitation) / filter ratio",
+   "source": "sb_decode 0x1000e6a2..0x1000e6f3"
+  },
+  {
+   "name": "folding gain (ultra-wideband)",
+   "group": "recordings",
+   "value": "exp((q - 10)*0.125) / filter ratio * 0.7, sign alternating",
+   "source": "sb_decode 0x1000e5f1..0x1000e65b"
+  },
+  {
+   "name": "sub-band output clamp",
+   "group": "recordings",
+   "value": 32767,
+   "source": "0x1000c290 and the end of nb_decode (constants 0x10023658, 0x10023ed0)"
   }
  ]
 }

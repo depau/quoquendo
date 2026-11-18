@@ -1,22 +1,28 @@
-//! Speex ultra-wideband decoding, ported from Speex 1.2's float decoder
-//! (licence in LICENSE-speex) for the one frame layout Loquendo 7 voices use:
-//! every frame of every voice is narrowband submode 7 + wideband submode 4 +
-//! ultra-wideband submode 1 (492 + 352 + 36 = 880 bits, 110 bytes; checked
-//! over all frames of 19 voice files). Perceptual enhancement and the output
-//! high-pass are off, as LTTS7Codec210 has them, and the wideband layer hands
-//! the band above twice its excitation (LTTS7Codec210.dll 0x1000f0e0).
+//! Speex ultra-wideband decoding as LTTS7Codec210.dll does it: Speex 1.1
+//! (licence in LICENSE-speex) compiled for 32-bit x87, read from the DLL
+//! (MECHANICS.md §2). Only the one frame layout Loquendo 7 voices use:
+//! narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1
+//! (492 + 352 + 36 = 880 bits, 110 bytes; every frame of 19 voice files).
 //!
-//! The arithmetic follows the C exactly, f32 where Speex uses `float` and f64
-//! where its constants are C doubles, so the output is the C decoder's to the
-//! last bit on the same libm.
+//! Precision follows the DLL's code: each expression is evaluated on the FPU
+//! at double precision and rounded to `float` when it is assigned (the
+//! compiler stores every assignment with `fstp dword`), so here expressions
+//! are computed in f64 and every assignment goes through [`f`].
 
 mod tables;
+use std::f64::consts::PI;
 use tables::*;
 
 /// Samples per decoded frame at 32 kHz.
 pub const FRAME_SAMPLES: usize = 640;
 /// Bytes per frame in the voices' recordings.
 pub const FRAME_BYTES: usize = 110;
+
+/// An assignment to a `float`: the FPU's double-precision value rounded.
+#[inline]
+fn f(x: f64) -> f32 {
+    x as f32
+}
 
 struct Bits<'a> {
     data: &'a [u8],
@@ -35,36 +41,39 @@ impl Bits<'_> {
     }
 }
 
-// --- shared pieces (lsp.c, filters.c, quant_lsp.c, cb_search.c) -------------
+// --- shared pieces ------------------------------------------------------------
 
-// The constants as Speex writes them (its SPX_PI_2 is a rounded π/2, kept).
+/// Speex's cosine approximation (0x10004af0).
 #[allow(clippy::excessive_precision, clippy::approx_constant)]
 fn spx_cos(x: f32) -> f32 {
-    const C1: f32 = 0.9999932946;
-    const C2: f32 = -0.4999124376;
-    const C3: f32 = 0.0414877472;
-    const C4: f32 = -0.0012712095;
+    const C1: f64 = 0.9999933242797852;
+    const C2: f64 = 0.49991244077682495;
+    const C3: f64 = 0.04148774594068527;
+    const C4: f64 = 0.0012712094467133284;
+    let poly = |x2: f32| {
+        let x2 = x2 as f64;
+        ((C3 - C4 * x2) * x2 - C2) * x2 + C1
+    };
     if (x as f64) < 1.5707963268 {
-        let x = x * x;
-        C1 + x * (C2 + x * (C3 + C4 * x))
+        f(poly(f(x as f64 * x as f64)))
     } else {
-        let x = (std::f64::consts::PI - x as f64) as f32;
-        let x = x * x;
-        -(C1 + x * (C2 + x * (C3 + C4 * x)))
+        let t = f(PI - x as f64) as f64;
+        f(-poly(f(t * t)))
     }
 }
 
+/// lsp_to_lpc (0x10005080).
 fn lsp_to_lpc(freq: &[f32], ak: &mut [f32]) {
     let order = freq.len();
     let m = order / 2;
     let mut wp = vec![0f32; 4 * m + 2];
-    let x: Vec<f32> = freq.iter().map(|&f| spx_cos(f)).collect();
+    let x: Vec<f64> = freq.iter().map(|&v| spx_cos(v) as f64).collect();
     let (mut xin1, mut xin2) = (1f32, 1f32);
     for j in 0..=order {
         for i in 0..m {
             let n = 4 * i;
-            let xout1 = xin1 - 2.0 * x[2 * i] * wp[n] + wp[n + 1];
-            let xout2 = xin2 - 2.0 * x[2 * i + 1] * wp[n + 2] + wp[n + 3];
+            let xout1 = f(xin1 as f64 - x[2 * i] * 2.0 * wp[n] as f64 + wp[n + 1] as f64);
+            let xout2 = f(xin2 as f64 - x[2 * i + 1] * 2.0 * wp[n + 2] as f64 + wp[n + 3] as f64);
             wp[n + 1] = wp[n];
             wp[n + 3] = wp[n + 2];
             wp[n] = xin1;
@@ -72,10 +81,10 @@ fn lsp_to_lpc(freq: &[f32], ak: &mut [f32]) {
             xin1 = xout1;
             xin2 = xout2;
         }
-        let xout1 = xin1 + wp[4 * m];
-        let xout2 = xin2 - wp[4 * m + 1];
+        let xout1 = f(xin1 as f64 + wp[4 * m] as f64);
+        let xout2 = f(xin2 as f64 - wp[4 * m + 1] as f64);
         if j > 0 {
-            ak[j - 1] = (xout1 + xout2) * 0.5;
+            ak[j - 1] = f((xout1 as f64 + xout2 as f64) * 0.5);
         }
         wp[4 * m] = xin1;
         wp[4 * m + 1] = xin2;
@@ -84,40 +93,40 @@ fn lsp_to_lpc(freq: &[f32], ak: &mut [f32]) {
     }
 }
 
+/// lsp_interpolate (0x10005520) then lsp_enforce_margin (0x10005390).
 fn lsp_interpolate(old: &[f32], new: &[f32], lsp: &mut [f32], sub: usize, nb_subframes: usize, margin: f32) {
-    let len = lsp.len();
-    let tmp = (1.0f32 + sub as f32) / nb_subframes as f32;
-    for i in 0..len {
-        lsp[i] = (1.0 - tmp) * old[i] + tmp * new[i];
+    let tmp = f((sub as f64 + 1.0) / nb_subframes as f64) as f64;
+    for i in 0..lsp.len() {
+        lsp[i] = f(new[i] as f64 * tmp + old[i] as f64 * (1.0 - tmp));
     }
+    let (len, m) = (lsp.len(), margin as f64);
     if lsp[0] < margin {
         lsp[0] = margin;
     }
-    let top = std::f64::consts::PI - margin as f64;
-    if lsp[len - 1] as f64 > top {
-        lsp[len - 1] = top as f32;
+    if PI - m < lsp[len - 1] as f64 {
+        lsp[len - 1] = f(PI - m);
     }
     for i in 1..len - 1 {
-        if lsp[i] < lsp[i - 1] + margin {
-            lsp[i] = lsp[i - 1] + margin;
+        if (lsp[i] as f64) < lsp[i - 1] as f64 + m {
+            lsp[i] = f(lsp[i - 1] as f64 + m);
         }
-        if lsp[i] > lsp[i + 1] - margin {
-            lsp[i] = 0.5 * (lsp[i] + lsp[i + 1] - margin);
+        if (lsp[i + 1] as f64 - m) < lsp[i] as f64 {
+            lsp[i] = f((lsp[i] as f64 + lsp[i + 1] as f64 - m) * 0.5);
         }
     }
 }
 
-/// `lsp += step·cb` done in double, as the C macros (0.0039062*(x)) are.
 fn add_lsp(lsp: &mut f32, step: f64, cb: i8) {
-    *lsp = (*lsp as f64 + step * cb as f64) as f32;
+    *lsp = f(cb as f64 * step + *lsp as f64);
 }
 
 const LSP_DIV_256: f64 = 0.0039062;
 const LSP_DIV_512: f64 = 0.0019531;
 const LSP_DIV_1024: f64 = 0.00097656;
 
+/// lsp_unquant_high (0x1000c0d0).
 fn lsp_unquant_high(bits: &mut Bits) -> [f32; 8] {
-    let mut lsp: [f32; 8] = std::array::from_fn(|i| (0.3125 * i as f64 + 0.75) as f32);
+    let mut lsp: [f32; 8] = std::array::from_fn(|i| f(i as f64 * 0.3125 + 0.75));
     let id = bits.get(6) as usize;
     for i in 0..8 {
         add_lsp(&mut lsp[i], LSP_DIV_256, HIGH_LSP_CDBK[id * 8 + i]);
@@ -129,7 +138,7 @@ fn lsp_unquant_high(bits: &mut Bits) -> [f32; 8] {
     lsp
 }
 
-/// split_cb_shape_sign_unquant: `exc += s·0.03125·shape`.
+/// split_cb_shape_sign_unquant (0x100029c0): `exc += shape·(s·0.03125)`.
 fn split_cb_unquant(exc: &mut [f32], bits: &mut Bits, subvect: usize, nb_subvect: usize, shape_bits: usize, have_sign: bool, cb: &[i8]) {
     let mut picks = [(0u32, 0usize); 8];
     for p in picks.iter_mut().take(nb_subvect) {
@@ -137,166 +146,122 @@ fn split_cb_unquant(exc: &mut [f32], bits: &mut Bits, subvect: usize, nb_subvect
         *p = (sign, bits.get(shape_bits) as usize);
     }
     for (i, &(sign, ind)) in picks.iter().take(nb_subvect).enumerate() {
-        let s: f64 = if sign != 0 { -1.0 } else { 1.0 };
+        let s = if sign != 0 { -1.0 } else { 1.0 } * 0.03125;
         for j in 0..subvect {
             let e = &mut exc[subvect * i + j];
-            *e = (*e as f64 + s * 0.03125 * cb[ind * subvect + j] as f64) as f32;
+            *e = f(cb[ind * subvect + j] as f64 * s + *e as f64);
         }
     }
 }
 
-fn iir_mem16(x: &[f32], den: &[f32], y: &mut [f32], mem: &mut [f32]) {
+/// signal_mul (0x10002da0).
+fn signal_mul(x: &mut [f32], scale: f32) {
+    for v in x.iter_mut() {
+        *v = f(*v as f64 * scale as f64);
+    }
+}
+
+/// iir_mem2 (0x100030e0), in place.
+fn iir_mem2(xy: &mut [f32], den: &[f32], mem: &mut [f32]) {
     let ord = den.len();
-    for i in 0..x.len() {
-        let yi = x[i] + mem[0];
-        let nyi = -yi;
+    for v in xy.iter_mut() {
+        let yi = f(*v as f64 + mem[0] as f64);
+        let nyi = f(-(yi as f64)) as f64;
         for j in 0..ord - 1 {
-            mem[j] = mem[j + 1] + den[j] * nyi;
+            mem[j] = f(den[j] as f64 * nyi + mem[j + 1] as f64);
         }
-        mem[ord - 1] = den[ord - 1] * nyi;
-        y[i] = yi;
+        mem[ord - 1] = f(nyi * den[ord - 1] as f64);
+        *v = yi;
     }
 }
 
-/// The same filter, in place.
-fn iir_mem16_inplace(xy: &mut [f32], den: &[f32], mem: &mut [f32]) {
-    let x = xy.to_vec();
-    iir_mem16(&x, den, xy, mem);
-}
-
+/// compute_rms (0x10002ec0).
 fn compute_rms(x: &[f32]) -> f32 {
     let mut sum = 0f32;
     for &v in x {
-        sum += v * v;
+        sum = f(v as f64 * v as f64 + sum as f64);
     }
-    (0.1 + (sum / x.len() as f32) as f64).sqrt() as f32
+    f((sum as f64 / x.len() as f64 + 0.1).sqrt())
 }
 
-const H0: [f32; 64] = [
-    3.596189e-05,
-    -0.0001123515,
-    -0.0001104587,
-    0.0002790277,
-    0.0002298438,
-    -0.0005953563,
-    -0.0003823631,
-    0.00113826,
-    0.0005308539,
-    -0.001986177,
-    -0.0006243724,
-    0.003235877,
-    0.0005743159,
-    -0.004989147,
-    -0.0002584767,
-    0.007367171,
-    -0.0004857935,
-    -0.01050689,
-    0.001894714,
-    0.01459396,
-    -0.004313674,
-    -0.01994365,
-    0.00828756,
-    0.02716055,
-    -0.01485397,
-    -0.03764973,
-    0.026447,
-    0.05543245,
-    -0.05095487,
-    -0.09779096,
-    0.1382363,
-    0.4600981,
-    0.4600981,
-    0.1382363,
-    -0.09779096,
-    -0.05095487,
-    0.05543245,
-    0.026447,
-    -0.03764973,
-    -0.01485397,
-    0.02716055,
-    0.00828756,
-    -0.01994365,
-    -0.004313674,
-    0.01459396,
-    0.001894714,
-    -0.01050689,
-    -0.0004857935,
-    0.007367171,
-    -0.0002584767,
-    -0.004989147,
-    0.0005743159,
-    0.003235877,
-    -0.0006243724,
-    -0.001986177,
-    0.0005308539,
-    0.00113826,
-    -0.0003823631,
-    -0.0005953563,
-    0.0002298438,
-    0.0002790277,
-    -0.0001104587,
-    -0.0001123515,
-    3.596189e-05,
+/// h0 as stored in LTTS7Codec210.dll at 0x100240a8 (float bits).
+const H0: [u32; 64] = [
+    0x3816d5c9, 0xb8eb9e41, 0xb8e7a610, 0x39924a77, 0x3971023a, 0xba1c11af, 0xb9c877e8, 0x3a9531ab, 0x3a0b2901, 0xbb022a85, 0xba23acec, 0x3b541102, 0x3a168db0,
+    0xbba37c00, 0xb9878428, 0x3bf1684f, 0xb9feb21a, 0xbc2c2517, 0x3af8580d, 0x3c6f1b81, 0xbb8d59b8, 0xbca360de, 0x3c07c88c, 0x3cde7fcd, 0xbc735e11, 0xbd1a369a,
+    0x3cd8a761, 0x3d630d23, 0xbd50b60e, 0xbdc846a0, 0x3e0d8dd1, 0x3eeb91fa, 0x3eeb91fa, 0x3e0d8dd1, 0xbdc846a0, 0xbd50b60e, 0x3d630d23, 0x3cd8a761, 0xbd1a369a,
+    0xbc735e11, 0x3cde7fcd, 0x3c07c88c, 0xbca360de, 0xbb8d59b8, 0x3c6f1b81, 0x3af8580d, 0xbc2c2517, 0xb9feb21a, 0x3bf1684f, 0xb9878428, 0xbba37c00, 0x3a168db0,
+    0x3b541102, 0xba23acec, 0xbb022a85, 0x3a0b2901, 0x3a9531ab, 0xb9c877e8, 0xba1c11af, 0x3971023a, 0x39924a77, 0xb8e7a610, 0xb8eb9e41, 0x3816d5c9,
 ];
 
-/// The QMF synthesis joining a low and a high band (both `n/2` long) into `y`.
-fn qmf_synth(x1: &[f32], x2: &[f32], y: &mut [f32], mem1: &mut [f32; 64], mem2: &mut [f32; 64]) {
-    let (n2, m2) = (x1.len(), 32);
-    let mut xx1 = vec![0f32; m2 + n2];
-    let mut xx2 = vec![0f32; m2 + n2];
-    for i in 0..n2 {
-        xx1[i] = x1[n2 - 1 - i];
-        xx2[i] = x2[n2 - 1 - i];
+/// The QMF filters: h0, and h1 (h0 with its odd taps negated).
+fn qmf(odd_sign: f32) -> [f32; 64] {
+    std::array::from_fn(|i| f32::from_bits(H0[i]) * if i % 2 == 1 { odd_sign } else { 1.0 })
+}
+
+/// fir_mem_up (0x10003960): one band up-sampled by two through `a`.
+fn fir_mem_up(x: &[f32], a: &[f32; 64], y: &mut [f32], mem: &mut [f32; 64]) {
+    let n = 2 * x.len();
+    let m = 64;
+    let mut xx = vec![0f32; m + n - 1];
+    for i in 0..n / 2 {
+        xx[2 * i] = x[n / 2 - 1 - i];
     }
-    for i in 0..m2 {
-        xx1[n2 + i] = mem1[2 * i + 1];
-        xx2[n2 + i] = mem2[2 * i + 1];
+    for i in (0..m - 1).step_by(2) {
+        xx[n + i] = mem[i + 1];
     }
-    let a = &H0;
-    for i in (0..n2).step_by(2) {
+    let mac = |acc: f32, a: f32, x: f32| f(a as f64 * x as f64 + acc as f64);
+    for i in (0..n).step_by(4) {
         let (mut y0, mut y1, mut y2, mut y3) = (0f32, 0f32, 0f32, 0f32);
-        let mut x10 = xx1[n2 - 2 - i];
-        let mut x20 = xx2[n2 - 2 - i];
-        for j in (0..m2).step_by(2) {
-            let (a0, a1) = (a[2 * j], a[2 * j + 1]);
-            let x11 = xx1[n2 - 1 + j - i];
-            let x21 = xx2[n2 - 1 + j - i];
-            y0 += a0 * (x11 - x21);
-            y1 += a1 * (x11 + x21);
-            y2 += a0 * (x10 - x20);
-            y3 += a1 * (x10 + x20);
-            let (a0, a1) = (a[2 * j + 2], a[2 * j + 3]);
-            x10 = xx1[n2 + j - i];
-            x20 = xx2[n2 + j - i];
-            y0 += a0 * (x10 - x20);
-            y1 += a1 * (x10 + x20);
-            y2 += a0 * (x11 - x21);
-            y3 += a1 * (x11 + x21);
+        let mut x0 = xx[n - 4 - i];
+        for j in (0..m).step_by(4) {
+            let (a0, a1) = (a[j], a[j + 1]);
+            let x1 = xx[n - 2 + j - i];
+            y0 = mac(y0, a0, x1);
+            y1 = mac(y1, a1, x1);
+            y2 = mac(y2, a0, x0);
+            y3 = mac(y3, a1, x0);
+            let (a0, a1) = (a[j + 2], a[j + 3]);
+            x0 = xx[n + j - i];
+            y0 = mac(y0, a0, x0);
+            y1 = mac(y1, a1, x0);
+            y2 = mac(y2, a0, x1);
+            y3 = mac(y3, a1, x1);
         }
-        y[2 * i] = 2.0 * y0;
-        y[2 * i + 1] = 2.0 * y1;
-        y[2 * i + 2] = 2.0 * y2;
-        y[2 * i + 3] = 2.0 * y3;
+        y[i] = y0;
+        y[i + 1] = y1;
+        y[i + 2] = y2;
+        y[i + 3] = y3;
     }
-    for i in 0..m2 {
-        mem1[2 * i + 1] = xx1[i];
-        mem2[2 * i + 1] = xx2[i];
+    for i in (0..m - 1).step_by(2) {
+        mem[i + 1] = xx[i];
     }
 }
 
-// --- narrowband, submode 7 (nb_celp.c nb_decode) -----------------------------
+/// Outputs are held within ±32767 (0x1000c290 and the end of nb_decode).
+fn clamp(v: f32) -> f32 {
+    if v as f64 > 32767.0 {
+        32767.0
+    } else if (v as f64) < -32767.0 {
+        -32767.0
+    } else {
+        v
+    }
+}
+
+// --- narrowband, submode 7 (nb_decode 0x10009520) -----------------------------
 
 const NB_ORDER: usize = 10;
 const NB_FRAME: usize = 160;
 const NB_SUB: usize = 40;
 const NB_PITCH_START: usize = 17;
 const NB_PITCH_END: usize = 144;
-/// `st->exc` inside `excBuf` (2·pitch_end + subframe + 6).
-const EXC: usize = 2 * NB_PITCH_END + NB_SUB + 6;
+/// `st->exc` inside `excBuf`: after max_pitch + 1 samples of history.
+const EXC: usize = NB_PITCH_END + 1;
 const EXC_GAIN_QUANT_SCAL3: [f32; 8] = [0.061130, 0.163546, 0.310413, 0.428220, 0.555887, 0.719055, 0.938694, 1.326874];
 
 struct Narrowband {
-    exc_buf: [f32; NB_FRAME + 2 * NB_PITCH_END + NB_SUB + 12],
+    exc_buf: [f32; EXC + NB_FRAME],
+    innov: [f32; NB_FRAME],
     interp_qlpc: [f32; NB_ORDER],
     mem_sp: [f32; NB_ORDER],
     old_qlsp: [f32; NB_ORDER],
@@ -307,7 +272,8 @@ struct Narrowband {
 impl Narrowband {
     fn new() -> Self {
         Narrowband {
-            exc_buf: [0.0; NB_FRAME + 2 * NB_PITCH_END + NB_SUB + 12],
+            exc_buf: [0.0; EXC + NB_FRAME],
+            innov: [0.0; NB_FRAME],
             interp_qlpc: [0.0; NB_ORDER],
             mem_sp: [0.0; NB_ORDER],
             old_qlsp: [0.0; NB_ORDER],
@@ -316,8 +282,9 @@ impl Narrowband {
         }
     }
 
+    /// lsp_unquant_nb (0x1000b510).
     fn lsp_unquant(bits: &mut Bits) -> [f32; NB_ORDER] {
-        let mut lsp: [f32; NB_ORDER] = std::array::from_fn(|i| (0.25 * i as f64 + 0.25) as f32);
+        let mut lsp: [f32; NB_ORDER] = std::array::from_fn(|i| f(i as f64 * 0.25 + 0.25));
         let id = bits.get(6) as usize;
         for i in 0..10 {
             add_lsp(&mut lsp[i], LSP_DIV_256, CDBK_NB[id * 10 + i]);
@@ -341,173 +308,165 @@ impl Narrowband {
         lsp
     }
 
-    /// Decode the low 0-4 kHz into `out` and its innovation into `innov_save`.
-    fn decode(&mut self, bits: &mut Bits, out: &mut [f32], innov_save: &mut [f32]) {
+    /// pitch_unquant_3tap (0x10006bb0) into the subframe at `base`.
+    fn pitch_unquant(&mut self, bits: &mut Bits, base: usize) {
+        let pitch = NB_PITCH_START + bits.get(7) as usize;
+        let gi = bits.get(7) as usize;
+        // gain_cdbk_nb holds 3 values per entry in Speex 1.1 (the first 3 of our 4)
+        let g: [f64; 3] = std::array::from_fn(|k| f(GAIN_CDBK_NB[gi * 4 + k] as f64 * 0.015625 + 0.5) as f64);
+        let mut e = [[0f64; NB_SUB]; 3];
+        for (i, ei) in e.iter_mut().enumerate() {
+            let pp = pitch + 1 - i;
+            for (j, v) in ei.iter_mut().enumerate() {
+                *v = if j < pp {
+                    self.exc_buf[base + j - pp] as f64
+                } else if j < pp + pitch {
+                    self.exc_buf[base + j - pp - pitch] as f64
+                } else {
+                    0.0
+                };
+            }
+        }
+        for i in 0..NB_SUB {
+            self.exc_buf[base + i] = f(1e-15 + g[0] * e[2][i] + g[1] * e[1][i] + g[2] * e[0][i]);
+        }
+    }
+
+    /// Decode the low 0-4 kHz into `out`.
+    fn decode(&mut self, bits: &mut Bits, out: &mut [f32]) {
         bits.get(1 + 4); // narrowband marker and submode (7, checked by the caller)
-        self.exc_buf.copy_within(NB_FRAME..NB_FRAME + 2 * NB_PITCH_END + NB_SUB + 12, 0);
+        self.exc_buf.copy_within(NB_FRAME..NB_FRAME + EXC, 0);
         let qlsp = Self::lsp_unquant(bits);
         if self.first {
             self.old_qlsp = qlsp;
         }
-        let qe = bits.get(5);
-        let ol_gain = (qe as f64 / 3.5).exp() as f32;
+        let ol_gain = f((bits.get(5) as f64 / 3.5).exp()) as f64;
+        let mut interp = [0f32; NB_ORDER];
         for sub in 0..4 {
             let offset = NB_SUB * sub;
             let base = EXC + offset;
-            self.exc_buf[base..base + NB_SUB].fill(0.0);
-            // adaptive codebook: pitch_unquant_3tap with ltp_params_nb
-            let pitch = NB_PITCH_START + bits.get(7) as usize;
-            let gi = bits.get(7) as usize;
-            let gain: [f32; 3] = std::array::from_fn(|k| (0.015625 * GAIN_CDBK_NB[gi * 4 + k] as f64 + 0.5) as f32);
-            let mut exc32 = [0f32; NB_SUB];
-            for i in 0..3 {
-                let pp = pitch + 1 - i;
-                let tmp1 = NB_SUB.min(pp);
-                for (j, e) in exc32.iter_mut().enumerate().take(tmp1) {
-                    *e += gain[2 - i] * self.exc_buf[base + j - pp];
-                }
-                let tmp3 = NB_SUB.min(pp + pitch);
-                for (j, e) in exc32.iter_mut().enumerate().take(tmp3).skip(tmp1) {
-                    *e += gain[2 - i] * self.exc_buf[base + j - pp - pitch];
-                }
-            }
-            for e in exc32.iter_mut() {
-                if !(*e >= -32000.0 && *e <= 32000.0) {
-                    *e = if *e < -32000.0 {
-                        -32000.0
-                    } else if *e > 32000.0 {
-                        32000.0
-                    } else {
-                        0.0
-                    };
-                }
-            }
-            // innovation: two split codebooks, the second at 0.454545 of the gain
-            let ener = EXC_GAIN_QUANT_SCAL3[bits.get(3) as usize] * ol_gain;
-            let mut innov = [0f32; NB_SUB];
-            split_cb_unquant(&mut innov, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
-            innov.iter_mut().for_each(|v| *v *= ener);
-            let mut innov2 = [0f32; NB_SUB];
-            split_cb_unquant(&mut innov2, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
-            let ener2 = 0.454545f32 * ener;
-            innov2.iter_mut().for_each(|v| *v *= ener2);
-            for i in 0..NB_SUB {
-                innov[i] += innov2[i];
-                self.exc_buf[base + i] = exc32[i] + innov[i];
-                innov_save[offset + i] = innov[i];
-            }
-        }
-        // no enhancement: the output is the excitation one subframe back
-        out[..NB_FRAME].copy_from_slice(&self.exc_buf[EXC - NB_SUB..EXC - NB_SUB + NB_FRAME]);
-        let mut interp = [0f32; NB_ORDER];
-        let mut ak = [0f32; NB_ORDER];
-        for sub in 0..4 {
             lsp_interpolate(&self.old_qlsp, &qlsp, &mut interp, sub, 4, 0.002);
-            lsp_to_lpc(&interp, &mut ak);
+            lsp_to_lpc(&interp, &mut self.interp_qlpc);
             let mut pi_g = 1f32;
             for i in (0..NB_ORDER).step_by(2) {
-                pi_g += ak[i + 1] - ak[i];
+                pi_g = f(self.interp_qlpc[i + 1] as f64 - self.interp_qlpc[i] as f64 + pi_g as f64);
             }
             self.pi_gain[sub] = pi_g;
-            iir_mem16_inplace(&mut out[NB_SUB * sub..NB_SUB * (sub + 1)], &self.interp_qlpc, &mut self.mem_sp);
-            self.interp_qlpc = ak;
+            self.exc_buf[base..base + NB_SUB].fill(0.0);
+            self.pitch_unquant(bits, base);
+            // innovation: the first codebook is what the band above folds
+            let ener = f(EXC_GAIN_QUANT_SCAL3[bits.get(3) as usize] as f64 * ol_gain);
+            let innov = &mut self.innov[offset..offset + NB_SUB];
+            innov.fill(0.0);
+            split_cb_unquant(innov, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
+            signal_mul(innov, ener);
+            for i in 0..NB_SUB {
+                self.exc_buf[base + i] = f(innov[i] as f64 + self.exc_buf[base + i] as f64);
+            }
+            let mut innov2 = [0f32; NB_SUB];
+            split_cb_unquant(&mut innov2, bits, 5, 8, 6, false, &EXC_5_64_TABLE);
+            signal_mul(&mut innov2, f(ener as f64 * 0.45454545454545453));
+            for i in 0..NB_SUB {
+                self.exc_buf[base + i] = f(innov2[i] as f64 + self.exc_buf[base + i] as f64);
+            }
+            let sp = &mut out[offset..offset + NB_SUB];
+            sp.copy_from_slice(&self.exc_buf[base..base + NB_SUB]);
+            iir_mem2(sp, &self.interp_qlpc, &mut self.mem_sp);
         }
+        out.iter_mut().for_each(|v| *v = clamp(*v));
         self.old_qlsp = qlsp;
         self.first = false;
     }
 
-    /// RMS of each subframe's excitation (SPEEX_GET_EXC).
-    fn exc_rms(&self, sub: usize) -> f32 {
-        compute_rms(&self.exc_buf[EXC + sub * NB_SUB..EXC + (sub + 1) * NB_SUB])
+    /// SPEEX_GET_EXC: this frame's excitation.
+    fn exc(&self) -> &[f32] {
+        &self.exc_buf[EXC..EXC + NB_FRAME]
     }
 }
 
-// --- the sub-band layers (sb_celp.c sb_decode) --------------------------------
+// --- the sub-band layers (sb_decode 0x1000e170) -------------------------------
 
-const GC_QUANT_BOUND: [f64; 16] = [
-    0.97979, 1.28384, 1.68223, 2.20426, 2.88829, 3.78458, 4.95900, 6.49787, 8.51428, 11.15642, 14.61846, 19.15484, 25.09895, 32.88761, 43.09325, 56.46588,
-];
-
-/// One high band: 8 LPCs, 4 subframes of `sub` samples.
+/// One band above another: 8 LPCs, 4 subframes of `SUB` samples.
 struct HighBand<const SUB: usize> {
-    exc_buf: [f32; SUB],
+    exc: Vec<f32>,
+    high: Vec<f32>,
     old_qlsp: [f32; 8],
     interp_qlpc: [f32; 8],
     mem_sp: [f32; 8],
     pi_gain: [f32; 4],
     g0_mem: [f32; 64],
     g1_mem: [f32; 64],
+    h0: [f32; 64],
+    h1: [f32; 64],
     first: bool,
 }
 
 impl<const SUB: usize> HighBand<SUB> {
     fn new() -> Self {
         HighBand {
-            exc_buf: [0.0; SUB],
+            exc: vec![0.0; SUB * 4],
+            high: vec![0.0; SUB * 4],
             old_qlsp: [0.0; 8],
             interp_qlpc: [0.0; 8],
             mem_sp: [0.0; 8],
             pi_gain: [0.0; 4],
             g0_mem: [0.0; 64],
             g1_mem: [0.0; 64],
+            h0: qmf(1.0),
+            h1: qmf(-1.0),
             first: true,
         }
     }
 
-    /// Decode the band above `low` (`2·SUB·4` samples of `out`: low half
-    /// already decoded, high half holding the low layer's innovation), then
-    /// join both halves. `exc_of` gives each subframe's high-band excitation
-    /// from the bits, the filter ratio and the subframe's low innovation.
-    fn decode(
-        &mut self,
-        bits: &mut Bits,
-        out: &mut [f32],
-        low_pi_gain: &[f32; 4],
-        mut exc_of: impl FnMut(&mut Bits, usize, f32, &[f32]) -> [f32; SUB],
-        mut innov_save: Option<&mut [f32]>,
-    ) {
-        let frame = SUB * 4;
+    /// Decode the band above `low` (the lower layer's output) into `out`
+    /// (twice as long). `exc_of` gives a subframe's excitation from the bits,
+    /// the subframe and the filter ratio.
+    fn decode(&mut self, bits: &mut Bits, low: &[f32], low_pi_gain: &[f32; 4], out: &mut [f32], mut exc_of: impl FnMut(&mut Bits, usize, f32, &mut [f32])) {
         bits.get(1 + 3); // wideband marker and submode (checked by the caller)
+        self.exc.fill(0.0);
         let qlsp = lsp_unquant_high(bits);
         if self.first {
             self.old_qlsp = qlsp;
         }
         let mut interp = [0f32; 8];
-        let mut ak = [0f32; 8];
         for sub in 0..4 {
             let offset = SUB * sub;
-            lsp_interpolate(&self.old_qlsp, &qlsp, &mut interp, sub, 4, 0.05f64 as f32);
-            lsp_to_lpc(&interp, &mut ak);
+            lsp_interpolate(&self.old_qlsp, &qlsp, &mut interp, sub, 4, 0.05);
+            lsp_to_lpc(&interp, &mut self.interp_qlpc);
+            let ak = &self.interp_qlpc;
             self.pi_gain[sub] = 1.0;
             let mut rh = 1f32;
             for i in (0..8).step_by(2) {
-                rh += ak[i + 1] - ak[i];
-                self.pi_gain[sub] += ak[i] + ak[i + 1];
+                rh = f(ak[i + 1] as f64 - ak[i] as f64 + rh as f64);
+                self.pi_gain[sub] = f(ak[i] as f64 + ak[i + 1] as f64 + self.pi_gain[sub] as f64);
             }
-            let filter_ratio = ((low_pi_gain[sub] as f64 + 0.01) / (rh as f64 + 0.01)) as f32;
-            let exc = exc_of(bits, sub, filter_ratio, &out[frame + offset..frame + offset + SUB]);
-            if let Some(save) = innov_save.as_deref_mut() {
-                let save = &mut save[2 * offset..2 * offset + 2 * SUB];
-                save.fill(0.0);
-                for i in 0..SUB {
-                    // Loquendo's Speex: twice the excitation (Speex 1.2: once)
-                    save[2 * i] = exc[i] + exc[i];
-                }
-            }
-            iir_mem16(
-                &self.exc_buf,
-                &self.interp_qlpc,
-                &mut out[frame + offset..frame + offset + SUB],
-                &mut self.mem_sp,
-            );
-            self.exc_buf = exc;
-            self.interp_qlpc = ak;
+            let filter_ratio = f((low_pi_gain[sub] as f64 + 0.01) / (0.01 + rh as f64));
+            let exc = &mut self.exc[offset..offset + SUB];
+            exc_of(bits, sub, filter_ratio, exc);
+            let sp = &mut self.high[offset..offset + SUB];
+            sp.copy_from_slice(exc);
+            iir_mem2(sp, &self.interp_qlpc, &mut self.mem_sp);
         }
-        let (low, high) = out.split_at(frame);
-        let (low, high) = (low.to_vec(), high[..frame].to_vec());
-        qmf_synth(&low, &high, &mut out[..2 * frame], &mut self.g0_mem, &mut self.g1_mem);
+        let n = SUB * 8;
+        let mut y0 = vec![0f32; n];
+        let mut y1 = vec![0f32; n];
+        fir_mem_up(low, &self.h0, &mut y0, &mut self.g0_mem);
+        fir_mem_up(&self.high, &self.h1, &mut y1, &mut self.g1_mem);
+        for i in 0..n {
+            out[i] = clamp(f((y0[i] as f64 - y1[i] as f64) * 2.0));
+        }
         self.old_qlsp = qlsp;
         self.first = false;
+    }
+
+    /// SPEEX_GET_INNOV of a sub-band decoder (0x1000f0e0 case 0x66): twice
+    /// the excitation on even samples, zero between.
+    fn innov(&self) -> Vec<f32> {
+        let mut e = vec![0f32; SUB * 8];
+        for (i, &v) in self.exc.iter().enumerate() {
+            e[2 * i] = f(v as f64 * 2.0);
+        }
+        e
     }
 }
 
@@ -543,63 +502,49 @@ impl Decoder {
     /// Decode one 110-byte frame into 640 samples at 32 kHz.
     pub fn decode(&mut self, frame: &[u8], pcm: &mut [i16]) {
         let mut bits = Bits { data: frame, pos: 0 };
+        let mut nb_out = [0f32; 160];
+        self.nb.decode(&mut bits, &mut nb_out);
+        // wideband: innovation from the double codebook, scaled by the low
+        // band's excitation energy (+1) over the filter ratio
+        let nb_exc = self.nb.exc().to_vec();
+        let nb_pi_gain = self.nb.pi_gain;
+        let mut wb_out = [0f32; 320];
+        self.wb.decode(&mut bits, &nb_out, &nb_pi_gain, &mut wb_out, |bits, sub, filter_ratio, exc| {
+            let qgc = bits.get(4) as f64;
+            let el = compute_rms(&nb_exc[sub * 40..sub * 40 + 40]) as f64;
+            let gc = f((qgc * 0.27027027027027023 - 0.15556).exp()) as f64;
+            let scale = f((el + 1.0) * (gc / filter_ratio as f64));
+            split_cb_unquant(exc, bits, 8, 5, 7, true, &HEXC_TABLE);
+            signal_mul(exc, scale);
+            let mut innov2 = [0f32; 40];
+            split_cb_unquant(&mut innov2, bits, 8, 5, 7, true, &HEXC_TABLE);
+            let scale2 = scale as f64 * 0.4;
+            for i in 0..40 {
+                innov2[i] = f(innov2[i] as f64 * scale2);
+                exc[i] = f(innov2[i] as f64 + exc[i] as f64);
+            }
+        });
+        // ultra-wideband: no innovation, the wideband one folded up with
+        // alternating signs
+        let wb_innov = self.wb.innov();
+        let wb_pi_gain = self.wb.pi_gain;
         let mut out = [0f32; FRAME_SAMPLES];
-        // wideband: narrowband in out[0..160], its innovation in out[160..320];
-        // the wideband innovation goes to out[320..640] for the band above
-        {
-            let (wb_out, wb_innov) = out.split_at_mut(320);
-            let (nb_out, nb_innov) = wb_out.split_at_mut(160);
-            self.nb.decode(&mut bits, nb_out, nb_innov);
-            let nb = &self.nb;
-            let exc_rms: [f32; 4] = std::array::from_fn(|s| nb.exc_rms(s));
-            let low_pi_gain = nb.pi_gain;
-            self.wb.decode(
-                &mut bits,
-                wb_out,
-                &low_pi_gain,
-                |bits, sub, filter_ratio, _| {
-                    let mut exc = [0f32; 40];
-                    let qgc = bits.get(4) as usize;
-                    let gc = (0.87360 * (GC_QUANT_BOUND[qgc] as f32) as f64) as f32;
-                    let scale = gc * exc_rms[sub] / filter_ratio;
-                    split_cb_unquant(&mut exc, bits, 8, 5, 7, true, &HEXC_TABLE);
-                    exc.iter_mut().for_each(|v| *v *= scale);
-                    let mut innov2 = [0f32; 40];
-                    split_cb_unquant(&mut innov2, bits, 8, 5, 7, true, &HEXC_TABLE);
-                    let scale2 = 0.4f32 * scale;
-                    for i in 0..40 {
-                        exc[i] += innov2[i] * scale2;
-                    }
-                    exc
-                },
-                Some(wb_innov),
-            );
-        }
-        // ultra-wideband: no innovation, the wideband one folded up
-        let low_pi_gain = self.wb.pi_gain;
-        self.uwb.decode(
-            &mut bits,
-            &mut out,
-            &low_pi_gain,
-            |bits, _, filter_ratio, low_innov| {
-                let quant = bits.get(5) as i32;
-                let g = ((0.125f32 * (quant - 10) as f32) as f64).exp() as f32 / filter_ratio;
-                let mut exc = [0f32; 80];
-                for i in (0..80).step_by(2) {
-                    exc[i] = 0.7f32 * low_innov[i] * g;
-                    exc[i + 1] = -(0.7f32 * low_innov[i + 1] * g);
-                }
-                exc
-            },
-            None,
-        );
+        self.uwb.decode(&mut bits, &wb_out, &wb_pi_gain, &mut out, |bits, sub, filter_ratio, exc| {
+            let quant = bits.get(5) as f64;
+            let g = f(f(((quant - 10.0) * 0.125).exp()) as f64 / filter_ratio as f64) as f64;
+            let mut s = 1f32;
+            for i in 0..80 {
+                exc[i] = f(s as f64 * g * 0.7f32 as f64 * wb_innov[sub * 80 + i] as f64);
+                s = f(s as f64 * -1.0);
+            }
+        });
         for (p, &v) in pcm.iter_mut().zip(out.iter()) {
             *p = if v > 32767.0 {
                 32767
             } else if v < -32768.0 {
                 -32768
             } else {
-                (0.5 + v as f64).floor() as i16
+                (v as f64 + 0.5).floor() as i16
             };
         }
     }
@@ -610,7 +555,7 @@ pub(crate) mod tests {
     /// Frames of pseudo-random bits with the voices' layout headers.
     pub(crate) fn synthetic_frames(n: usize) -> Vec<Vec<u8>> {
         let mut seed: u32 = 12345;
-        let mut set = |f: &mut [u8], pos: usize, bits: &[u8]| {
+        let set = |f: &mut [u8], pos: usize, bits: &[u8]| {
             for (k, &b) in bits.iter().enumerate() {
                 let (i, s) = ((pos + k) / 8, 7 - (pos + k) % 8);
                 f[i] = f[i] & !(1 << s) | b << s;
@@ -638,9 +583,10 @@ pub(crate) mod tests {
             .fold(0xcbf2_9ce4_8422_2325u64, |h, &s| (h ^ s as u16 as u64).wrapping_mul(0x100_0000_01b3))
     }
 
-    /// The output libspeex 1.2 (with Loquendo's change) gave for these frames.
+    /// The decoder's output for these frames, pinned once it matched the
+    /// original engine's audio (MECHANICS.md §2).
     #[test]
-    fn decodes_like_libspeex() {
+    fn decodes_like_ltts7codec210() {
         let mut d = super::Decoder::default();
         let mut all = Vec::new();
         let mut pcm = [0i16; super::FRAME_SAMPLES];
@@ -649,8 +595,8 @@ pub(crate) mod tests {
             d.decode(&f, &mut pcm);
             all.extend_from_slice(&pcm);
         }
-        assert_eq!(fnv(&all), LIBSPEEX_HASH);
+        assert_eq!(fnv(&all), PINNED_HASH);
     }
 
-    const LIBSPEEX_HASH: u64 = 0x96c2_f690_f2d6_a398;
+    const PINNED_HASH: u64 = 0x46ff_f256_fa44_4381;
 }

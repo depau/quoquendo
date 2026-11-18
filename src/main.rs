@@ -322,7 +322,7 @@ fn main() -> eframe::Result<()> {
             let theirs: Vec<i64> = line.split(" marks ").nth(1).unwrap_or("").split(' ').filter_map(|x| x.parse().ok()).collect();
             let Some((sym, _)) = at.get(&t0) else { continue };
             let voicing = quoquendo::sig::Voicing::of_features(tab.features[tab.id(sym) as usize]);
-            let start = loquendo::ticks_to_samples(t0, 32000) as usize + synth::CUT_OFFSET as usize;
+            let start = loquendo::ticks_to_samples(t0, 32000) as usize;
             let len = (loquendo::ticks_to_samples(t1, 32000) - loquendo::ticks_to_samples(t0, 32000)) as usize;
             let buf = bank.read(start - 64, len + 64 + 600);
             let s = |i: isize| *buf.get((i + 64) as usize).unwrap_or(&0) as i32;

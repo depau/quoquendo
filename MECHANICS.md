@@ -56,14 +56,53 @@ when installed; Italian voices' sample text ends with the station warning
 name→function table at 0x1002e028 (`ELQOpenDecoder` 0x100045e0, `ELQDecode`
 0x10004530, ...). Its strings are libspeex's ("ultra-wideband (sub-band
 CELP)", "Invalid mode encountered: corrupted stream?"), so the codec is
-**Speex**. quoquendo decodes it with `speex/`, a Rust port of Speex 1.2's
-float decoder (BSD, `LICENSE-speex`) for the one frame layout the voices
-use: every frame of all 19 voice files we have (2.6 million frames) is
-narrowband submode 7 + wideband submode 4 + ultra-wideband submode 1, 492 +
-352 + 36 = 880 bits; other layouts are refused when the file is opened. The
-port keeps Speex's float and double steps exactly, and every one of those
-frames decodes to the same samples as libspeex compiled from C (a test pins
-the output for synthetic frames).
+**Speex 1.1** (its messages end in ": corrupted stream?", 1.2's don't), built
+with MSVC for 32-bit x87. quoquendo decodes it with `speex/`, a Rust port of
+that decoder as the DLL has it (BSD, `LICENSE-speex`), for the one frame
+layout the voices use: every frame of all 19 voice files we have (2.6
+million frames) is narrowband submode 7 + wideband submode 4 +
+ultra-wideband submode 1, 492 + 352 + 36 = 880 bits; other layouts are
+refused when the file is opened. Mode tables: narrowband 0x1002393c
+(decoder init 0x10008d90, decode 0x10009520, ctl 0x1000a820), wideband
+0x10023ab4 and ultra-wideband 0x10023b2c (init 0x1000db20, decode
+0x1000e170, ctl 0x1000f0e0); submodes 0x100238f8 (nb 7), 0x10023bb0 (wb 4),
+0x10023a70 (uwb 1). Its codebooks are byte for byte Speex's, except that
+the pitch gain table keeps 3 values per entry (1.2 pads to 4).
+
+How it differs from Speex 1.2 (each in the DLL's code):
+
+- **No one-subframe delay.** Each narrowband subframe is synthesised at once
+  with its own LPCs (`iir_mem2` 0x100030e0); the excitation buffer keeps
+  max_pitch + 1 = 145 past samples. Speex 1.2 outputs the excitation one
+  subframe late and filters it with the previous LPCs, which is 5 ms (160
+  samples at 32 kHz): the "play 160 samples later" correction an earlier
+  version needed is gone with it.
+- LSPs are interpolated (0x10005520), then held apart by 0.002 (narrowband)
+  or 0.05 (sub-bands) in a separate pass (0x10005390); the cosine is
+  Speex's polynomial (0x10004af0: x < 1.5707963268 → ((C3 − C4·x²)·x² −
+  C2)·x² + C1, else its negative at π − x).
+- Pitch (0x10006bb0): three delayed copies of the excitation and
+  `exc = 1e-15 + g0·e2 + g1·e1 + g2·e0`, gains `cb·0.015625 + 0.5`.
+- The innovation handed up (`SPEEX_GET_INNOV`, ctl 0x1000a820 case 0x66) is
+  the first codebook only; the excitation (case 0x65) is the whole frame's.
+- Sub-bands: innovation gain `exp(q·0.27027027027027023 − 0.15556)` times
+  (1 + RMS of the low band's excitation) over the filter ratio
+  `(low π-gain + 0.01)/(0.01 + high π-gain)`; second codebook at 0.4 of it.
+  Folding (ultra-wideband) `exp((q − 10)·0.125)` over the filter ratio, ×0.7
+  (0x10023ca8 + 0x24), alternating sign. Both bands are rebuilt by two
+  `fir_mem_up` filters (0x10003960; h0 at 0x100240a8, h1 = h0 with odd taps
+  negated at 0x100241a8) and combined as `2·(y0 − y1)`, held within ±32767
+  (0x1000c290); the narrowband output is held the same way.
+- The wideband layer hands the band above it **twice** its excitation:
+  `SPEEX_GET_INNOV` (ctl 0x1000f0e0, case 0x66) writes `e[2i] = 2.0 ·
+  exc[i]`, zero between (constant 2.0 at 0x10022e58).
+- No output high-pass. Samples become 16-bit as `floor(x + 0.5)`, clamped
+  to 32767/−32768 (0x1000f640).
+- **Precision.** Every expression runs on the x87 FPU at double precision
+  and is rounded to `float` when assigned (`fstp dword` after each
+  statement, e.g. in `iir_mem2` and `fir_mem_up`); the port computes in f64
+  and rounds at each assignment, with the DLL's double constants (0.4 and
+  1/2.2 are doubles here, not 1.2's floats).
 
 File layout (all four Katrin/Roberto files checked):
 
@@ -79,20 +118,10 @@ UWB mode at 32000 Hz, enhancement **off**, positions shifted by **509
 samples** (decoder delay), and **6 frames** decoded before a seek target, with
 a fresh decoder per seek.
 
-Two differences between Loquendo's (older) Speex and Speex 1.2, both found by
-comparing against the original's audio and then confirmed in its code:
-
-- The wideband layer hands the band above it **twice** its excitation:
-  `SPEEX_GET_INNOV` (decoder ctl 0x1000f0e0, case 0x66) writes
-  `e[2i] = 2.0 · exc[i]` (constant 2.0 at 0x10022e58), with alternating signs
-  in the folding (-1.0 at 0x100242f8). Speex 1.2 hands 1×, so 8–16 kHz was
-  6 dB too quiet. Done in `speex::HighBand::decode`.
-- Speex 1.2 high-passes its output; the older decoder doesn't. Turned off
-  (`SPEEX_SET_HIGHPASS` 0): below 250 Hz the match went from 10 dB to 40 dB.
-
-Result: replaying the pieces the original engine chose, our decoder matches its
-audio **69.5 dB** inside the pieces (median over the 20 benchmark sentences;
-half the samples identical, the rest within a few units of 32768).
+Result: replaying the pieces the original engine chose, our decoder matches
+its audio at a median **104.6 dB** inside the pieces on the Italian
+benchmark (English 98.1, French 93.6, German 89.2, Spanish 103.7; a port of
+Speex 1.2 gave 58–70 dB). A test pins the output for synthetic frames.
 
 ## 3. The voice index — `<Voice>.sde`
 
@@ -358,8 +387,8 @@ same phone, 50 same without stress/length, no classes).
 
 ## 6. SIG — joining (the original's rules, decompiled)
 
-Decoding: each piece plays **160 samples (5 ms) later** than the `.sde` times
-say (measured; pieces then match the original's audio at 70–80 dB).
+Decoding: each piece plays from its `.sde` time (with the codec's own 509
+samples of delay, §2).
 
 The original handles every half-phone as a unit (`0x1001faa0`), decoded with
 **64 samples** of margin on each side (`(rate/10·400)/20000`, 0x1001f580);
@@ -532,9 +561,7 @@ when a speed/pitch change asks for it.
 - A browser build: the library is all Rust on bytes now (installers and
   Speex included) but hasn't been built for `wasm32` here (the target isn't
   installed); the app's file and audio parts need web counterparts.
-- Decoding exactly as LTTS7Codec210 does (we match libspeex bit for bit, the
-  original within ±1–2 LSB, 70–80 dB; it was built with MSVC for 32-bit x87
-  and rounds differently): it decides the last pitch marks and so the last
-  SIG differences.
+- The last decoder differences (89–105 dB inside pieces): likely exp() and
+  sqrt() rounding on the x87 against libm; they decide a few pitch marks.
 - The CAT gap that remains (3–6%), the original's automatic pauses, speed
   and pitch controls, Gilded phrases.

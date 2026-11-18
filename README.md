@@ -62,11 +62,14 @@ tool only, not needed to use quoquendo), on the benchmark sentences in
 
 | voice | language | sounds identical | half-sounds picked identically | samples within ±2 |
 |---|---|---|---|---|
-| Roberto | Italian | 96.6% | 99.3% | 60.1% |
-| Allison | US English | 97.7% | 98.6% | 56.8% |
-| Bernard | French | 97.9% | 99.8% | 70.1% |
-| Jorge | Spanish | 99.8% | 98.9% | 69.7% |
-| Katrin | German | 100% (97.6% on unseen sentences) | 98.2% | 65.2% |
+| Roberto | Italian | 96.6% | 99.3% | 77.9% |
+| Allison | US English | 97.7% | 98.6% | 73.9% |
+| Bernard | French | 97.9% | 99.8% | 98.5% |
+| Jorge | Spanish | 99.8% | 98.9% | 88.9% |
+| Katrin | German | 100% (97.6% on unseen sentences) | 98.2% | 71.0% |
+
+Replaying the original engine's own choice of pieces, the audio decoder
+matches its output at 89–105 dB.
 
 See MECHANICS.md §4–§6 and §9.
 

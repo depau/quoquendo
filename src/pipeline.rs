@@ -183,7 +183,7 @@ fn pieces_match(plan: &[Phrase], db: &VoiceDatabase, orig: &[i16]) -> f64 {
     for phrase in plan {
         for piece in &phrase.pieces {
             let len = piece.to.saturating_sub(piece.from) as usize;
-            let ours = bank.read((piece.from + synth::CUT_OFFSET) as usize, len);
+            let ours = bank.read(piece.from as usize, len);
             let (m0, m1) = (len / 4, len * 3 / 4);
             let probe = &ours[m0..m1.min(m0 + 1024)];
             let lo = cursor.saturating_sub(2000);

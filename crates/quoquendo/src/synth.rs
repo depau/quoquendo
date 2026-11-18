@@ -23,10 +23,6 @@ use crate::loquendo::{relax, VoiceDatabase};
 pub const MAX_DEMIPHONES_PER_PHRASE: usize = 0x800;
 
 // --- joining ---
-/// The original engine plays every stretch 160 samples (5 ms) later than the
-/// `.sde` times say: measured against its audio, where pieces then match to
-/// 70-80 dB (MECHANICS.md §7).
-pub const CUT_OFFSET: u32 = 160;
 /// Smoothed joining only (estimated): cross-fade and slide, 5 ms each.
 const FADE: usize = 160;
 const SLIDE: usize = 160;
@@ -994,7 +990,7 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
 /// The SIG stage: decode every piece and join them.
 ///
 /// `Original`: each stretch is decoded with a fresh decoder (as the codec DLL
-/// does on a seek), shifted by `CUT_OFFSET`, and butted against the next with
+/// does on a seek) from its `.sde` time, and butted against the next with
 /// a hard cut; phrases are separated by exactly their pause. `Smooth`: joins
 /// are cross-faded over 5 ms after sliding the new piece up to ±5 ms so its
 /// waveform lines up with the old, and phrase edges fade in/out.
@@ -1015,7 +1011,7 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
         let mut tail: Vec<f32> = Vec::new();
         let phrase_start = out.len();
         for piece in &phrase.pieces {
-            let from = (piece.from + CUT_OFFSET) as usize;
+            let from = piece.from as usize;
             let len = piece.to.saturating_sub(piece.from) as usize;
             let head = from.min(FADE + SLIDE);
             let pad = FADE + SLIDE;
@@ -1101,7 +1097,7 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, bank: &crate::codec::
     let mut units: Vec<Unit> = Vec::new();
     for phrase in plan {
         for p in &phrase.pieces {
-            let from = (p.from + CUT_OFFSET) as usize;
+            let from = p.from as usize;
             let len = p.to.saturating_sub(p.from) as usize;
             let pre = m.min(from);
             let u = &db.units[p.unit as usize];
