@@ -128,6 +128,7 @@ fn selftest() -> i32 {
                 continue;
             }
         };
+        println!("  language files: {} dictionary words", quoquendo::load_language_files(v, &db));
         println!(
             "  inventory: declared {} units / {} takes; parsed {} units / {} takes",
             db.declared_units,
@@ -247,6 +248,7 @@ fn find_voice(name: Option<&str>) -> Result<(VoiceDescriptor, VoiceDatabase), St
     .clone();
     let db = loquendo::load_sde(&v.voice_path.join(format!("{}.sde", v.name)))?;
     g2p::load_lexicon(v.language(), &v.mother_tongue);
+    quoquendo::load_language_files(&v, &db);
     Ok((v, db))
 }
 
@@ -565,6 +567,7 @@ impl Quoquendo {
         match loquendo::load_sde(&sde) {
             Ok(db) => {
                 g2p::load_lexicon(v.language(), &v.mother_tongue);
+                quoquendo::load_language_files(&v, &db);
                 self.extras = loquendo::load_extras(&dir).sets;
                 self.db = Some(db);
                 self.db_error = None;

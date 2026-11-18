@@ -422,6 +422,188 @@ fn english_connected_speech(tokens: &mut [Token]) {
     }
 }
 
+// --- the language's own data: dictionary and letter-to-sound model ---------
+
+/// What a language's installer files give the front end: the dictionary
+/// (`<MotherTongue>.dbl`, SQLite table `lessico`: spelling, pronunciation…)
+/// and the letter-to-sound model (`<MotherTongue>.gpr`, `gpr`), whose
+/// feature words are named by the voice's phone table.
+use std::collections::HashMap;
+
+pub struct LanguageData {
+    dictionary: HashMap<String, Vec<String>>,
+    gpr: Option<crate::gpr::Gpr>,
+    names: HashMap<u32, String>,
+}
+
+static LANGUAGE_DATA: std::sync::RwLock<Option<HashMap<Language, std::sync::Arc<LanguageData>>>> = std::sync::RwLock::new(None);
+
+/// Read a language's dictionary and letter-to-sound model from its files
+/// (any may be missing) and use them from now on. `phones` is the voice's
+/// phone table as (symbol, engine feature word), `synth::PhoneTables`.
+/// Returns the number of dictionary words.
+pub fn load_language_data(lang: Language, dbl: Option<&[u8]>, gpr: Option<&[u8]>, phones: &[(String, u32)]) -> usize {
+    let mut dictionary = HashMap::new();
+    if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
+        for r in rows {
+            let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else { continue };
+            let syms: Vec<String> = pron.split(|c| c == ' ' || c == '-').filter(|s| !s.is_empty()).map(str::to_string).collect();
+            if !syms.is_empty() {
+                dictionary.entry(word.to_lowercase()).or_insert(syms);
+            }
+        }
+    }
+    let mut names = HashMap::new();
+    for (name, f) in phones {
+        names.entry(*f).or_insert_with(|| name.clone());
+    }
+    let n = dictionary.len();
+    let data = LanguageData { dictionary, gpr: gpr.and_then(crate::gpr::Gpr::parse), names };
+    LANGUAGE_DATA.write().unwrap().get_or_insert_with(HashMap::new).insert(lang, std::sync::Arc::new(data));
+    n
+}
+
+fn language_data(lang: Language) -> Option<std::sync::Arc<LanguageData>> {
+    LANGUAGE_DATA.read().unwrap().as_ref()?.get(&lang).cloned()
+}
+
+impl LanguageData {
+    fn name(&self, f: u32) -> Option<String> {
+        // the model sets a few extra bits the phone tables don't (w is
+        // 0x401ec2 in EnglishUs.gpr, 0x1ec2 in Allison's table)
+        [0u32, 0x400000, 0x200000, 0x600000, 0x1000_0000].iter().find_map(|m| self.names.get(&(f & !m)).cloned())
+    }
+
+    /// The word's phones before the language's word rules.
+    fn raw(&self, word: &str) -> Option<Vec<String>> {
+        if let Some(p) = self.dictionary.get(word) {
+            return Some(p.clone());
+        }
+        let g = self.gpr.as_ref()?;
+        let bytes: Vec<u8> = word.chars().map(|c| if (c as u32) < 256 { c as u8 } else { b'?' }).collect();
+        Some(g.transcribe(&bytes).into_iter().filter_map(|f| self.name(f)).collect())
+    }
+}
+
+fn language_data_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
+    let data = language_data(lang)?;
+    let w = word.to_lowercase();
+    if lang != Language::English {
+        return data.dictionary.get(&w).cloned();
+    }
+    // English: `'s` is the stem plus its ending, without the stem's flap
+    if let Some(stem) = w.strip_suffix("'s").filter(|s| !s.is_empty()) {
+        let mut p = data.raw(stem)?;
+        let last = p.last().map(String::as_str).unwrap_or("");
+        let ending: &[&str] = match last {
+            "s" | "z" | "$" | "Zg" | "T$" | "Dg" | "Ts" => &["I", "z"],
+            "th" | "kh" | "ph" | "f" | "Th" => &["s"],
+            _ => &["z"],
+        };
+        p.extend(ending.iter().map(|s| s.to_string()));
+        return Some(english_word_rules(p, false));
+    }
+    Some(english_word_rules(data.raw(&w)?, true))
+}
+
+fn en_vowel(s: &str) -> bool {
+    let s = s.trim_start_matches('`').trim_end_matches(':');
+    matches!(s, "a" | "e" | "i" | "o" | "u" | "I" | "E" | "O" | "U" | "Ae" | "Aa" | "Ah" | "Oa" | "HEh" | "HEI" | "HAI" | "HOI" | "HOU" | "HAU" | "OR" | "HR" | "Oe")
+        || (s.starts_with('H') && s[1..].starts_with(|c| "AEIOU".contains(c)))
+}
+
+/// The word rules the original applies after its dictionary and
+/// letter-to-sound model for US English (measured against its transcription
+/// of 128 374 words: 80.5% identical): `s` + stop unaspirated inside a word
+/// (`s th` → `s t`); `t s` → `Ts`; `HEh Hr` → `HR` before a consonant or the
+/// end; `HEh l` → `Hl` at the end or before z/d; `Hr` → `HR` after `HAI` and
+/// stressed `I`/`E`; dark `Hl` after `i:`/`i`/`HEI` at the end; `th` flapped
+/// (`HTh`) between a vowel (or n, r) and an unstressed vowel when the vowel
+/// before is stressed or full, or in the last syllable before i/I/HR/Hl;
+/// other stops before a consonant (not r, l, j, w) unreleased (`Hut`…).
+pub fn english_word_rules(s: Vec<String>, flap: bool) -> Vec<String> {
+    let mut out = s;
+    let n = out.len();
+    for i in 1..n {
+        if out[i - 1] == "s" && matches!(out[i].as_str(), "th" | "kh" | "ph") && i + 1 < n {
+            out[i] = out[i][..1].to_string();
+        }
+    }
+    let mut res: Vec<String> = Vec::with_capacity(out.len());
+    let mut i = 0;
+    while i < out.len() {
+        if matches!(out[i].as_str(), "th" | "t") && out.get(i + 1).map(String::as_str) == Some("s") {
+            res.push("Ts".into());
+            i += 2;
+            continue;
+        }
+        res.push(out[i].clone());
+        i += 1;
+    }
+    out = res;
+    let mut res: Vec<String> = Vec::with_capacity(out.len());
+    let mut i = 0;
+    while i < out.len() {
+        let nxt = out.get(i + 1).map(String::as_str);
+        let nn = out.get(i + 2).map(String::as_str);
+        if out[i] == "HEh" && nxt == Some("Hr") && nn.map(|x| !en_vowel(x)).unwrap_or(true) {
+            res.push("HR".into());
+            i += 2;
+            continue;
+        }
+        if out[i] == "HEh" && nxt == Some("l") && !res.is_empty() && matches!(nn, None | Some("z") | Some("d")) {
+            res.push("Hl".into());
+            i += 2;
+            continue;
+        }
+        res.push(out[i].clone());
+        i += 1;
+    }
+    out = res;
+    for i in 1..out.len() {
+        let prev = out[i - 1].clone();
+        let nxt = out.get(i + 1).cloned();
+        if out[i] == "Hr" && (prev.trim_start_matches('`') == "HAI" || (matches!(prev.as_str(), "`I" | "`E") && !nxt.as_deref().map(en_vowel).unwrap_or(false))) {
+            out[i] = "HR".into();
+        }
+        if out[i] == "l" && matches!(prev.trim_start_matches('`'), "i:" | "i" | "HEI") && matches!(nxt.as_deref(), None | Some("z") | Some("d")) {
+            out[i] = "Hl".into();
+        }
+    }
+    let stressed = |s: &str| s.starts_with('`');
+    for i in 1..out.len() {
+        let Some(nxt) = out.get(i + 1).cloned() else { continue };
+        let prev = out[i - 1].clone();
+        let prevv = out[..i].iter().rev().find(|y| en_vowel(y)).cloned();
+        let last = !out[i + 2..].iter().any(|y| en_vowel(y));
+        let vowelish = en_vowel(&nxt) || nxt == "HR" || nxt == "Hl";
+        if flap
+            && out[i] == "th"
+            && (en_vowel(&prev) || matches!(prev.as_str(), "n" | "Hr" | "HR"))
+            && vowelish
+            && !stressed(&nxt)
+            && (prevv.as_deref().map(|v| stressed(v) || !matches!(v.trim_start_matches('`'), "HEh" | "I")).unwrap_or(false)
+                || (last && matches!(nxt.trim_start_matches('`'), "i" | "I" | "HR" | "Hl")))
+        {
+            out[i] = "HTh".into();
+        } else if !en_vowel(&nxt) && !matches!(nxt.as_str(), "Hr" | "l" | "j" | "w" | "Hl" | "HR") {
+            let u = match out[i].as_str() {
+                "th" | "t" => Some("Hut"),
+                "kh" | "k" => Some("Huk"),
+                "ph" | "p" => Some("Hup"),
+                "d" => Some("Hud"),
+                "b" => Some("Hub"),
+                "g" => Some("Hug"),
+                _ => None,
+            };
+            if let Some(u) = u {
+                out[i] = u.into();
+            }
+        }
+    }
+    out
+}
+
 // --- French connected speech --------------------------------------------------
 
 /// A French word the dictionary doesn't have whole: `est-ce` reads as its
@@ -572,6 +754,10 @@ fn lexicon_lookup(word: &str, lang: Language) -> Option<Vec<String>> {
 pub fn word_to_symbols(word: &str, lang: Language) -> Vec<String> {
     // the dictionary first: the original engine's own pronunciation
     if let Some(p) = lexicon_lookup(word, lang) {
+        return p;
+    }
+    // then the language's own data from the installer (`load_language_data`)
+    if let Some(p) = language_data_lookup(word, lang) {
         return p;
     }
     if lang == Language::French {
@@ -1846,7 +2032,7 @@ pub fn analyse(text: &str, lang: Language) -> Vec<Token> {
         let lc = c.to_lowercase().next().unwrap_or(c);
         if lc.is_alphabetic() || lc.is_numeric() {
             word.push(lc);
-        } else if lang == Language::French && (lc == '\'' || lc == '\u{2019}') {
+        } else if matches!(lang, Language::French | Language::English) && (lc == '\'' || lc == '\u{2019}') {
             word.push('\'');
         } else if lang == Language::French && lc == '-' && !word.is_empty() {
             word.push('-');

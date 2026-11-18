@@ -18,9 +18,11 @@
 
 pub mod codec;
 pub mod g2p;
+pub mod gpr;
 pub mod loquendo;
 pub mod phoneset;
 pub mod phonetics;
+pub mod sqlite;
 pub mod synth;
 
 use std::path::Path;
@@ -39,6 +41,7 @@ impl Voice {
     pub fn open(descriptor: &VoiceDescriptor) -> Result<Voice, String> {
         let db = loquendo::load_sde(&descriptor.voice_path.join(format!("{}.sde", descriptor.name)))?;
         g2p::load_lexicon(descriptor.language(), &descriptor.mother_tongue);
+        load_language_files(descriptor, &db);
         Ok(Voice { descriptor: descriptor.clone(), db })
     }
 
@@ -66,4 +69,27 @@ impl Voice {
         let plan = synth::select_all(&self.db, &self.transcribe(text));
         synth::render(&plan, &self.db, settings)
     }
+}
+
+/// Read the voice's language files beside it (`data/languages/*/<MotherTongue>.dbl`
+/// and `.gpr`, installed with the voice) into the front end.
+pub fn load_language_files(descriptor: &VoiceDescriptor, db: &VoiceDatabase) -> usize {
+    let Some(tables) = &db.tables else { return 0 };
+    let Some(data) = descriptor.voice_path.parent().and_then(|p| p.parent()) else { return 0 };
+    let find = |ext: &str| -> Option<Vec<u8>> {
+        let want = format!("{}.{ext}", descriptor.mother_tongue).to_lowercase();
+        for dir in std::fs::read_dir(data.join("languages")).ok()?.flatten() {
+            for f in std::fs::read_dir(dir.path()).ok()?.flatten() {
+                if f.file_name().to_string_lossy().to_lowercase() == want {
+                    return std::fs::read(f.path()).ok();
+                }
+            }
+        }
+        None
+    };
+    let (dbl, gpr) = (find("dbl"), find("gpr"));
+    if dbl.is_none() && gpr.is_none() {
+        return 0;
+    }
+    g2p::load_language_data(descriptor.language(), dbl.as_deref(), gpr.as_deref(), &tables.phone_features())
 }

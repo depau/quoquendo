@@ -302,6 +302,14 @@ impl PhoneTables {
         Some(t)
     }
 
+    /// (symbol, engine feature word) for every phone of the voice.
+    pub fn phone_features(&self) -> Vec<(String, u32)> {
+        let mut v: Vec<(String, u32)> = self.index.iter().map(|(n, &i)| (n.clone(), self.features[i as usize])).collect();
+        v.sort_by_key(|(_, f)| *f);
+        v.sort_by_key(|(n, _)| self.index[n]);
+        v
+    }
+
     pub fn id(&self, sym: &str) -> u8 {
         self.index.get(sym).copied().unwrap_or(0)
     }

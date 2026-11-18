@@ -91,6 +91,15 @@ pub fn install_voice(path: &Path) -> Result<Vec<String>, String> {
                 fs::create_dir_all(store.join("bin")).map_err(io)?;
                 fs::copy(&lib, store.join("bin").join(lib.file_name().unwrap())).map_err(io)?;
             }
+            // the voice's language folder (`languages/English/EnglishUs.dbl`,
+            // `.gpr`, `.lde`…): the one holding `<MotherTongue>.lde`
+            let tongue = VoiceDescriptor::from_files(&vcf, &dir.join(format!("{name}.vde"))).mother_tongue.to_lowercase();
+            for lang in fs::read_dir(data.join("languages")).into_iter().flatten().flatten() {
+                let has = fs::read_dir(lang.path()).into_iter().flatten().flatten().any(|f| f.file_name().to_string_lossy().to_lowercase() == format!("{tongue}.lde"));
+                if has {
+                    copy_tree(&lang.path(), &store.join("data/languages").join(lang.file_name())).map_err(io)?;
+                }
+            }
             names.push(name.clone());
         }
         if names.is_empty() {
