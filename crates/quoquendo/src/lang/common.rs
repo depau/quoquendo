@@ -606,11 +606,13 @@ pub fn to_8bit(c: char) -> Option<u8> {
     to_8bit_cp(c, 1252)
 }
 
-/// A character in the engine's 8-bit text in code page `cp`: the language
-/// module's `ELQGetLanguageNativeEncoding` (1252 unless it says otherwise;
-/// Greek 1253), into which LoqTTS7.dll converts its UTF-8 input.
-pub fn to_8bit_cp(c: char, cp: u32) -> Option<u8> {
-    let u = c as u32;
+pub use code_pages::{from_8bit_cp, to_8bit_cp};
+
+/// The Windows code pages of the engine's 8-bit text: the language module's
+/// `ELQGetLanguageNativeEncoding` (1252 unless it says otherwise; Greek
+/// 1253, Polish 1250, Russian 1251), into which LoqTTS7.dll converts its
+/// UTF-8 input, and in which the voices' descriptors are written.
+mod code_pages {
     const HIGH: [u32; 32] = [
         0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d,
         0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178,
@@ -641,16 +643,40 @@ pub fn to_8bit_cp(c: char, cp: u32) -> Option<u8> {
         0x0155, 0x00e1, 0x00e2, 0x0103, 0x00e4, 0x013a, 0x0107, 0x00e7, 0x010d, 0x00e9, 0x0119, 0x00eb, 0x011b, 0x00ed, 0x00ee, 0x010f, //
         0x0111, 0x0144, 0x0148, 0x00f3, 0x00f4, 0x0151, 0x00f6, 0x00f7, 0x0159, 0x016f, 0x00fa, 0x0171, 0x00fc, 0x00fd, 0x0163, 0x02d9,
     ];
-    match (cp, u) {
-        (_, 0..=0x7f) => Some(u as u8),
-        (1253, _) => GREEK.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
-        (1250, _) => CENTRAL.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
-        // Windows-1251: 0xc0–0xff are А–я
-        (1251, 0x0410..=0x044f) => Some((u - 0x0410 + 0xc0) as u8),
-        (1251, _) => CYRILLIC.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
-        // Windows' conversion keeps C1 controls as their own byte
-        (_, 0x80..=0xff) => Some(u as u8),
-        _ => HIGH.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+
+    /// A character in the engine's 8-bit text in code page `cp`.
+    pub fn to_8bit_cp(c: char, cp: u32) -> Option<u8> {
+        let u = c as u32;
+        match (cp, u) {
+            (_, 0..=0x7f) => Some(u as u8),
+            (1253, _) => GREEK.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+            (1250, _) => CENTRAL.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+            // Windows-1251: 0xc0–0xff are А–я
+            (1251, 0x0410..=0x044f) => Some((u - 0x0410 + 0xc0) as u8),
+            (1251, _) => CYRILLIC.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+            // Windows' conversion keeps C1 controls as their own byte
+            (_, 0x80..=0xff) => Some(u as u8),
+            _ => HIGH.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+        }
+    }
+
+    /// The character byte `b` stands for in code page `cp` (U+FFFD where
+    /// the code page leaves it undefined): `to_8bit_cp` backwards.
+    pub fn from_8bit_cp(b: u8, cp: u32) -> char {
+        let k = b as usize;
+        let u = match (cp, b) {
+            (_, 0..=0x7f) => b as u32,
+            (1253, _) => GREEK[k - 0x80],
+            (1250, _) => CENTRAL[k - 0x80],
+            (1251, 0xc0..) => 0x0410 + (k as u32 - 0xc0),
+            (1251, _) => CYRILLIC[k - 0x80],
+            (_, 0x80..=0x9f) => match HIGH[k - 0x80] {
+                0 => b as u32,
+                h => h,
+            },
+            _ => b as u32,
+        };
+        char::from_u32(u).filter(|_| u != 0).unwrap_or('\u{fffd}')
     }
 }
 

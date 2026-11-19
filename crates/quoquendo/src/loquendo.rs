@@ -528,7 +528,13 @@ impl VoiceDescriptor {
         d.age = dv.get("Age").cloned().unwrap_or_default();
         d.mother_tongue = dv.get("MotherTongue").cloned().unwrap_or_default();
         d.mother_tongue_aliases = dv.get("MotherTongueAliases").cloned().unwrap_or_default();
-        d.demo_sentence = dv.get("DemoSentence").cloned().unwrap_or_default();
+        // written in the language's own code page (Polish `ę` is 0xEA in
+        // 1250); the descriptor was read one char per byte
+        let cp = d.language().code_page();
+        d.demo_sentence = dv
+            .get("DemoSentence")
+            .map(|s| s.chars().map(|c| crate::lang::common::from_8bit_cp(c as u32 as u8, cp)).collect())
+            .unwrap_or_default();
         d.gilded = dv.get("GildedTTS").map(|v| v.eq_ignore_ascii_case("yes")).unwrap_or(false);
         // every VocalDBName[i], in the order the configurator lists them
         for i in 0..8 {

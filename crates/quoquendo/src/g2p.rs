@@ -44,6 +44,18 @@ impl Language {
         matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish)
     }
 
+    /// The Windows code page the language's text is written in, in the
+    /// engine and in the voices' descriptors (`DemoSentence`): what the
+    /// language modules' `ELQGetLanguageNativeEncoding` give.
+    pub fn code_page(self) -> u32 {
+        match self {
+            Language::Greek => 1253,
+            Language::Polish => 1250,
+            Language::Russian => 1251,
+            _ => 1252,
+        }
+    }
+
     pub fn from_voice(mother_tongue: &str, aliases: &str) -> Language {
         let hay = format!("{} {}", mother_tongue, aliases).to_lowercase();
         let has = |n: &str| hay.contains(n);
