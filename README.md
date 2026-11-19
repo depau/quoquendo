@@ -87,17 +87,23 @@ Measured against the original engine run under Wine (`oracle/`, a developer
 tool only, not needed to use quoquendo), on the benchmark sentences in
 `oracle/bench-*.txt`, without any dictionary made by running the original:
 
-| voice | language | sounds identical | half-sounds picked identically | samples within ±2 |
+| voice | language | sounds identical | half-sounds picked identically | output samples identical |
 |---|---|---|---|---|
-| Roberto | Italian | 96.6% | 99.3% | 77.9% |
-| Allison | US English | 97.7% | 98.6% | 73.9% |
-| Bernard | French | 97.9% | 99.8% | 98.5% |
-| Jorge | Spanish | 99.8% | 98.9% | 88.9% |
-| Katrin | German | 100% (97.6% on unseen sentences) | 98.2% | 71.0% |
+| Roberto, Giulia, Luca, Matteo, Paola | Italian | 100% | 100% | 100% |
+| Allison, Dave, Steven, Susan | US English | 100% | 100% | 100% |
+| Kate, Simon, Elizabeth | British English | 100% | 100% | 100% |
+| Bernard, Juliette | French | 100% | 100% | 100% |
+| Jorge, Carmen, Leonor, Carlos, Diego, … | Spanish | 100% | 100% | 100% |
+| Katrin, Stefan | German | 100% | 100% | 100% |
 
-The decoder returns the original's samples bit for bit on every request
-traced (both codecs, MECHANICS.md §2d). Every voice's row, stage by stage, is
-in `oracle/out/dashboard.md` (`quoquendo --compare-all`).
+The pronunciation of these languages is ported from the original's own
+language modules and each voice's own phone rules (MECHANICS.md §4b–§4e);
+the original's choice of pieces, its decoder and its joins are reproduced
+exactly (§2d, §5, §6). Voices recorded at 44.1 kHz (Marcello, Florence,
+Alan, Grace, Ximena…) still differ in the final resampling (§11), and
+Greek, Portuguese, Swedish, Danish, Dutch, Polish and Russian still use
+approximate pronunciation rules. Every voice's row, stage by stage, is in
+`oracle/out/dashboard.md` (`quoquendo --compare-all`).
 
 See MECHANICS.md §2d, §4–§6 and §9.
 
