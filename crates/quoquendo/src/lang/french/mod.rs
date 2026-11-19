@@ -20,6 +20,7 @@ mod confini;
 mod gradi;
 mod numeri;
 mod parola;
+mod text;
 
 use super::common::{field::*, Pe, Phone, Word};
 use crate::g2p::Token;
@@ -57,6 +58,12 @@ pub struct French {
     /// `SELECT grafemica, fonetica, gradoaccentuale, grammaticale, gennum,
     /// tempomodo, altreinfo FROM lessico` (0x100069a0), in table order
     dict: Vec<Row>,
+    /// `SELECT grafemica, abbreviazione FROM lessico WHERE
+    /// abbreviazione!="" ORDER BY abbreviazione COLLATE NOCASE DESC`
+    /// (0x100069a0, `LesGetAbbreviazioni` 0x10007110) as (abbreviation,
+    /// expansion)
+    abbreviations: Vec<(Vec<u8>, Vec<u8>)>,
+    abbreviation_table: std::sync::OnceLock<Vec<super::common::Abbreviation>>,
 }
 
 impl French {
@@ -73,11 +80,11 @@ impl French {
         let chars = (0..256u32)
             .map(|c| (pe.u8(CHARS + 8 * c), pe.u8(CHARS + 8 * c + 1), pe.u32(CHARS + 8 * c + 4)))
             .collect();
-        let dict = match dbl {
+        let (dict, abbreviations) = match dbl {
             Some(d) => read_dictionary(d)?,
-            None => Vec::new(),
+            None => (Vec::new(), Vec::new()),
         };
-        Some(French { pe, chars, dict })
+        Some(French { pe, chars, dict, abbreviations, abbreviation_table: Default::default() })
     }
 
     fn flags(&self, c: u8) -> u32 {
@@ -233,7 +240,7 @@ fn stricmp(a: &[u8], b: &[u8]) -> i32 {
 /// `lessico` rows as the module's 7 columns (the table's are grafemica,
 /// fonetica, gradoaccentuale, grammaticale, gennum, tempomodo,
 /// abbreviazione, altreinfo).
-fn read_dictionary(dbl: &[u8]) -> Option<Vec<Row>> {
+fn read_dictionary(dbl: &[u8]) -> Option<(Vec<Row>, Vec<(Vec<u8>, Vec<u8>)>)> {
     use crate::sqlite::Value;
     let rows = crate::sqlite::read_table(dbl, "lessico").ok()?;
     let v = |r: &Vec<Value>, i: usize| match r.get(i) {
@@ -242,7 +249,15 @@ fn read_dictionary(dbl: &[u8]) -> Option<Vec<Row>> {
         Some(Value::Real(x)) => Some(x.to_string().into_bytes()),
         _ => None,
     };
-    Some(rows.iter().map(|r| [v(r, 0), v(r, 1), v(r, 2), v(r, 3), v(r, 4), v(r, 5), v(r, 7)]).collect())
+    let dict = rows.iter().map(|r| [v(r, 0), v(r, 1), v(r, 2), v(r, 3), v(r, 4), v(r, 5), v(r, 7)]).collect();
+    let mut abbr: Vec<(Vec<u8>, Vec<u8>)> = rows
+        .iter()
+        .filter_map(|r| Some((v(r, 6).filter(|a| !a.is_empty())?, v(r, 0).unwrap_or_default())))
+        .collect();
+    // COLLATE NOCASE folds A–Z only; DESC, ties in table order
+    let fold = |s: &[u8]| s.iter().map(|c| c.to_ascii_lowercase()).collect::<Vec<u8>>();
+    abbr.sort_by(|a, b| fold(&b.0).cmp(&fold(&a.0)));
+    Some((dict, abbr))
 }
 
 /// A word's dictionary rows (record +0x14, an `ELQList` of row pointers,
@@ -369,6 +384,19 @@ impl super::common::Les for French {
         self.analizza(w)
     }
     fn accenta(&self, _w: &mut [Word]) {}
+    fn pronunciabile(&self, w: &[u8]) -> bool {
+        // the engine's calls on plain text pass argument 4 = 0
+        self.pronunciabile_c(w, 0)
+    }
+    fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
+        French::symbol_name(self, c, mode)
+    }
+    fn normalizza_accento(&self, w: &mut Vec<u8>) {
+        text::normalizza_accento(w)
+    }
+    fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
+        self.abbreviation_table.get_or_init(|| super::common::abbreviation_table(self, &self.abbreviations))
+    }
     fn confini(&self, w: &mut [Word], mode: i32) {
         self.confini(w, mode)
     }

@@ -45,6 +45,7 @@ pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
         Language::Spanish => spanish::Spanish::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::English => english::English::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::German => german::German::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::French => french::French::from_files(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
         _ => None,
     }
 }

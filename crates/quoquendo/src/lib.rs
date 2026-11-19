@@ -302,7 +302,9 @@ impl VoiceFiles {
                 let lde = read(lde).map(|b| ini(&b)).unwrap_or_default();
                 let file = |key: &str| lde.get(key).and_then(|f| read(&format!("{folder}/{f}")));
                 let lexicons = (0..16).map_while(|i| lde.get(&format!("Lexicon[{i}]"))).filter_map(|f| read(&format!("{folder}/{f}"))).collect();
-                (file("LexicalDB"), file("GPR"), lexicons)
+                // French names its database `LexicalDB[0]` (LTTS7French.dll's
+                // loader 0x100069a0 reads that key)
+                (file("LexicalDB").or_else(|| file("LexicalDB[0]")), file("GPR"), lexicons)
             }
             _ => (None, None, Vec::new()),
         };
