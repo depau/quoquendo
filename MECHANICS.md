@@ -337,49 +337,18 @@ S=I                          (after some sentences) I question, E exclamation
 
 ## 4. FON — text → sounds
 
-The original's dictionary is not in `Italian.lex` (4 KB, a small add-on list)
-but compiled into `LTTS7Italian.dll` (600 KB; only a list of names is readable
-there). The builtin rules (`g2p.rs`) are therefore **measured against the
-original's own transcriptions** (§9) rather than read from it.
+The original's FON is code in each `LTTS7<Language>.dll`; for the ported
+languages it is read from there (below and §4b–§4d).
 
-Italian rules: soft `c/g` → `T$`/`Dg` (also `cc/gg` → `T$:`/`Dg:`); doubled
-consonants → one long phone (`n:`, `dd:`, `k:`); `cqu` → `k: w`; velar `N` before
-hard c/g; `i` before a vowel glides to `j` except after `r`/`l` (original: 8%
-and 3% glide there, 64–98% elsewhere); a word-final `-ia` after a consonant is
-a full `i` (94–98%); `z` is `Dz` at the start of a word (272 to 4), long `Ts:`
-between vowels (2745 to 203), `Ts` after a consonant, `-izz-` → `Dz:`; `s` voiced
-between vowels and before voiced consonants; stress and open/closed e/o from
-learned ending tables (§9); a written final accent wins (è ò open, é ó
-closed). In sentences: articles, prepositions, conjunctions, clitics and `non`
-are unstressed; `n` takes the place of the next word's first sound (`un pacco`
-u m, `non vieni` n o M); apostrophes join (`l'esame` → one word); numbers are
-read per group as the original does (9542 "novemila cinquecento quarantadue",
-1001 "milleuno").
+**Dictionaries.** When `lexicons/<MotherTongue>.tsv` exists, every word in it
+reads exactly as the original engine transcribed it on its own (languages
+without a ported module only). They are made by `quoquendo --learn-lexicon
+<word list> --voice <voice>` (§8, §9) and are not shipped: they come from
+the original engine.
 
-**Dictionaries.** When `lexicons/<MotherTongue>.tsv` exists (Italian,
-EnglishUs, French), every word in it reads exactly as the original engine
-transcribed it on its own; the rules above only handle words it doesn't have.
-They are made by `quoquendo --learn-lexicon <word list> --voice <voice>`
-(§8, §9) and are not shipped: they come from the original engine.
-
-English in sentences (Allison's transcriptions): function words take weak
-forms (`the` Dh HEh, before a vowel Dh i; `to` th HEh; `for` f HR; `our` Aa:
-HR); inside a word `s t` is said `s d` (`Boston` b `` `Aa: `` s d HEh n); a final
-t/k/p/d before another word's consonant is unreleased (`Hut` `Huk` `Hup`
-`Hud`), but `-nd` loses its d before `the` (`mind the` m `` `HAI `` n); t/d
-before `you` become `T$`/`Dg` (`connect you` … Huk T$ j u); a final z before s
-is s (`please stand`); `to` after a vowel or n and before a vowel is flapped
-(`train to arrive` … n HTh u). No linking sounds are added between words.
-
-French in sentences (Bernard's): little words (`le la les de des et à je
-nous vous sur sont est`...) lose their stress, `` `OE `` becoming `HEh`;
-liaison moves the silent consonant to the next word (`mes amis` m e | z a m
-`` `i ``, `nous avons` n u | z a v `` `o) ``); `prochain arrêt` loses its nasal
-(p HRF Oa $ `` `E `` | n a HRF `` `E ``); a final consonant + r/l keeps its e
-before a consonant (`votre patience` v `` `Oa `` tt HRF HEh); `m'appelle` is the
-elided word plus the rest; `est-ce` `` `E `` s.
-
-**The languages' own data** (read from the installer's files, `g2p::load_language_data`):
+**The languages' own data** (read from the installer's files: the `.dbl`
+by `g2p::Frontend::from_files` for unported languages, both by the ported
+modules):
 
 - `<MotherTongue>.dbl` is a plain **SQLite 3** database (read by `sqlite.rs`,
   a small pure-Rust reader): table `lessico` with `grafemica` (spelling),
@@ -395,40 +364,18 @@ elided word plus the rest; `est-ce` `` `E `` s.
   list of engine feature words (§5), named through the voice's phone table.
   Layout from the loader 0x10001710, matching from 0x10001220 (the early
   exit at 0x1000141f returns the matched rule's class).
-- After them the original applies word rules (LTTS7English.dll); measured
-  against its transcriptions of 128 374 words, these reproduce **80.5%** of
-  words exactly (35% from the model alone): `s` + t/k/p inside a word loses
-  aspiration; `t s` → `Ts`; `HEh Hr` → `HR` before a consonant or the end;
-  `HEh l` → `Hl` at the end or before z/d; `Hr` → `HR` after `HAI` and
-  stressed I/E; dark `Hl` after `i:`/`i`/`HEI` at the end; `th` flapped
-  (`HTh`) between a vowel (or n, r) and an unstressed vowel when the vowel
-  before is stressed or full, or in the last syllable before i/I/HR/Hl;
-  other stops before a consonant (not r, l, j, w) unreleased; `'s` is the
-  stem plus I z / s / z, without the stem's flap.
 
-Sounds identical to the original on the benchmarks **without** the Wine-made
-dictionaries: Italian 96.6% (rules and learned ending tables), US English
-**97.7%** (its own data, above; 70.4% before), French 97.9% (`french.rs`: its
-own rules are code, FonTrasParola 0x1000f730 in LTTS7French.dll, 3 570
-decompiled lines, not ported; ours were fitted to the original's output:
-88.0% of held-out words, 98.4% of their sounds). Spanish (Jorge, `spanish.rs`)
-99.8%: written accent or the usual stress rule, i/u gliding, c/z `Th`, ll
-`Gl`; b/d/g softened between vowels across words. German (Katrin,
-`german.rs`) 100% (97.6% on sentences the rules were not fitted to,
-`oracle/bench-de2.txt`): be-/ge-/ver-/er-/ent- prefixes before a root (not
-before a bare ending: geben) stay unstressed, a vowel before one consonant,
-a stop + r/l, doubled or h is long, -e -en -er -el -eln endings reduce
-(`HEh`, `Hn`, `Hm` after b, `AR`, `Hl n`), -ig is `I c`, -ier- takes the
-stress, ch `x` after back vowels else `c`, st-/sp- `$`, dt `t`; compounds
-split after a known first part (Haupt|bahn|hof, Ab|stand) and the later
-parts lose their stress. The dictionary's citation forms are reshaped in
-the sentence too (nächste: no aspiration after s; München: `c Hn`). Across
-words final b/d/g devoice, a final stop is released into a vowel or h and
-unreleased before other consonants (`Hut Hub Huk`), p/t/k aspirate before
-a vowel or stop+r (not after s), n before k/g is `N`, a vowel-initial word
-inside a phrase starts with `Hk`; little words lose their stress except at
-the end of a phrase (observed; not in the module). Left: loanword stress
-(Konzert, Büro).
+Italian, English, Spanish, French and German have **no built-in rules**:
+their FON is the original's module, ported (§4b–§4d, `lang/`), reading its
+tables from the language pack's DLL. The rules fitted to the original's
+output that stood in for them (`g2p::italian`/`english`/`french`, the
+learned Italian ending tables, `french.rs`, `german.rs`, `spanish.rs` and
+their connected-speech passes) are deleted. A voice of these languages
+whose tree lacks the module (no `.lde`, or a `Library` DLL that is missing
+or isn't the expected one) reports `language_missing` (`Voice::from_bytes`)
+instead of speaking with approximate rules. The other languages (Greek,
+Portuguese, Swedish, Danish, Dutch, Polish, Russian…) keep the simple
+letter rules of `g2p.rs` and the dictionaries above.
 
 **German, decompiled** (LTTS7German.dll; its one export `German` 0x10007f00
 hands the engine a table of named functions at 0x100294a8: LesAccenta
@@ -446,12 +393,12 @@ gives a word grade 3 (unstressed) when its class is one of 0x19 0x1e 0x18
 0x20 0x21 0x16 0x22 0x1f 0x82 0x2e or its grade is already DEA, and it has
 at most 7 letters, except `sie`/`Sie`, `mit`, `nicht` (written `sìe`,
 `mìt`, `nìcht` in the module's marked spelling), which keep grade 0;
-`es` is unstressed unless punctuation follows. `g2p::german_unstressed`
-does this from the dictionary's own columns; the four little words the
-dictionary doesn't classify (mein, meine, wegen, für) stand in for the
-module's morphological analyser. FonAllofonoLingua (1 964 lines) rewrites
-phones by the engine's feature codes (0x19e2 → 0x59f2 before 0x1942…);
-not ported, our fitted allophone rules match it on both benchmarks.
+`es` is unstressed unless punctuation follows. The deleted fitted rules
+did this from the dictionary's own columns; the four little words the
+dictionary doesn't classify (mein, meine, wegen, für) stood in for the
+module's morphological analyser in the deleted fitted rules.
+FonAllofonoLingua (1 964 lines) rewrites phones by the engine's feature
+codes (0x19e2 → 0x59f2 before 0x1942…): `lang/german/allofono.rs`.
 
 **German numbers** (`lang/german/numeri.rs`). `LesIniNumeri` 0x10007100
 installs slot 0 word by id 0x100026a0 (0x53 `{id, char*}` pairs at
@@ -536,16 +483,46 @@ FonTrasParola give the original's records and codes for **every** call.
 Whole transcriptions (`QQ_NO_LEXICON=1`, against the original's
 `LOQ_FON_ONLY` output): benchmark `oracle/bench-it.txt` 96.6% → **100%**
 of sounds (20 of 20 sentences identical, 3 before); held-out words 87.1% →
-**99.9%** (19 980 of 20 000).
+99.9% → **100%** (20 000 of 20 000) with the text hooks below.
 
-The engine's own tokenizer (LoqTTS7.dll TOP/LES) is approximated
-(`Italian::sentences`): lower case, proper nouns (capitalised inside a
-sentence: class 0x15), elisions as their own record joined to the next
-(boundary 0), punctuation records (class `2`, `|` ends a
-sentence, `}` inside). Not ported yet (§11): the engine's spelling of
-unpronounceable words (`LesPronunciabile`: `CD` → `T$ i-dd i`),
-abbreviations, `Italian.lex`, and 0x10001290 (stress of class `-`
-participles in sentences).
+The engine's own tokenizer (LoqTTS7.dll TOP/LES, `lang/common.rs`) calls
+the module's text hooks, ported in `italian.rs`:
+
+- `LesPronunciabile` 0x1000b2e0 → 0x1000b140: a word with `'` or an
+  accented vowel reads; otherwise, lowered through the character table
+  0x10030ed8, one letter `y`/`j` is spelled; a word without a vowel
+  (0x100032e0) reads only if listed at 0x1002c368 (0xd bytes); words of
+  2, 2–3, 2–4 letters listed at 0x1002c644 (4), 0x1002c648 (0xbd),
+  0x1002c708 (0x1f) are spelled; with the engine's char argument 0 (as
+  LoqTTS7 0x1003824d passes it) a word of 4+ characters, or one with no
+  upper-case letter after its first (0x10003310), reads; else by length:
+  1 a/e/o/i, 2 the list 0x1002c378 (0xb2), 3 0x10003390 (list 0x1002c430,
+  0x141, then consonant/vowel shapes, `sas` 0x1002fb14), longer 0x10009eb0
+  (list 0x1002c578, 0xc9; no letter thrice; every run of 2+ consonants by
+  0x100074c0 — pairs at the start, end, inside via 0x1002c9b8 (0xb8),
+  triples 0x1002c768 (0x249), quadruples 0x1002c728 (0x3d), `stscr`;
+  every run of 2+ vowels by 0x10007ab0, 0x100038b0, 0x100039f0). All
+  ELQSearchCompactString lists flags 1, no separator.
+- `LesGetSymbolName` 0x100032a0 → 0x10002dd0: the switch (index bytes
+  0x10003198 for `c + 0x80`, jumps 0x10003078) is read and its cases run
+  (`mov eax, name; ret`, behind `test al, al` when only spelling names
+  punctuation): `b` → `bì`, `h` → `àcca`…
+- `LesNormalizzaAccento` 0x10002b50: ` ' ’ ´ after a vowel becomes its
+  grave (0x100021c0, for `) or acute (0x100022e0) accent; one before a
+  final `s` is dropped; then á í ú become grave.
+- `LesGetAbbreviazioni` 0x1000b610: `{abbreviation, expansion}` pairs at
+  0x100319b8, count 0xc6 from LesGetNumeroAbbreviazioni 0x1000b600
+  (`km` → Chilometri, `etc` → Eccetera…).
+- `LesEspandiAbbreviazioni` 0x10007430: `s.`/`S.` (0x1002fd40, 0x1002fd3c)
+  before a name in the saints list 0x1002d668 (0x2217 bytes, `name=letter`)
+  → the title of its letter (index 0x10007410, jumps 0x100073f0: san,
+  sant', santa, santo, sacro, santi, santissimo).
+
+`Italian.lex` (its `"cpu" = "Sì Pi U"` among others) is the engine's text
+filter (`common`). 0x10001290, the stress of class-`-` participles (35
+exception lists 0x1002b3f0–0x1002bb6c, `exceptions` codes 0x4080–0x60c4,
+0x10001250 stripping 1–6 letters before the stress table), is ported as
+`Italian::participle`.
 
 **Numbers** (`italian/numeri.rs`). `LesIniNumeri` 0x1000b4d0 fills slots
 0 word 0x10005680 (0x53 `{id, word}` at 0x1002d3d0), 1 phone 0x100049b0
@@ -819,8 +796,8 @@ from the library by address):
 | Bernard 0x10001230, Juliette 0x10001230, Florence 0x10001210 | | default | Bernard: a nasal vowel + consonant of a word written `-e`/`-es` before a consonant word keeps the `e` (`HEh`); Juliette: s → z before a voiced word, final dd → n after a nasal vowel, else it voices the consonant ending the word before; Florence: voicing assimilation across words after a nasal vowel (not `donc`, `quelconque`, before `million`, `mètre(s)`) |
 
 The stage runs for module-backed voices only (`g2p::Frontend::with_voice`):
-the fitted rules were fitted to the phones the voices say, so they
-already include it. `--fon-list` leaves it out (`without_voice`): it is
+the built-in rules of the unported languages give phones the voices say
+already. `--fon-list` leaves it out (`without_voice`): it is
 compared with the original's `.fonlist`, the module's transcription.
 FON ctx +0x18, which Dave, Kate, Grace and Alan read (7–10 → `I`), is
 the module's scratch "tokens used" count (LTTS7English 0x10004610,
@@ -1144,16 +1121,9 @@ for a stage, or "Compare with the original", runs it in the background.
 
 ## 9. Learned from the original
 
-`oracle/out/words/all.txt` (87 421 words from the Hunspell it_IT dictionary)
-was transcribed by the original engine. From those transcriptions:
-
-- `src/it-position.tsv`: 630 word endings → which vowel takes the stress,
-  counted from the end; **95.8%** right on words held out of the learning.
-- `src/it-quality.tsv`: 302 endings of the stressed syllable → open or closed
-  e/o; **91.5%** on held-out words.
-
-Whole words identical to the original: 53.8% → **88.5%**. Sentences of the
-benchmark (`oracle/bench-it.txt`): 38% → **87.6%** of words identical.
+The Italian ending tables once learned from the original's transcriptions
+(`it-position.tsv`, `it-quality.tsv`) are gone with the fitted rules: the
+module's own tables (§4b) give the stress.
 
 Then the transcriptions themselves became the dictionaries (§4): Italian
 87 421 words, US English 128 376 (the SCOWL-based en_US word list), French
@@ -1195,20 +1165,11 @@ when a speed/pitch change asks for it.
 
 ## 11. Not done / unknown
 
-- An exact port of French letter-to-sound (FonTrasParola, LTTS7French.dll
-  0x1000f730, 3 570 lines) instead of fitted rules (97.9%); German loanword
-  stress (97.6% held out).
-- Italian (§4b): the module's LES/FON functions are ported and match the
-  original call for call; the 20 held-out words still differing are all
-  spelled out by the engine (`AN` `` `a-`E n: e ``, `CD`, `CPU`, `DNA`,
-  `b`, `dg`…): LoqTTS7.dll's TOP/LES spelling of words LesPronunciabile
-  (0x1000b2e0 → 0x1000b140) rejects is not ported, nor its abbreviation
-  readers (LesEspandiAbbreviazioni), the `Italian.lex` lexicon (`CA FE DB 60`, not
-  decrypted yet) and 0x10001290 (stress of class-`-` participles inside
-  sentences; alone such words take the noun class and match). Numbers
-  (slot 9, §4b) read as the original. The fitted
-  rules (`g2p::italian`, `it-position.tsv`, `it-quality.tsv`) remain as
-  the front end of Italian voices whose tree lacks LTTS7Italian.dll.
+- German loanword stress (97.6% held out).
+- Italian (§4b): every LES/FON function of LTTS7Italian.dll the engine
+  calls is ported; bench-it and the 20 000 held-out words are 100%
+  identical. 0x10001290 (participles) is checked on 91 sentences with
+  participles after an auxiliary (all identical), not on a held-out list.
 - The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
   hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk per
   wanted phone, both its half units as the joins left them (a pause too:

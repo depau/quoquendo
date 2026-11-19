@@ -183,48 +183,6 @@
    "source": "original engine default LongPauseLength; its events show @500"
   },
   {
-   "name": "stress position table",
-   "group": "text",
-   "value": "630 endings, 95.8% on held-out words",
-   "source": "learned from the original engine's ttsPhoneticTranscription of 87421 Hunspell words (src/it-position.tsv)"
-  },
-  {
-   "name": "open/closed e-o table",
-   "group": "text",
-   "value": "302 endings, 91.5% on held-out words",
-   "source": "same transcriptions (src/it-quality.tsv)"
-  },
-  {
-   "name": "i glide after r / l",
-   "group": "text",
-   "value": "none (8% / 3% in the original)",
-   "source": "original transcriptions of 87421 words"
-  },
-  {
-   "name": "word-initial z",
-   "group": "text",
-   "value": "Dz",
-   "source": "original transcriptions: 272 Dz to 4 Ts"
-  },
-  {
-   "name": "single z between vowels",
-   "group": "text",
-   "value": "Ts:",
-   "source": "original transcriptions: 2745 Ts: to 203 Dz:"
-  },
-  {
-   "name": "words identical to the original",
-   "group": "text",
-   "value": "88.5 % of 87421",
-   "source": "quoquendo --fon-list vs oracle LOQ_FON_ONLY"
-  },
-  {
-   "name": "sentence words identical to the original",
-   "group": "text",
-   "value": "87.6 %",
-   "source": "quoquendo --compare oracle/bench-it.txt"
-  },
-  {
    "name": "original unit",
    "group": "selection",
    "value": "runs of half-phones",
@@ -807,6 +765,36 @@
    "group": "fon",
    "value": "0x17b entries {word, class, subclass, information}",
    "source": "LTTS7Italian.dll 0x1006b3e8, LesAnalizza 0x1000cdf0"
+  },
+  {
+   "name": "Italian LesPronunciabile",
+   "group": "fon",
+   "value": "lists (flags 1): no-vowel 0x1002c368/0xd, spelled 0x1002c644/4, 0x1002c648/0xbd, 0x1002c708/0x1f, 2 letters 0x1002c378/0xb2, 3 letters 0x1002c430/0x141, longer 0x1002c578/0xc9, inner consonants 0x1002c9b8/0xb8, 0x1002c768/0x249, 0x1002c728/0x3d",
+   "source": "LTTS7Italian.dll 0x1000b2e0 -> 0x1000b140, 0x10003390, 0x10009eb0, 0x100074c0, 0x10007ab0, 0x100038b0, 0x100039f0"
+  },
+  {
+   "name": "Italian LesGetSymbolName switch",
+   "group": "fon",
+   "value": "index bytes 0x10003198 (c + 0x80), jumps 0x10003078",
+   "source": "LTTS7Italian.dll 0x100032a0 -> 0x10002dd0"
+  },
+  {
+   "name": "Italian abbreviations",
+   "group": "fon",
+   "value": "0xc6 {abbreviation, expansion} pairs at 0x100319b8",
+   "source": "LTTS7Italian.dll LesGetAbbreviazioni 0x1000b610, LesGetNumeroAbbreviazioni 0x1000b600"
+  },
+  {
+   "name": "Italian saints (s. / S.)",
+   "group": "fon",
+   "value": "list 0x1002d668 (0x2217 bytes, name=letter), titles by index 0x10007410 / jumps 0x100073f0",
+   "source": "LTTS7Italian.dll LesEspandiAbbreviazioni 0x10007430 -> 0x100072d0"
+  },
+  {
+   "name": "Italian participle stress",
+   "group": "fon",
+   "value": "35 exception lists 0x1002b3f0-0x1002bb6c; stripped-stem stress 0x10001250",
+   "source": "LTTS7Italian.dll 0x10001290 (called by 0x10002790 for class '-')"
   },
   {
    "name": "Italian homographs",

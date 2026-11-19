@@ -1322,7 +1322,7 @@ mod tests {
 
     #[test]
     fn phrases_split_at_punctuation_only() {
-        let ph = from_tokens(&analyse("uno due, tre?", &crate::g2p::Frontend::rules(Language::Italian)));
+        let ph = from_tokens(&analyse("um dois, três?", &crate::g2p::Frontend::rules(Language::Portuguese)));
         assert_eq!(ph.len(), 2);
         assert!(!ph[0].full_stop && ph[1].mood == Some('I'), "comma keeps the tune open, ? makes a question");
     }

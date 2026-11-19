@@ -27,6 +27,10 @@ pub struct Italian {
     pe: Pe,
     /// (lower, upper, flags) per character, from `CHARS`
     chars: Vec<(u8, u8, u32)>,
+    /// The engine's abbreviation table from LesGetAbbreviazioni's pairs.
+    abbreviation_table: std::sync::OnceLock<Vec<super::common::Abbreviation>>,
+    /// The `.lde`'s lexicons (`Italian.lex`) as the engine's text filters.
+    filters: Vec<super::common::TextFilter>,
 }
 
 /// Stress positions (1 = the last vowel, +30 = a closed e/o), searched by
@@ -47,7 +51,14 @@ impl Italian {
         let chars = (0..256u32)
             .map(|c| (pe.u8(CHARS + 8 * c), pe.u8(CHARS + 8 * c + 1), pe.u32(CHARS + 8 * c + 4)))
             .collect();
-        Some(Italian { pe, chars })
+        Some(Italian { pe, chars, abbreviation_table: Default::default(), filters: Vec::new() })
+    }
+
+    /// The module and the language pack's lexicons.
+    pub fn from_files(files: &super::ModuleFiles) -> Option<Italian> {
+        let mut it = Italian::from_dll(files.dll.clone())?;
+        it.filters = files.lexicons.iter().filter_map(|f| super::common::TextFilter::parse(&it, f)).collect();
+        Some(it)
     }
 
     fn flags(&self, c: u8) -> u32 {
@@ -1692,11 +1703,448 @@ impl Italian {
     }
 }
 
+/// 0x10001290's exception lists (searched by `exceptions`, reversed words).
+mod part {
+    pub const EM_RAN: u32 = 0x1002b988;
+    pub const ICIM_V: u32 = 0x1002b508;
+    pub const ICIM_R: u32 = 0x1002b4b0;
+    pub const ICIT_R: u32 = 0x1002b5d4;
+    pub const ICIT_V: u32 = 0x1002b5e8;
+    pub const ICITET: u32 = 0x1002ba7c;
+    pub const ICIV_V: u32 = 0x1002b6b8;
+    pub const ICIV_R: u32 = 0x1002b6b0;
+    pub const IMOT: u32 = 0x1002bb6c;
+    pub const IMET: u32 = 0x1002b4f4;
+    pub const IMRE: u32 = 0x1002b760;
+    pub const ENEC: u32 = 0x1002b43c;
+    pub const ENEM: u32 = 0x1002b3f0;
+    pub const ENES: u32 = 0x1002b478;
+    pub const ENET: u32 = 0x1002b484;
+    pub const ENEV: u32 = 0x1002b414;
+    pub const ENOT: u32 = 0x1002baa8;
+    pub const ENODN: u32 = 0x1002b8d0;
+    pub const ENRE: u32 = 0x1002b6dc;
+    pub const ISICR: u32 = 0x1002ba54;
+    pub const ISICV: u32 = 0x1002ba60;
+    pub const ISOTA: u32 = 0x1002b994;
+    pub const ISOTI: u32 = 0x1002b9d0;
+    pub const ISATA: u32 = 0x1002ba2c;
+    pub const ISETA: u32 = 0x1002ba34;
+    pub const ISRE: u32 = 0x1002b818;
+    pub const ITRE: u32 = 0x1002b7b0;
+    pub const IVET: u32 = 0x1002b894;
+    pub const IVRE: u32 = 0x1002b880;
+    pub const LECV: u32 = 0x1002b8bc;
+    pub const LEMR: u32 = 0x1002b6cc;
+    pub const LESV: u32 = 0x1002b964;
+    pub const LETV: u32 = 0x1002b920;
+    pub const LRE: u32 = 0x1002b71c;
+    pub const ICRE: u32 = 0x1002b73c;
+}
+
 impl Italian {
-    fn participle(&self, _rev: &mut Vec<u8>) -> Option<u16> {
-        // 0x10001290 (participles, class `-`) is not ported yet: its words
-        // fall through to the -ano/-ino lists and the stress table
-        None
+    /// 0x10001290: the stress code of a participle (class `-`) from its
+    /// reversed spelling, `None` when the function returns 0. `rev` is
+    /// rewritten as the module does; 0x10001250 strips its first letters
+    /// before the stress table when no exception answered.
+    fn participle(&self, rev: &mut Vec<u8>) -> Option<u16> {
+        use part::*;
+        let r = |rev: &Vec<u8>, i: usize| at(rev, i);
+        let v = |c: u8| self.flags(c) & VOWEL != 0;
+        let set = |rev: &mut Vec<u8>, i: usize, c: u8| {
+            if i < rev.len() {
+                rev[i] = c;
+            }
+        };
+        // 0x10001250
+        let strip = |rev: &Vec<u8>, res: u16, off: usize, add: u16| -> u16 {
+            if res == 0 {
+                self.stress(rev.get(off..).unwrap_or(&[])) + add
+            } else {
+                res
+            }
+        };
+        let x = |rev: &Vec<u8>, va: u32, code: u16| self.list(va, rev, code);
+        // LAB_10001309 / LAB_10001682
+        let tail1 = |rev: &mut Vec<u8>, va: u32| {
+            let res = x(rev, va, 0x4080);
+            set(rev, 1, b'e');
+            Some(strip(rev, res, 1, 0))
+        };
+        // rev[3] = 'e', then strip 3 (+1)
+        let tail3 = |rev: &mut Vec<u8>, res: u16| {
+            set(rev, 3, b'e');
+            Some(strip(rev, res, 3, 1))
+        };
+        let len = rev.len();
+        let b1 = r(rev, 0);
+        if !matches!(b1, b'a' | b'e' | b'i' | b'o') {
+            return None;
+        }
+        match r(rev, 1) {
+            b'c' => match r(rev, 2) {
+                b'e' => (b1 == b'i' && r(rev, 3) == b't').then(|| x(rev, EM_RAN, 0x4083)),
+                b'i' => {
+                    if b1 != b'i' {
+                        return None;
+                    }
+                    let (code, list) = match r(rev, 3) {
+                        b'm' => {
+                            if r(rev, 4) != b'r' {
+                                if !v(r(rev, 4)) {
+                                    return None;
+                                }
+                                let res = x(rev, ICIM_V, 0x40c0);
+                                return Some(strip(rev, res, 4, 2));
+                            }
+                            (0x50c0, ICIM_R)
+                        }
+                        b't' => {
+                            if r(rev, 4) == b'r' {
+                                let res = x(rev, ICIT_R, 0x50c0);
+                                if res != 2 {
+                                    return tail3(rev, res);
+                                }
+                            }
+                            let b = r(rev, 4);
+                            if matches!(b, b'a' | b'i' | b'o') {
+                                let res = x(rev, ICIT_V, 0x40c0);
+                                return Some(strip(rev, res, 4, 2));
+                            }
+                            if b != b'e' || r(rev, 5) != b't' || !v(r(rev, 6)) {
+                                return None;
+                            }
+                            return Some(x(rev, ICITET, 0x60c4));
+                        }
+                        b'v' => {
+                            if r(rev, 4) != b'r' {
+                                if !v(r(rev, 4)) {
+                                    return None;
+                                }
+                                let res = x(rev, ICIV_V, 0x40c0);
+                                return Some(strip(rev, res, 4, 2));
+                            }
+                            (0x5080, ICIV_R)
+                        }
+                        _ => return None,
+                    };
+                    let res = x(rev, list, code);
+                    tail3(rev, res)
+                }
+                b'o' => {
+                    if b1 != b'i' {
+                        return None;
+                    }
+                    if r(rev, 3) == b'm' && r(rev, 4) == b'a' {
+                        return Some(3);
+                    }
+                    (r(rev, 3) == b'd' && r(rev, 4) == b'n').then_some(3)
+                }
+                b'r' => {
+                    if b1 != b'i' {
+                        return None;
+                    }
+                    match r(rev, 3) {
+                        b'a' | b'i' => Some(2),
+                        b'e' => tail1(rev, ICRE),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            b'l' => match r(rev, 2) {
+                b'a' => (r(rev, 3) == b'l' && r(rev, 4) == b'o').then_some(4),
+                b'e' => match r(rev, 3) {
+                    b'c' if len > 6 => {
+                        if r(rev, 4) == b'r' {
+                            return tail3(rev, 0);
+                        }
+                        let res = x(rev, LECV, 0x4080);
+                        Some(strip(rev, res, 4, 2))
+                    }
+                    b'i' if len > 6 && r(rev, 4) == b'l' && r(rev, 5) == b'g' => {
+                        if v(r(rev, 6)) {
+                            return Some(strip(rev, 0, 6, 3));
+                        }
+                        if r(rev, 6) == b'r' {
+                            set(rev, 5, b'e');
+                            return Some(strip(rev, 0, 5, 2));
+                        }
+                        None
+                    }
+                    b'm' if len > 6 => {
+                        if r(rev, 4) == b'r' {
+                            let res = x(rev, LEMR, 0x5080);
+                            return tail3(rev, res);
+                        }
+                        Some(strip(rev, 0, 4, 2))
+                    }
+                    b's' => {
+                        if v(r(rev, 4)) {
+                            let res = x(rev, LESV, 0x4080);
+                            return Some(strip(rev, res, 4, 2));
+                        }
+                        if len > 6 && r(rev, 4) == b'r' {
+                            return tail3(rev, 0);
+                        }
+                        None
+                    }
+                    b't' => {
+                        if v(r(rev, 4)) {
+                            return Some(x(rev, LETV, 0x4083));
+                        }
+                        if len > 6 && r(rev, 4) == b'r' {
+                            return tail3(rev, 0);
+                        }
+                        None
+                    }
+                    b'v' if len > 6 => {
+                        if r(rev, 4) == b'r' {
+                            return tail3(rev, 0);
+                        }
+                        Some(strip(rev, 0, 4, 2))
+                    }
+                    _ => None,
+                },
+                b'g' => {
+                    if b1 != b'i' {
+                        return None;
+                    }
+                    let b = r(rev, 3);
+                    if b == b'o' {
+                        if r(rev, 4) == b'd' && r(rev, 5) == b'n' {
+                            return Some(3);
+                        }
+                        if r(rev, 4) == b'm' && r(rev, 5) == b'a' && (r(rev, 6) != b'c' || r(rev, 7) != 0) {
+                            return Some(3);
+                        }
+                        if r(rev, 4) == b't' && v(r(rev, 5)) {
+                            return Some(3);
+                        }
+                    }
+                    if b == b'e' && r(rev, 4) == b't' {
+                        return Some(3);
+                    }
+                    if b == b'r' && matches!(r(rev, 4), b'a' | b'e' | b'i') {
+                        set(rev, 2, b'e');
+                        return Some(strip(rev, 0, 2, 0));
+                    }
+                    None
+                }
+                b'r' => match r(rev, 3) {
+                    b'a' | b'i' => Some(2),
+                    b'e' => tail1(rev, LRE),
+                    _ => None,
+                },
+                _ => None,
+            },
+            b'm' => {
+                if b1 != b'i' {
+                    return None;
+                }
+                let b = r(rev, 2);
+                if b == b'o' {
+                    if r(rev, 3) == b'd' && r(rev, 4) == b'n' {
+                        return Some(3);
+                    }
+                    if r(rev, 3) == b't' && matches!(r(rev, 4), b'a' | b'i' | b'u') {
+                        return Some(x(rev, IMOT, 0x4083));
+                    }
+                }
+                if b == b'e' && r(rev, 3) == b't' && v(r(rev, 4)) {
+                    return Some(x(rev, IMET, 0x4083));
+                }
+                if b != b'r' {
+                    return None;
+                }
+                match r(rev, 3) {
+                    b'a' | b'i' => Some(2),
+                    b'e' => {
+                        let res = x(rev, IMRE, 0x4080);
+                        if res == 2 {
+                            return Some(0x20);
+                        }
+                        set(rev, 1, b'e');
+                        Some(strip(rev, res, 1, 0))
+                    }
+                    _ => None,
+                }
+            }
+            b'n' => {
+                let b2 = r(rev, 2);
+                if b2 == b'e' {
+                    let pre = r(rev, 3);
+                    if !matches!(pre, b'c' | b'i' | b'm' | b's' | b't' | b'v') || b1 != b'e' {
+                        return None;
+                    }
+                    let b4 = r(rev, 4);
+                    return match pre {
+                        b'i' => {
+                            if b4 != b'l' || r(rev, 5) != b'g' {
+                                return None;
+                            }
+                            if !v(r(rev, 6)) {
+                                if r(rev, 6) != b'r' {
+                                    return None;
+                                }
+                                set(rev, 5, b'e');
+                                return Some(strip(rev, 0, 5, 2));
+                            }
+                            Some(strip(rev, 0, 6, 3))
+                        }
+                        b'm' => {
+                            if len < 7 {
+                                return None;
+                            }
+                            if b4 == b'r' {
+                                return tail3(rev, 0);
+                            }
+                            let res = x(rev, ENEM, 0x40c0);
+                            Some(strip(rev, res, 4, 2))
+                        }
+                        _ if b4 != b'r' => {
+                            if !v(b4) {
+                                return None;
+                            }
+                            Some(match pre {
+                                b'c' => strip(rev, x(rev, ENEC, 0x4080), 4, 2),
+                                b's' => strip(rev, x(rev, ENES, 0x4080), 4, 2),
+                                b't' => x(rev, ENET, 0x4083),
+                                _ => strip(rev, x(rev, ENEV, 0x4080), 4, 2),
+                            })
+                        }
+                        _ => tail3(rev, 0),
+                    };
+                }
+                if b2 == b'o' {
+                    if b1 != b'e' {
+                        return None;
+                    }
+                    let b = r(rev, 3);
+                    if b == b'd' && r(rev, 4) == b'n' && matches!(r(rev, 5), b'e' | b'a') {
+                        return Some(x(rev, ENODN, 0x5083));
+                    }
+                    if b == b'm' && r(rev, 4) == b'a' && r(rev, 5) == b'i' {
+                        return Some(3);
+                    }
+                    if b != b't' || !matches!(r(rev, 4), b'a' | b'i' | b'u') {
+                        return None;
+                    }
+                    let res = x(rev, ENOT, 0x4083);
+                    return Some(if res == 2 { 0x20 } else { res });
+                }
+                if b2 != b'r' || b1 != b'e' {
+                    return None;
+                }
+                match r(rev, 3) {
+                    b'a' | b'i' => Some(2),
+                    b'e' => tail1(rev, ENRE),
+                    _ => None,
+                }
+            }
+            b's' => {
+                if b1 != b'i' {
+                    return None;
+                }
+                let b = r(rev, 2);
+                let (b3, b4) = (r(rev, 3), r(rev, 4));
+                if b == b'o' && b3 == b'd' && b4 == b'n' && matches!(r(rev, 5), b'a' | b'e') {
+                    return Some(3);
+                }
+                if b == b'r' {
+                    return match b3 {
+                        b'a' | b'i' => Some(2),
+                        b'e' => tail1(rev, ISRE),
+                        _ => None,
+                    };
+                }
+                // LAB_10001e63
+                if b == b'i' && b3 == b'c' {
+                    if b4 == b'r' {
+                        let res = x(rev, ISICR, 0x5080);
+                        return tail3(rev, res);
+                    }
+                    if v(b4) {
+                        return Some(x(rev, ISICV, 0x4084));
+                    }
+                }
+                if b == b'o' && b3 == b't' {
+                    match b4 {
+                        b'a' => return Some(x(rev, ISOTA, 0x5083)),
+                        b'u' => return Some(3),
+                        b'i' => {
+                            let res = x(rev, ISOTI, 0x5083);
+                            return Some(if res == 2 { 0x20 } else { res });
+                        }
+                        _ => {}
+                    }
+                }
+                if b == b'a' && b3 == b't' {
+                    match b4 {
+                        b'a' => return Some(x(rev, ISATA, 0x5083)),
+                        b'u' | b'i' => return Some(3),
+                        _ => {}
+                    }
+                }
+                if b == b'e' && b3 == b't' {
+                    match b4 {
+                        b'a' => {
+                            let res = x(rev, ISETA, 0x5083);
+                            return Some(if res == 2 { 0x20 } else { res });
+                        }
+                        b'u' | b'i' => return Some(3),
+                        _ => {}
+                    }
+                }
+                if b == b'i' && b3 == b't' && matches!(b4, b'a' | b'u' | b'i') {
+                    return Some(3);
+                }
+                if b != b'i' {
+                    return None;
+                }
+                if b3 == b'v' && b4 == b'o' && ((r(rev, 5) == b'd' && r(rev, 6) == b'n') || r(rev, 5) == b't') {
+                    return Some(4);
+                }
+                (b3 == b'l' && b4 == b'g' && r(rev, 5) == b'o').then_some(4)
+            }
+            b't' => {
+                if b1 != b'i' {
+                    return None;
+                }
+                if r(rev, 2) == b'o' && r(rev, 3) == b'd' && r(rev, 4) == b'n' {
+                    return Some(3);
+                }
+                if r(rev, 2) != b'r' {
+                    return None;
+                }
+                match r(rev, 3) {
+                    b'a' | b'i' => Some(2),
+                    b'e' => tail1(rev, ITRE),
+                    _ => None,
+                }
+            }
+            b'v' => {
+                if b1 != b'i' {
+                    return None;
+                }
+                let b = r(rev, 2);
+                if b == b'o' && r(rev, 3) == b'd' && r(rev, 4) == b'n' {
+                    return Some(3);
+                }
+                if b == b'e' && r(rev, 3) == b't' && v(r(rev, 4)) {
+                    return Some(x(rev, IVET, 0x4083));
+                }
+                if b != b'r' {
+                    return None;
+                }
+                match r(rev, 3) {
+                    b'a' | b'i' => Some(2),
+                    b'e' => tail1(rev, IVRE),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 }
 
@@ -2059,6 +2507,568 @@ impl Italian {
     }
 }
 
+// --- LesPronunciabile (0x1000b2e0 → 0x1000b140), LesGetSymbolName ---------------
+
+/// `ELQSearchCompactString` word lists (flags 1, no separator) the spelling
+/// test uses: (address, size).
+/// 0x10003350: words without a vowel read as words.
+const NO_VOWEL_WORDS: (u32, u32) = (0x1002c368, 0xd);
+/// 0x10003370: two-letter words.
+const WORDS_2: (u32, u32) = (0x1002c378, 0xb2);
+/// 0x10003390: three-letter words.
+const WORDS_3: (u32, u32) = (0x1002c430, 0x141);
+/// 0x100036a0, 0x100036c0, 0x100036e0: spelled words of 2, 2–3, 2–4 letters.
+const SPELLED_2: (u32, u32) = (0x1002c644, 0x4);
+const SPELLED_3: (u32, u32) = (0x1002c648, 0xbd);
+const SPELLED_4: (u32, u32) = (0x1002c708, 0x1f);
+/// 0x10009eb0: longer words read whatever their letters.
+const WORDS_LONG: (u32, u32) = (0x1002c578, 0xc9);
+/// 0x10003800, 0x100037c0, 0x10003770: consonant pairs, triples and
+/// quadruples that may stand inside a word (keys of 2, 3, 4 letters).
+const INNER_2: (u32, u32) = (0x1002c9b8, 0xb8);
+const INNER_3: (u32, u32) = (0x1002c768, 0x249);
+const INNER_4: (u32, u32) = (0x1002c728, 0x3d);
+/// Literal strings of the consonant-run test 0x100074c0.
+const DOUBLED_NOT: u32 = 0x1002fdb0; // "wxqk"
+const H_AFTER: u32 = 0x1002fda8; // "gspck"
+const END_AFTER_R: u32 = 0x1002fd98;
+const END_AFTER_L: u32 = 0x1002fd88;
+const END_AFTER_N: u32 = 0x1002fd7c;
+const END_AFTER_M: u32 = 0x1002fd78;
+const START_AFTER_S: u32 = 0x1002fd6c;
+const START_AFTER_C: u32 = 0x1002fd64;
+const START_AFTER_P: u32 = 0x1002fd5c;
+const START_AFTER_T: u32 = 0x1002fd54;
+const START_AFTER_K: u32 = 0x1002fd4c;
+const INNER_5: u32 = 0x1002fd44; // "stscr"
+/// Literal strings of the vowel-run tests 0x10007ab0, 0x100038b0,
+/// 0x100039f0 and the three-letter test 0x10003390.
+const VOWELS_6: u32 = 0x1002fdc8; // "cuoiai"
+const WHOLE_4A: u32 = 0x1002fdc0; // "gioii"
+const WHOLE_4B: u32 = 0x1002fdb8; // "guaii"
+const ZOOIAT: u32 = 0x1002fb18;
+const AUIA: u32 = 0x1002fb20;
+const SAS: u32 = 0x1002fb14;
+/// LesGetSymbolName's switch (0x10002dd0): index bytes for `c + 0x80`, then
+/// the case addresses; the range check's `ja default` at 0x10002ddc.
+const NAMES_INDEX: u32 = 0x10003198;
+const NAMES_JUMPS: u32 = 0x10003078;
+const NAMES_RANGE_JUMP: u32 = 0x10002ddc;
+/// LesGetAbbreviazioni (0x1000b610): pairs `{ abbreviation, expansion }`;
+/// their count is LesGetNumeroAbbreviazioni's (0x1000b600, `mov eax, n`).
+const ABBREVIATIONS: u32 = 0x100319b8;
+const ABBREVIATIONS_COUNT: u32 = 0x1000b600;
+/// LesEspandiAbbreviazioni (0x10007430): the tokens it expands (`s.`,
+/// `S.`) and 0x100072d0's saints list (`name=letter`, separator `=`).
+const SAINT_TOKENS: [u32; 2] = [0x1002fd40, 0x1002fd3c];
+const SAINTS: (u32, u32) = (0x1002d668, 0x2217);
+const SAINT_INDEX: u32 = 0x10007410;
+const SAINT_JUMPS: u32 = 0x100073f0;
+
+/// `strchr(set, c) != NULL`: the terminator is found too.
+fn strchr(set: &[u8], c: u8) -> bool {
+    c == 0 || set.contains(&c)
+}
+
+/// Not a consonant for the spelling tests: outside `a`–`z`, or a vowel
+/// (`j` and `y` included).
+fn vowelish(c: u8) -> bool {
+    !c.is_ascii_lowercase() || b"aeouijy".contains(&c)
+}
+
+fn ijy(c: u8) -> bool {
+    matches!(c, b'i' | b'j' | b'y')
+}
+
+fn aeou(c: u8) -> bool {
+    matches!(c, b'a' | b'e' | b'o' | b'u')
+}
+
+/// 0x10003700 / 0x10003840: the next run of exactly `n` `kind` marks in
+/// `cv` from `p` on, else `cv`'s length.
+fn next_run(cv: &[u8], mut p: usize, n: usize, kind: u8) -> usize {
+    loop {
+        while at(cv, p) != 0 && at(cv, p) != kind {
+            p += 1;
+        }
+        if at(cv, p) == 0 {
+            return cv.len();
+        }
+        let start = p;
+        while at(cv, p) == kind {
+            p += 1;
+        }
+        if p - start == n {
+            return start;
+        }
+        if at(cv, p) == 0 {
+            return cv.len();
+        }
+    }
+}
+
+/// `strncpy(buf, s + from, n)` read back as a C string.
+fn piece(s: &[u8], from: usize, n: usize) -> Vec<u8> {
+    s.get(from..).unwrap_or(&[]).iter().take(n).copied().collect()
+}
+
+impl Italian {
+    /// `ELQSearchCompactString(key, list, 1, size, 0)` found the key.
+    fn listed(&self, key: &[u8], (va, size): (u32, u32)) -> bool {
+        super::common::search_compact(key, &self.pe.at(va)[..size as usize], 1, 0).is_some()
+    }
+
+    /// 0x1000b140: whether a word reads as written (else the engine spells
+    /// it); `c` is the engine's char argument.
+    pub fn pronunciabile_c(&self, word: &[u8], c: u8) -> bool {
+        let mut lw = Vec::new();
+        for &b in word.iter().take(0x3f) {
+            if b == 0 {
+                break;
+            }
+            if b == b'\'' || self.flags(b) & ACCENTED != 0 {
+                return true;
+            }
+            lw.push(self.chars[b as usize].0);
+        }
+        let n = lw.len();
+        if n == 1 && matches!(lw[0], b'y' | b'j') {
+            return false;
+        }
+        // 0x100032e0: a vowel anywhere
+        if !lw.iter().any(|&b| self.flags(b) & VOWEL != 0) {
+            return self.listed(&lw, NO_VOWEL_WORDS);
+        }
+        if (n == 2 && self.listed(&lw, SPELLED_2))
+            || ((2..=3).contains(&n) && self.listed(&lw, SPELLED_3))
+            || ((2..=4).contains(&n) && self.listed(&lw, SPELLED_4))
+        {
+            return false;
+        }
+        if c == 0 {
+            let len = word.iter().position(|&b| b == 0).unwrap_or(word.len());
+            // 0x10003310: an upper-case letter after the first
+            if len >= 4 || !word[..len].iter().skip(1).any(|&b| self.flags(b) & UPPER != 0) {
+                return true;
+            }
+        }
+        match n {
+            0 => true,
+            1 => matches!(lw[0], b'a' | b'e' | b'o' | b'i'),
+            2 => self.listed(&lw, WORDS_2),
+            3 => self.three_letters(&lw),
+            _ => self.syllables(&lw),
+        }
+    }
+
+    /// 0x10003390: a three-letter word.
+    fn three_letters(&self, w: &[u8]) -> bool {
+        if self.listed(w, WORDS_3) {
+            return true;
+        }
+        let (b0, b1, b2) = (w[0], w[1], w[2]);
+        if b0 == b1 && b1 == b2 {
+            return false;
+        }
+        if vowelish(b0) {
+            if vowelish(b1) {
+                if vowelish(b2) {
+                    return !aeou(b1);
+                }
+                return !aeou(b0) && !ijy(b1);
+            }
+            if vowelish(b2) {
+                return true;
+            }
+            if matches!(b0, b'j' | b'y') {
+                return false;
+            }
+            return matches!(b1, b's' | b'l' | b'r');
+        }
+        if vowelish(b1) {
+            if w == self.s(SAS) {
+                return false;
+            }
+            if b1 == b2 && aeou(b1) {
+                return false;
+            }
+            return b0 != b'x';
+        }
+        let then_vowel = matches!(b2, b'a' | b'e' | b'o' | b'u' | b'i');
+        match b0 {
+            b'b' | b'c' | b'f' | b'g' | b'k' | b'p' => matches!(b1, b'l' | b'r') && then_vowel,
+            b'd' | b't' => b1 == b'r' && then_vowel,
+            _ => false,
+        }
+    }
+
+    /// 0x10009eb0: a longer word, by its runs of consonants and vowels.
+    fn syllables(&self, w: &[u8]) -> bool {
+        if self.listed(w, WORDS_LONG) {
+            return true;
+        }
+        let len = w.len();
+        if (1..len).any(|i| w[i - 1] == w[i] && w[i] == at(w, i + 1)) {
+            return false;
+        }
+        let cv: Vec<u8> = w.iter().map(|&c| if vowelish(c) { b'V' } else { b'C' }).collect();
+        let longest = |k: u8| {
+            let (mut best, mut run) = (0, 0);
+            for &m in &cv {
+                run = if m == k { run + 1 } else { 0 };
+                best = best.max(run);
+            }
+            best
+        };
+        for n in (2..=longest(b'C')).rev() {
+            let mut p = next_run(&cv, 0, n, b'C');
+            while p < len {
+                if !self.consonants(w, p, n) {
+                    return false;
+                }
+                p = next_run(&cv, p + n, n, b'C');
+            }
+        }
+        for n in (2..=longest(b'V')).rev() {
+            let mut p = next_run(&cv, 0, n, b'V');
+            while p < len {
+                if !self.vowels(w, p, n) {
+                    return false;
+                }
+                p = next_run(&cv, p + n, n, b'V');
+            }
+        }
+        true
+    }
+
+    /// 0x100074c0: the `n` consonants at `pos` of `w` may stand there.
+    fn consonants(&self, w: &[u8], pos: usize, n: usize) -> bool {
+        let start = pos == 0;
+        let end = pos + n == w.len();
+        if start && end {
+            return false;
+        }
+        let (c0, c1) = (at(w, pos), at(w, pos + 1));
+        // the pairs read anywhere: s+f/t/l/c/k, tz ts gn ps, gh sh ph ch kh
+        let pair = (c0 == b's' && matches!(c1, b'f' | b't' | b'l' | b'c' | b'k'))
+            || (c0 == b't' && matches!(c1, b'z' | b's'))
+            || (c0 == b'g' && c1 == b'n')
+            || (c0 == b'p' && c1 == b's')
+            || (c1 == b'h' && strchr(self.s(H_AFTER), c0));
+        match n {
+            2 if end => {
+                if !vowelish(c0) && c0 == c1 && !strchr(self.s(DOUBLED_NOT), c0) {
+                    return true;
+                }
+                if pair {
+                    return true;
+                }
+                match c0 {
+                    b'c' => c1 == b'k',
+                    b'f' => c1 == b't',
+                    b'l' => strchr(self.s(END_AFTER_L), c1),
+                    b'm' => strchr(self.s(END_AFTER_M), c1),
+                    b'n' => strchr(self.s(END_AFTER_N), c1),
+                    b'r' => strchr(self.s(END_AFTER_R), c1),
+                    b's' => matches!(c1, b'p' | b't' | b'b' | b'd' | b'k' | b'q'),
+                    _ => false,
+                }
+            }
+            2 if start => {
+                if pair {
+                    return true;
+                }
+                match c0 {
+                    b'b' | b'f' | b'g' | b'v' => matches!(c1, b'l' | b'r'),
+                    b'c' => strchr(self.s(START_AFTER_C), c1),
+                    b'd' => c1 == b'r',
+                    b'k' => strchr(self.s(START_AFTER_K), c1),
+                    b'm' => c1 == b'n',
+                    b'p' => strchr(self.s(START_AFTER_P), c1),
+                    b's' => strchr(self.s(START_AFTER_S), c1),
+                    b't' => strchr(self.s(START_AFTER_T), c1),
+                    _ => false,
+                }
+            }
+            2 => {
+                pair || self.consonants(&piece(w, pos - 1, 3), 1, 2)
+                    || self.consonants(&piece(w, pos, 3), 0, 2)
+                    || self.listed(&piece(w, pos, 2), INNER_2)
+                    || (c0 == b't' && c1 == b'g' && at(w, pos + 2) == b'i')
+            }
+            3 if end => matches!(c0, b'l' | b'r' | b'n' | b'm') && matches!(c1, b'g' | b'p' | b'c') && at(w, pos + 2) == b'h',
+            3 if !start => self.listed(&piece(w, pos, 3), INNER_3),
+            3 => {
+                let w2 = at(w, 2);
+                at(w, 0) == b's'
+                    && match at(w, 1) {
+                        b'b' | b'd' | b'k' | b'p' | b'q' | b't' => matches!(w2, b'l' | b'r'),
+                        b'c' => matches!(w2, b'h' | b'l' | b'r'),
+                        b'f' => w2 == b'r',
+                        b'g' => matches!(w2, b'n' | b'h' | b'l' | b'r'),
+                        _ => false,
+                    }
+            }
+            4 => !start && !end && self.listed(&piece(w, pos, 4), INNER_4),
+            5 => !start && !end && super::common::starts(&w[pos..], self.s(INNER_5), 5),
+            _ => false,
+        }
+    }
+
+    /// 0x10007ab0: the `n` vowels at `pos` of `w` may stand there.
+    fn vowels(&self, w: &[u8], pos: usize, n: usize) -> bool {
+        let start = pos == 0;
+        let end = pos + n == w.len();
+        let middle = !start && !end;
+        let a = |i: usize| at(w, pos + i);
+        let before = if pos > 0 { w[pos - 1] } else { 0 };
+        match n {
+            2 => {
+                let (b0, b1) = (a(0), a(1));
+                if b0 == b'u' && b1 == b'u' {
+                    return false;
+                }
+                if w.len() != 4 || !end || b0 != b1 {
+                    return true;
+                }
+                !matches!(b0, b'a' | b'o')
+            }
+            3 => {
+                let (b0, b1, b2) = (a(0), a(1), a(2));
+                if b1 == b2 && aeou(b1) {
+                    if b0 != b'i' {
+                        return b0 == b'u' && end && b1 == b'e';
+                    }
+                    return middle && b1 == b'o' && before == b'd' && a(3) == b'n';
+                }
+                if ijy(b1) && ijy(b2) {
+                    if ijy(b0) {
+                        return false;
+                    }
+                    return !start && (b1 == b'i' || b2 == b'i');
+                }
+                if b0 == b1 && matches!(b0, b'a' | b'e' | b'o') {
+                    return middle && b0 == b'a' && before == b'v' && a(3) == b't' && b2 == b'u';
+                }
+                match b0 {
+                    b'a' if matches!(b1, b'e' | b'o') => !start && (b2 == b'i' || b2 == b'u'),
+                    b'a' if b1 != b'u' => true,
+                    b'a' => !start && (b2 == b'i' || b2 == b'o'),
+                    b'e' => match b1 {
+                        b'a' => !start && b2 == b'i',
+                        b'o' if b2 != b'a' => !start && (b2 == b'i' || b2 == b'u'),
+                        b'o' => middle && before == b'l' && a(3) == b'n',
+                        b'u' => !start && b2 == b'o',
+                        _ => true,
+                    },
+                    b'i' => !(b1 == b'u' || ijy(b1)) || !start,
+                    b'o' => match b1 {
+                        b'a' => !start && (b2 == b'i' || b2 == b'u'),
+                        b'e' if b2 == b'u' => middle && before == b'd' && a(3) == b'r',
+                        b'e' => b2 == b'i' && !start,
+                        b'u' => b2 == b'o' && !start,
+                        _ => true,
+                    },
+                    b'u' => !start,
+                    _ if !ijy(b1) => b2 != b'u',
+                    _ => !start,
+                }
+            }
+            4 => {
+                let (b0, b1, b2, b3) = (a(0), a(1), a(2), a(3));
+                if ijy(b0) && aeou(b1) && ijy(b2) && aeou(b3) {
+                    return true;
+                }
+                if start {
+                    return aeou(b0) && ijy(at(w, 1)) && at(w, 2) == b'u' && at(w, 3) == b'o';
+                }
+                if self.inner_four(w, pos) {
+                    return true;
+                }
+                if !end {
+                    return self.inner_four_b(w, pos);
+                }
+                w == self.s(WHOLE_4A) || w == self.s(WHOLE_4B)
+            }
+            5 => {
+                if !middle {
+                    if !end || start {
+                        return false;
+                    }
+                    return (a(0) == b'o' && ijy(a(1)) && a(2) == b'a' && ijy(a(3)) && a(4) == b'o')
+                        || (a(0) == b'u' && matches!(a(1), b'a' | b'e' | b'o') && a(3) == b'a' && ijy(a(2)) && ijy(a(4)));
+                }
+                ijy(a(0)) && a(1) == b'a' && ijy(a(2)) && a(3) == b'u' && a(4) == b'o'
+            }
+            6 => super::common::starts(w, self.s(VOWELS_6), 6) && matches!(at(w, 6), b'a' | b'e' | b'o') && end,
+            _ => true,
+        }
+    }
+
+    /// 0x100038b0: four vowels inside a word read as they are.
+    fn inner_four(&self, w: &[u8], pos: usize) -> bool {
+        let a = |i: usize| at(w, pos + i);
+        match a(0) {
+            b'i' | b'j' | b'y' => false,
+            b'u' => {
+                let b1 = a(1);
+                if matches!(b1, b'a' | b'e' | b'o') {
+                    ijy(a(2)) && aeou(a(3))
+                } else if ijy(b1) {
+                    match a(2) {
+                        b'a' | b'e' | b'o' => a(3) == b'i',
+                        c => ijy(c),
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => {
+                if !ijy(a(1)) {
+                    return super::common::starts(w, self.s(ZOOIAT), 6);
+                }
+                match a(2) {
+                    b'i' | b'j' | b'y' => true,
+                    b'u' => a(3) != b'u',
+                    _ => a(3) == b'i',
+                }
+            }
+        }
+    }
+
+    /// 0x100039f0: four vowels inside a word, the other shapes.
+    fn inner_four_b(&self, w: &[u8], pos: usize) -> bool {
+        let s = &w[pos..];
+        let a = |i: usize| at(s, i);
+        match a(0) {
+            b'i' => {
+                let b1 = a(1);
+                if !matches!(b1, b'a' | b'e' | b'o') {
+                    return false;
+                }
+                let b2 = a(2);
+                if matches!(b2, b'a' | b'e' | b'o') && b1 != b2 {
+                    return a(3) == b'u';
+                }
+                b2 == b'u' && a(3) == b'o'
+            }
+            b'a' | b'e' | b'o' => {
+                super::common::starts(s, self.s(AUIA), 4) || (ijy(a(1)) && matches!(a(2), b'a' | b'e' | b'o') && a(3) == b'u')
+            }
+            _ => false,
+        }
+    }
+
+    /// LesGetSymbolName (0x100032a0 → 0x10002dd0): a letter's or symbol's
+    /// name; `mode` is the engine's flag (punctuation is named only when
+    /// set). The compiled switch is read from the module: each case is
+    /// `mov eax, imm32; ret`, possibly behind `test al, al` and a jump.
+    pub fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
+        let k = c as i8 as i32 + 0x80;
+        let mut pc = if (0..=0xfe).contains(&k) {
+            self.pe.u32(NAMES_JUMPS + 4 * self.pe.u8(NAMES_INDEX + k as u32) as u32)
+        } else {
+            let b = self.pe.at(NAMES_RANGE_JUMP);
+            (NAMES_RANGE_JUMP + 6).wrapping_add(i32::from_le_bytes([b[2], b[3], b[4], b[5]]) as u32)
+        };
+        let (mut eax, mut zf) = (0u32, false);
+        for _ in 0..16 {
+            let b = self.pe.at(pc);
+            match *b {
+                [0x84, 0xc0, ..] => {
+                    zf = mode == 0;
+                    pc += 2;
+                }
+                [0x0f, 0x84, r0, r1, r2, r3, ..] => {
+                    pc += 6;
+                    if zf {
+                        pc = pc.wrapping_add(i32::from_le_bytes([r0, r1, r2, r3]) as u32);
+                    }
+                }
+                [op @ (0x74 | 0x75), r, ..] => {
+                    pc += 2;
+                    if (op == 0x74) == zf {
+                        pc = pc.wrapping_add(r as i8 as i32 as u32);
+                    }
+                }
+                [0xb8, a0, a1, a2, a3, ..] => {
+                    eax = u32::from_le_bytes([a0, a1, a2, a3]);
+                    pc += 5;
+                }
+                [0xc3, ..] => return self.pe.cstr(eax).to_vec(),
+                _ => break,
+            }
+        }
+        Vec::new()
+    }
+
+    /// LesNormalizzaAccento (0x10002b50): an apostrophe or backquote (` ' ’
+    /// ´) after a vowel becomes its accent (grave for the backquote), one
+    /// before a final `s` goes (`moody's`), any other is a plain
+    /// apostrophe; then acute á í ú become grave.
+    pub fn normalizza_accento(&self, w: &mut Vec<u8>) {
+        let mut out: Vec<u8> = Vec::with_capacity(w.len());
+        for i in 0..w.len() {
+            let c = w[i];
+            if !matches!(c, b'`' | b'\'' | 0x92 | 0xb4) {
+                out.push(c);
+                continue;
+            }
+            let after_vowel = i > 0 && b"aeiouy".contains(&self.chars[w[i - 1] as usize].0);
+            if !after_vowel {
+                if self.chars[at(w, i + 1) as usize].0 != b's' || at(w, i + 2) != 0 {
+                    out.push(b'\'');
+                }
+            } else if let Some(last) = out.last_mut() {
+                *last = if c == b'`' { grave(w[i - 1]) } else { acute(w[i - 1]) };
+            }
+        }
+        for c in out.iter_mut() {
+            *c = match *c {
+                0xc1 => 0xc0,
+                0xcd => 0xcc,
+                0xda => 0xd9,
+                0xe1 => 0xe0,
+                0xed => 0xec,
+                0xfa => 0xf9,
+                x => x,
+            };
+        }
+        *w = out;
+    }
+
+    /// LesEspandiAbbreviazioni (0x10007430): `s.`/`S.` before a saint's
+    /// name (0x100072d0: the name lowered, looked up in `SAINTS`; its
+    /// letter picks the title).
+    pub fn espandi_abbreviazione(&self, token: &[u8], next: &[u8]) -> Option<Vec<u8>> {
+        if !SAINT_TOKENS.iter().any(|&a| token == self.s(a)) {
+            return None;
+        }
+        let key: Vec<u8> = next.iter().take(63).map(|&c| self.chars[c as usize].0).collect();
+        let blob = &self.pe.at(SAINTS.0)[..SAINTS.1 as usize];
+        let o = super::common::search_compact(&key, blob, 1, b'=')?;
+        // the letter's case (index bytes 0x10007410 for `letter - 'A'`,
+        // jumps 0x100073f0), each `mov eax, title`
+        let k = (blob[o] as i8 as i32).wrapping_sub(0x41);
+        if !(0..=0x13).contains(&k) {
+            return None;
+        }
+        let case = self.pe.u32(SAINT_JUMPS + 4 * self.pe.u8(SAINT_INDEX + k as u32) as u32);
+        match *self.pe.at(case) {
+            [0xb8, a0, a1, a2, a3, ..] => Some(self.s(u32::from_le_bytes([a0, a1, a2, a3])).to_vec()),
+            _ => None,
+        }
+    }
+
+    /// LesGetAbbreviazioni's pairs (0x1000b610), in the module's order.
+    fn abbreviation_pairs(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let n = self.pe.u32(ABBREVIATIONS_COUNT + 1);
+        (0..n)
+            .map(|i| (self.s(self.pe.u32(ABBREVIATIONS + 8 * i)).to_vec(), self.s(self.pe.u32(ABBREVIATIONS + 8 * i + 4)).to_vec()))
+            .collect()
+    }
+}
+
 // --- The engine's side (LoqTTS7.dll, `common`) calls these --------------------
 
 impl super::common::Les for Italian {
@@ -2069,13 +3079,6 @@ impl super::common::Les for Italian {
     }
     fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
         self.leggi(toks, i, kind, dmy)
-    }
-    fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
-        let spoken = match digits.parse::<u64>() {
-            Ok(n) if digits.len() <= 12 => crate::g2p::italian_number(n),
-            _ => digits.chars().map(|d| crate::g2p::italian_number(d.to_digit(10).unwrap_or(0) as u64)).collect::<Vec<_>>().join(" "),
-        };
-        spoken.split(' ').map(|p| p.chars().filter_map(super::common::to_8bit).collect()).collect()
     }
     fn analizza(&self, w: &mut [Word]) {
         Italian::analizza(self, w)
@@ -2099,6 +3102,27 @@ impl super::common::Les for Italian {
     }
     fn symbol(&self, code: u32) -> Option<&str> {
         Italian::symbol(self, code)
+    }
+    fn normalizza_accento(&self, w: &mut Vec<u8>) {
+        Italian::normalizza_accento(self, w)
+    }
+    fn pronunciabile(&self, w: &[u8]) -> bool {
+        self.pronunciabile_c(w, 0)
+    }
+    fn pronunciabile_flag(&self, w: &[u8], flag: u8) -> bool {
+        self.pronunciabile_c(w, flag)
+    }
+    fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
+        Italian::symbol_name(self, c, mode)
+    }
+    fn espandi_abbreviazione(&self, token: &[u8], next: &[u8]) -> Option<Vec<u8>> {
+        Italian::espandi_abbreviazione(self, token, next)
+    }
+    fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
+        self.abbreviation_table.get_or_init(|| super::common::abbreviation_table(self, &self.abbreviation_pairs()))
+    }
+    fn text_filters(&self) -> &[super::common::TextFilter] {
+        &self.filters
     }
 }
 

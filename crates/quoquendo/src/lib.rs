@@ -18,9 +18,7 @@
 
 pub mod catalog;
 pub mod codec;
-pub mod french;
 pub mod g2p;
-pub mod german;
 pub mod gpr;
 pub mod inno;
 pub mod lang;
@@ -29,7 +27,6 @@ pub mod pack;
 pub mod phoneset;
 pub mod phonetics;
 pub mod sig;
-pub mod spanish;
 pub mod speex;
 pub mod sqlite;
 pub mod synth;
@@ -378,10 +375,8 @@ impl Voice {
         }
         db.tables = files.library.as_deref().and_then(|l| synth::PhoneTables::from_library(l, &db));
         let lang = descriptor.language();
-        let frontend = match &db.tables {
-            Some(t) if files.dbl.is_some() || files.gpr.is_some() => {
-                g2p::Frontend::from_files(lang, files.dbl.as_deref(), files.gpr.as_deref(), &t.phone_features())
-            }
+        let frontend = match &files.dbl {
+            Some(dbl) if !lang.is_ported() => g2p::Frontend::from_files(lang, Some(dbl)),
             _ => g2p::Frontend::rules(lang),
         };
         let frontend = match files.language_library {
@@ -396,17 +391,22 @@ impl Voice {
             None => frontend,
         };
         // the voice library's phone stage runs after the module's FON in
-        // the original, for every voice; the fitted rules were fitted to
-        // the phones voices say and already include it
+        // the original, for every voice; the built-in rules of the other
+        // languages already give the voice's phones
         let frontend = match files.library.as_deref().and_then(voicefon::VoiceFon::from_library) {
             Some(v) if frontend.has_module() => frontend.with_voice(v),
             _ => frontend,
         };
+        // a ported language without its module (no or another DLL) has no
+        // rules to fall back on: the voice needs its language data
+        let language_missing = files
+            .language_missing
+            .or_else(|| (lang.is_ported() && !frontend.has_module()).then(|| descriptor.mother_tongue.clone()));
         Ok(Voice {
             descriptor,
             db,
             frontend,
-            language_missing: files.language_missing,
+            language_missing,
         })
     }
 }

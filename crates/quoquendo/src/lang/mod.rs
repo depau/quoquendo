@@ -43,7 +43,7 @@ pub struct ModuleFiles {
 /// The ported module for `lang`, when there is one and the files hold it.
 pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
     match lang {
-        Language::Italian => italian::Italian::from_dll(files.dll.clone()).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::Italian => italian::Italian::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::Spanish => spanish::Spanish::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::English => english::English::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::German => german::German::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
