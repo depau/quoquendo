@@ -35,6 +35,7 @@ mod french;
 mod german;
 mod grace;
 mod kate;
+mod polish;
 mod portuguese;
 mod simon;
 mod spanish;
@@ -101,6 +102,8 @@ const PORTS: &[Port] = &[
     annika::ANNIKA,
     sven::SVEN,
     willem::WILLEM,
+    polish::KRZYSZTOF,
+    polish::ZOSIA,
 ];
 
 /// The engine's default `FonVidMetaFonema` (0x1002d100, and the voices'

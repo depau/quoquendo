@@ -41,7 +41,7 @@ impl Language {
     /// The languages whose module is ported (`crate::lang`): they have no
     /// built-in rules, only the original's module from the language pack.
     pub fn is_ported(self) -> bool {
-        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish)
+        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish)
     }
 
     pub fn from_voice(mother_tongue: &str, aliases: &str) -> Language {
@@ -449,11 +449,10 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
         _ => raw.clone(),
     };
     let mut out = match lang {
-        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish => unreachable!(),
+        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish => unreachable!(),
         Language::Catalan => catalan(&w),
         Language::Danish | Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
-        Language::Polish => polish(&w),
         Language::Turkish | Language::Russian | Language::Generic => generic(&w),
     };
     stress(&mut out, lang, accent_final);
@@ -625,62 +624,6 @@ fn finnish(w: &[char]) -> Vec<String> {
     out
 }
 
-// --- Polish -----------------------------------------------------------------
-
-fn polish(w: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
-    let n = w.len();
-    while i < n {
-        let c = w[i];
-        let mut used = 1;
-        if starts(w, i, "sz") {
-            push_all(&mut out, &["$"]);
-            used = 2;
-        } else if starts(w, i, "cz") {
-            push_all(&mut out, &["T$"]);
-            used = 2;
-        } else if starts(w, i, "rz") {
-            push_all(&mut out, &["Zg"]);
-            used = 2;
-        } else if starts(w, i, "dz") {
-            push_all(&mut out, &["Dz"]);
-            used = 2;
-        } else if starts(w, i, "ch") {
-            push_all(&mut out, &["x"]);
-            used = 2;
-        } else if starts(w, i, "ni") {
-            push_all(&mut out, &["Gn"]);
-            used = 2;
-        } else {
-            match strip_accent(c) {
-                'ą' => push_all(&mut out, &["o):"]),
-                'ę' => push_all(&mut out, &["E):"]),
-                'ł' => push_all(&mut out, &["w"]),
-                'j' => push_all(&mut out, &["y:"]),
-                'w' => push_all(&mut out, &["v"]),
-                'r' => push_all(&mut out, &["r"]),
-                'h' => push_all(&mut out, &["x"]),
-                'c' => push_all(&mut out, &["Ts"]),
-                'z' => push_all(&mut out, &["z"]),
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                'i' => push_all(&mut out, &["i"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["u"]),
-                'y' => push_all(&mut out, &["i"]),
-                'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 's' | 't' | 'v' => {
-                    let s = strip_accent(c).to_string();
-                    out.push(s);
-                }
-                _ => {}
-            }
-        }
-        i += used.max(1);
-    }
-    out
-}
-
 // --- anything else ----------------------------------------------------------
 
 fn generic(w: &[char]) -> Vec<String> {
@@ -743,7 +686,7 @@ fn stress(symbols: &mut [String], lang: Language, accent_final: bool) {
         *vowels.last().unwrap()
     } else {
         match lang {
-            Language::Finnish | Language::Polish | Language::Turkish => vowels[0],
+            Language::Finnish | Language::Turkish => vowels[0],
             _ if vowels.len() >= 2 => vowels[vowels.len() - 2],
             _ => vowels[0],
         }

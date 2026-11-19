@@ -11,6 +11,7 @@ pub mod french;
 pub mod german;
 pub mod greek;
 pub mod italian;
+pub mod polish;
 pub mod portuguese;
 pub mod spanish;
 pub mod swedish;
@@ -61,6 +62,7 @@ pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
         Language::Portuguese => portuguese::Portuguese::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::Swedish => swedish::Swedish::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::Dutch => dutch::Dutch::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::Polish => polish::Polish::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         _ => None,
     }?;
     let filters = files.util.as_deref().and_then(|u| textfilter::TextFilters::new(u, &files.regexps, &files.lexicons));
