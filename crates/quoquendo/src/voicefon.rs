@@ -24,6 +24,7 @@
 use crate::lang::common::{Pe, Phone, Word};
 use crate::phoneset::{engine_features, phone_table, PhoneDef};
 
+mod afroditi;
 mod alan;
 mod allison;
 mod bernard;
@@ -87,6 +88,7 @@ const PORTS: &[Port] = &[
     simon::SIMON,
     grace::GRACE,
     alan::ALAN,
+    afroditi::AFRODITI,
 ];
 
 /// The engine's default `FonVidMetaFonema` (0x1002d100, and the voices'

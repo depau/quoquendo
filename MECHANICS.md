@@ -208,6 +208,74 @@ input history `X` of 0x2800 bytes (5120 samples), zeroed, the factor at
 +0x20, 1.0 at +0x30, "first call" at +0x2c, large filter on, linear
 interpolation instead when upsampling (+0xe, 0x1001c0e0). Every chunk:
 
+- is appended to the input waiting (`ELQBufferCat`, count at +0x18) and is
+  owed `floor(n·factor)` outputs in the output queue (chunk +0xc,
+  0x1002904a; queue 0x10023e20, add 0x10023e80);
+- 0x10028c00 asks for `floor(pending·factor)` outputs (floor 0x10069b40),
+  16 fewer when above 16, from 0x1001c930 → 0x1001c370 with `LpScl` =
+  trunc(1.0·14746), `Nmult` 65, `Nwing` 8192; the input consumed leaves
+  the buffer (`ELQBufferLeftShift`), the outputs join the queue
+  (0x10023ec0), and the queue hands each phone on, first in first out,
+  once its owed samples are there (0x10024010, `ELQBufferPop`).
+
+0x1001c370, one call: at most `trunc(4096·factor)` = 2978 outputs per pass
+(0x1001c377; 4096.0 at 0x100a5c00), `LpScl` = trunc(14746·factor + 0.5) =
+10724 when factor < 1, `Xoff` = trunc((65 + 1)·0.5·max(1, 1/factor) + 10)
+= 55 (10.0 at 0x100a5b30); `Time` = `Xoff` << 15 on the first call only
+(+0x2c, cleared by 0x1001c930 at 0x1001c9ea). readData (0x1001c030)
+reads the input from its start on every call (position +0x38 reset on the
+call's first read) into `X` from `Xread` (`Xoff` at first) up to 4096, so
+past the new data `X` holds what earlier calls left there. Each pass asks
+SrcUD for what is still wanted, or `trunc(4096·factor) − trunc(2·Xoff·
+factor)` = 2898 when `trunc(4096·factor) − 2·Xoff·factor` is below that
+(0x1001c4d9); SrcUD (0x1001be70) makes exactly that many, whatever input
+there is, and reports by how many whole samples `Time` moved, 16-bit. `Time`
+goes back by that, `X` moves down by it (`X[i] = X[i + Nx]` for
+`Xoff − Nx + 4096` samples) and the next read goes to `4096 − Nx`. The
+last sample readData reports only stops a call that has no sample past
+`Xoff` (Smith's `last`, kept as the DLL keeps it). Each call's input
+therefore runs about 22 samples short of what its last ~16 outputs read:
+those are computed with whatever `X` held there.
+
+**The end of a phrase** (module method 0x10015bd0 → 0x10028e40): with input
+waiting (else nothing), `ELQBufferEnlarge` (no effect on the samples), one
+more call of 0x10028c00 with its flag set, which hands every phone still
+owed what there is (`ELQBufferPopForced` at 0x10023f20 takes at most what
+is made) and drops what is left (`ELQBufferClean`, 0x10024190); then the
+input waiting is dropped. `X` and `Time` carry on into the next phrase. So
+each phrase comes out exactly `Σ floor(nᵢ·factor)` samples long whenever
+the resampler made that many.
+
+Every floating-point step (factor, products, floors) is a double under the
+engine's precision control (53 bits) and every conversion a truncation
+(control word | 0xc00, `_ftol2`), so `codec::StreamResampler` computes them
+in `f64` with `as` conversions. `oracle/loqref.c` `LOQ_TRACE_RESAMPLE=3`
+logs every call with the state before and after (§8);
+`codec::tests::replays_the_engines_resampler` (`QQ_RESAMPLE_TRACE=<prefix>.res`)
+replays every call from the engine's state and as one stream (Marcello,
+three lines of `bench-it`: 184 calls; Florence `bench-fr`: 312; Grace
+`bench-en-au`: 437; Dmitri `bench-ru`: 465), all identical, and what the
+queue hands on equals the engine's `.wav` on every utterance.
+`synth::render` feeds it phone by phone and flushes at
+every phrase's end. Replaying the original's own pieces through our SIG,
+samples identical:
+
+| voice | before | after |
+|---|---|---|
+| Marcello (`bench-it`) | 63.4% | **100%** |
+| Alan (`bench-en-au`) | 80.2% | **100%** |
+| Grace (`bench-en-au`) | 79.4% | **100%** |
+| Dmitri (`bench-ru`) | 78.7% | **100%** |
+| Olga (`bench-ru`) | 79.1% | **100%** |
+| Willem (`bench-nl`) | 86.3% | **100%** |
+| Florence (`bench-fr`) | 93.1% | **100%** |
+| Ximena (`bench-es-am`) | 82.2% | **100%** |
+
+Where FON and CAT are the original's too (Marcello, Florence, Alan, Grace,
+Ximena), `quoquendo --say` writes the original's `.wav` byte for byte on
+every line of their benchmarks. `codec::resample` (the whole utterance at
+once) remains for smoothed joins and the inside-pieces score.
+
 ## 2d. Decoding bit for bit
 
 `oracle/loqref.c` with `LOQ_TRACE_DECODE=1` logs every request LoqTTS7.dll
@@ -288,74 +356,6 @@ pinned in a test); glibc's `exp` agrees on those 80 but not on 0.47% of the
 random ones, and other platforms' libraries need not agree at all.
 Arguments beyond ±619, where the routine finishes on the x87 at 64-bit
 precision, are not ported; the decoders never pass them.
-
-- is appended to the input waiting (`ELQBufferCat`, count at +0x18) and is
-  owed `floor(n·factor)` outputs in the output queue (chunk +0xc,
-  0x1002904a; queue 0x10023e20, add 0x10023e80);
-- 0x10028c00 asks for `floor(pending·factor)` outputs (floor 0x10069b40),
-  16 fewer when above 16, from 0x1001c930 → 0x1001c370 with `LpScl` =
-  trunc(1.0·14746), `Nmult` 65, `Nwing` 8192; the input consumed leaves
-  the buffer (`ELQBufferLeftShift`), the outputs join the queue
-  (0x10023ec0), and the queue hands each phone on, first in first out,
-  once its owed samples are there (0x10024010, `ELQBufferPop`).
-
-0x1001c370, one call: at most `trunc(4096·factor)` = 2978 outputs per pass
-(0x1001c377; 4096.0 at 0x100a5c00), `LpScl` = trunc(14746·factor + 0.5) =
-10724 when factor < 1, `Xoff` = trunc((65 + 1)·0.5·max(1, 1/factor) + 10)
-= 55 (10.0 at 0x100a5b30); `Time` = `Xoff` << 15 on the first call only
-(+0x2c, cleared by 0x1001c930 at 0x1001c9ea). readData (0x1001c030)
-reads the input from its start on every call (position +0x38 reset on the
-call's first read) into `X` from `Xread` (`Xoff` at first) up to 4096, so
-past the new data `X` holds what earlier calls left there. Each pass asks
-SrcUD for what is still wanted, or `trunc(4096·factor) − trunc(2·Xoff·
-factor)` = 2898 when `trunc(4096·factor) − 2·Xoff·factor` is below that
-(0x1001c4d9); SrcUD (0x1001be70) makes exactly that many, whatever input
-there is, and reports by how many whole samples `Time` moved, 16-bit. `Time`
-goes back by that, `X` moves down by it (`X[i] = X[i + Nx]` for
-`Xoff − Nx + 4096` samples) and the next read goes to `4096 − Nx`. The
-last sample readData reports only stops a call that has no sample past
-`Xoff` (Smith's `last`, kept as the DLL keeps it). Each call's input
-therefore runs about 22 samples short of what its last ~16 outputs read:
-those are computed with whatever `X` held there.
-
-**The end of a phrase** (module method 0x10015bd0 → 0x10028e40): with input
-waiting (else nothing), `ELQBufferEnlarge` (no effect on the samples), one
-more call of 0x10028c00 with its flag set, which hands every phone still
-owed what there is (`ELQBufferPopForced` at 0x10023f20 takes at most what
-is made) and drops what is left (`ELQBufferClean`, 0x10024190); then the
-input waiting is dropped. `X` and `Time` carry on into the next phrase. So
-each phrase comes out exactly `Σ floor(nᵢ·factor)` samples long whenever
-the resampler made that many.
-
-Every floating-point step (factor, products, floors) is a double under the
-engine's precision control (53 bits) and every conversion a truncation
-(control word | 0xc00, `_ftol2`), so `codec::StreamResampler` computes them
-in `f64` with `as` conversions. `oracle/loqref.c` `LOQ_TRACE_RESAMPLE=3`
-logs every call with the state before and after (§8);
-`codec::tests::replays_the_engines_resampler` (`QQ_RESAMPLE_TRACE=<prefix>.res`)
-replays every call from the engine's state and as one stream (Marcello,
-three lines of `bench-it`: 184 calls; Florence `bench-fr`: 312; Grace
-`bench-en-au`: 437; Dmitri `bench-ru`: 465), all identical, and what the
-queue hands on equals the engine's `.wav` on every utterance.
-`synth::render` feeds it phone by phone and flushes at
-every phrase's end. Replaying the original's own pieces through our SIG,
-samples identical:
-
-| voice | before | after |
-|---|---|---|
-| Marcello (`bench-it`) | 63.4% | **100%** |
-| Alan (`bench-en-au`) | 80.2% | **100%** |
-| Grace (`bench-en-au`) | 79.4% | **100%** |
-| Dmitri (`bench-ru`) | 78.7% | **100%** |
-| Olga (`bench-ru`) | 79.1% | **100%** |
-| Willem (`bench-nl`) | 86.3% | **100%** |
-| Florence (`bench-fr`) | 93.1% | **100%** |
-| Ximena (`bench-es-am`) | 82.2% | **100%** |
-
-Where FON and CAT are the original's too (Marcello, Florence, Alan, Grace,
-Ximena), `quoquendo --say` writes the original's `.wav` byte for byte on
-every line of their benchmarks. `codec::resample` (the whole utterance at
-once) remains for smoothed joins and the inside-pieces score.
 
 ## 3. The voice index — `<Voice>.sde`
 
@@ -438,9 +438,11 @@ learned Italian ending tables, `french.rs`, `german.rs`, `spanish.rs` and
 their connected-speech passes) are deleted. A voice of these languages
 whose tree lacks the module (no `.lde`, or a `Library` DLL that is missing
 or isn't the expected one) reports `language_missing` (`Voice::from_bytes`)
-instead of speaking with approximate rules. The other languages (Greek,
-Portuguese, Swedish, Danish, Dutch, Polish, Russian…) keep the simple
-letter rules of `g2p.rs` and the dictionaries above.
+instead of speaking with approximate rules. Greek (§4f) is ported the same
+way. Portuguese (`lang/portuguese*`) is wired but unfinished (§11).
+Swedish (`lang/swedish/`) is partly written and not wired. Swedish, Danish,
+Dutch, Polish and Russian keep the simple letter rules of `g2p.rs` and the
+dictionaries above.
 
 **German, decompiled** (LTTS7German.dll; its one export `German` 0x10007f00
 hands the engine a table of named functions at 0x100294a8: LesAccenta
@@ -859,6 +861,7 @@ from the library by address):
 | Dave 0x10001210, Steven 0x100014e0, Susan 0x10001210, Kate 0x100014a0, Elizabeth, Simon, Grace, Alan 0x100014a0 | each its own (word dictionaries 0x1000d000, 0x54-byte entries in the 7.3+ libraries) | Dave 0x10004cf0, Steven 0x10003ac0, Susan 0x10004250, Kate 0x100039e0, … | the same kinds of rules, per voice (see each file) |
 | Jorge, Carmen, Diego, Carlos | nothing | default; Diego 0x10001280 / Francisca 0x100012c0 say 0x1800104 as `h`; Carlos 0x100013e0, Ximena 0x10001490 map analysis ids to synthesis ones (0x10001370 / 0x10001420) | Leonor 0x100011e0 s + `r:` → 0x501014c, DH after `` `a `` dropped before a vowel/sonorant word; Esperanza `Y` → `J`; Francisca h → 0x1800104 between a vowel and f/t; Soledad 0x10001210 s / dd before the next word; Ximena 0x10001060 |
 | Bernard 0x10001230, Juliette 0x10001230, Florence 0x10001210 | | default | Bernard: a nasal vowel + consonant of a word written `-e`/`-es` before a consonant word keeps the `e` (`HEh`); Juliette: s → z before a voiced word, final dd → n after a nasal vowel, else it voices the consonant ending the word before; Florence: voicing assimilation across words after a nasal vowel (not `donc`, `quelconque`, before `million`, `mètre(s)`) |
+| Afroditi 0x10001210 | | 0x100012d0 → 0x10001260 (the default) | a word-final s (0x1952) becomes z (0x1942) before a word starting with m (0x1fc2) or n (0x19c2) (the module's own FonAllofonoLingua voices s only before other voiced consonants) |
 
 The stage runs for module-backed voices only (`g2p::Frontend::with_voice`):
 the built-in rules of the unported languages give phones the voices say
@@ -880,6 +883,124 @@ Jorge, Roberto and the Italian, Spanish and French voices stay or reach
 Steven 100%, the other eight English voices 99.9%, the one phone left
 a module difference (`students sent`: our English LES adds a `#50`
 pause the original's event 2 does not have, so `Ts` is split).
+Afroditi (bench-el, its stage on top of the Greek module, §4f) 100%;
+`τις μέρες`, `τους νέους`, `μας με` give the original's `z`.
+
+## 4f. Greek FON, ported from LTTS7Greek.dll (`lang/greek/`)
+
+The export `Greek` (0x10008500) accepts a descriptor whose `Language`
+list (split on `,;`, 0x10022378) has `greek` and hands the engine a table
+of 32 `{name, function}` pairs at **0x10021d00**: GetVersion 0x10008390
+(7.15.0), ELQGetLanguageNativeEncoding and …DefaultAnsiEncoding
+0x10008360 (**0x4e5 = 1253**), …IsoEncoding 0x10008370 (0x6fb5 =
+ISO-8859-7), …OemEncoding 0x10008380 (0x2e1 = 737), ELQGetPhonemes
+0x10007c20 (table 0x10021c40, `{entries, u16 count}`, entries `{symbol,
+code}`), ELQGetGraphemes 0x10007c10 (0x100212d0: 8 bytes per character,
+lower, upper, flags at +4: 1 letter, 2 acronym, 4 digit, 8 consonant, 0x10
+vowel, 0x20 upper, 0x40 lower, 0x80 accented, 0x100 punctuation),
+LesElaboraParola 0x10008cb0, LesAccenta 0x10001820, LesPronunciabile
+0x100030d0, LesIniNumeri 0x10007b60, LesAnalizza 0x10009620,
+LesGetSymbolName 0x10002f50, LesGradiAccentuali 0x10008740,
+LesSetModalitaFrase 0x10008920, FonTrasParola 0x1000a0e0,
+FonAllofonoLingua 0x1000b470, ELQLanguageLoadReadOnlyData 0x10007d10,
+LesGetAbbreviazioni 0x10008240, LesIsPartOfAcronym 0x100086f0 (flag 2),
+LesIsLetter 0x10008710 (flag 1), LesIsUpper 0x10008720 (flag 0x20),
+LesAllocLanguageLexInfo 0x10008300, LesGetDefaultCurrency 0x10004ec0.
+There is no LesConfiniProsodici, FonTrasConfini, LesNormalizzaAccento
+nor LesGestisciMaiuscole: the engine binds its own (LoqTTS7.dll
+0x10036140: ConfiniProsodici default **0x100409c0**, GestisciMaiuscole
+0x10034f60).
+
+**The text is Windows-1253.** The engine stores the module's native
+encoding (LoqTTS7 0x1000c3d0 area: `ELQGetLanguageNativeEncoding` →
++0x21c, copied into the LES object's +0x150, which the constructor
+0x1002e500 sets to 0x4e4 = 1252 for modules without one) and converts
+its UTF-8 input to it; `Les::code_page` (common.rs `to_8bit_cp`).
+
+The loader 0x10007d10 reads `Greek.dbl` (1 251 rows, mostly foreign words
+and function words) with `SELECT grafemica, fonetica, gradoaccentuale,
+grammaticale, specgramm, gennum FROM lessico` and the abbreviations
+(`… WHERE ifnull(abbreviazione,'') <> '' ORDER BY abbreviazione COLLATE
+NOCASE DESC`).
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesElaboraParola | 0x10008cb0 | the word as one record (0x17, 200, 200), or spelled (each LesGetSymbolName a record 0x15, sub 0x83, the last 0x84, info 9) when the token is one character alone among tags (0x10008b20, symbol mode 3, else 1), the engine's mode asks, or LesPronunciabile rejects it and neither the engine's spell flag nor the token's expansion flag (+0x408) is set | — |
+| LesPronunciabile | 0x10002fc0 | readable with `` ` `` or `'`, with Latin and other letters mixed, an accented letter or a non-Latin vowel; else when it has a vowel (0x10002f90) | — |
+| LesGetSymbolName | 0x10002400 (character in CL, mode in AL) | names of letters and symbols; mode 0 only letters and `$ % & + / = { } €…`, ≥ 1 punctuation too, 2 `… με τόνο`, 3 `… κεφαλαίο`/`μικρό` | strings 0x1001f0c0…0x10020c88 |
+| LesAnalizza | 0x100094e0 | the record's dictionary rows (0x100093b0, `ELQDBTableFind`); the list walked to the first row with a `grammaticale` (0x10009450); no rows or none → class 0x17 becomes 0x2f (0x10008df0); else for class 0x17, or a proper noun (0x15, sub 0xc8) the dictionary calls a function word, class from `grammaticale` (0x10008e10: PRON 0x20, VERBO 0x2a, NONVERBO 0x2f, AVV 0x33, AGG 0x29, SOST 0x15, ARTIC 0x18, ARTPRON 0x16, CONG 0x1f, PREPS 0x19, PREPA 0x1e, PRONCLI 0x21, PRONPC 0x28, PRONR 0x22, VERBOE 0x2c, VERBOA 0x2b, OMOGRAFO 0x2d), subclass from `specgramm` (0x100091b0: ECONG 0x82, NUMU `y`, INTERR `x`), information from `gennum` (0x10009260: FESI 0xd, MASI 0xb, FEPL 0xe, MAPL 0xc, XPLU 0x10, XSIN 0xf, none 9) | — |
+| LesAccenta | 0x10001820 | every record not elided and without an accented letter (0x100014e0) gets an accent: mostly Latin lower case (more than half, or one of two) → the ending table (0x10001730 → 0x10001210, as Italian's) marks the n-th vowel from the end with its Latin-1 acute (0x10001400, 0x100012e0); else 0x10001520: `δυο μια μιαν μιας πια πιο` → their accented forms (0x1001efc4…0x1001ef88), a doubled vowel on its second letter, else by vowel groups (0x10001460: `αι ει οι υι αυ ευ ου` once) the first of one or two, the second of three, the third from the end of more (0x10001250). The channel byte +4 (1; `\#Gg`/`\#Ge` tags in records switch it, 0x10008440) picks 0x10001730 over 0x100017a0 | Latin endings 0x1001d1a0 (0x27e × 12) |
+| LesSetModalitaFrase | 0x10008920 | the closing punctuation's first character among `.!?:;¶` (0x10022390): `!` 6, `.` 0, `;` `?` 2 (3 with an interrogative `x` in the first four records), `:` `¶` 5, else 7 | — |
+| (engine) LesConfiniProsodici | LoqTTS7 0x100409c0 | boundary 0x15 → 3 (class `7` 0x16); punctuation: the sentence end by type (0 → 0x0f, 2 → 0x11, 3 → 0x12, 5 → 0x10, 6 → 0x13, else 0x16) on it and the word before (skipping 0x16), `,` `-` `.` 0x0b, `(` `)` 0x0b between words; then sub `y`/0x84 → 7, `z`/0x83 → 6, `{` → 8 | — |
+| LesGradiAccentuali | 0x10008740 | punctuation 0x0f; a function word (classes 0x19 0x1e 0x18 0x20 0x21 0x16 0x22 0x1f 0x2e) of at most 5 letters, a word ending in `'` or sub 0x8f: 3; else 0; rows of the other `gradoaccentuale` (0x10008670: DEA 3) dropped | — |
+| FonTrasParola | 0x1000a0e0 | a row with `fonetica` (0x10009450 column 1, 0x10009840 / 0x100097b0) gives the phones; else 0x10009910 lower-cases the word (an unstressed one, grade 3, without accents, 0x10009640), a mostly-Latin word transliterated into Greek letters (`ch` χ, `th` θ, `ks` ξ, `j` ξ…; the FON channel byte +0x44 is 1); the first pass collapses `αι` → ε, `ει` → ι, `οι` → η, `υι` → ι, `αυ ευ ηυ` → φ/β (φ before a voiceless consonant or at the end) and doubled consonants (not γγ νν); then each letter in context: γ before ε/ι palatal (0x1142), `γκ γγ` → N g (word-initial g), `γχ γξ` N; ι/η/υ before a vowel a glide (0x10c2) or full (0x7c1) by the word lists and `ποιος ποιες ποια ποιο` (0x10009720); κ + j before ε; λ/ν + ι + vowel palatal (0x10a2, 0x11c2 + j); `μπ`/`ντ` b/d word-initially, mb/nd inside unless the word is listed; σ z before a voiced consonant; `τσ` Ts, `τζ` Dz; ου u. `local_f0` there is the last letter's index | word-start lists (`ELQSearchString` flag 0x12) 0x10022c68 (15), 0x10022ca8 (41), 0x10022d58 (27), 0x10022dc4 (6), 0x10022de0 (17), 0x10022e28 (32), 0x10022ca4 (1), 0x10022ea8 (37), 0x10022f40 (17); sets 0x10022fdc γδζλμνρ, 0x10022fa8 ΐήίηιϊΰϋ, 0x10022fa4 υύ, 0x10022fa0 ΰύ, 0x10022f9c εέ, 0x10022f98 γκ, 0x10022f94 βσφ |
+| FonAllofonoLingua | 0x1000b470 | with the previous, own and next record as Greek letters (0x10009910): n + k across words after `στην την τον των` (0x10022f84) → N g; `δέν` loses its n before DH/Th; j after a palatal (`& 0x1e03 == 0x1002`) deleted; word-final s → z before `μας με μου` (0x10022d4c) or a voiced consonant; k x g before a front vowel or j palatal (0x11f2 0x1152 0x11e2); `κι` loses its i before a vowel; `ότι` 0x10361 → 0x361 and `δέν`/`δέ` 0x10741 → 0x741 in chunks of more than 2 records; t/p after `…ν` of an article → d/b; m before f v s z → 0x1dc2. After a deletion it returns the index before (0x1000b7f5) | — |
+
+Checked call by call (`lang::greek::trace::greek_trace`, the `.les`
+trace of `LOQ_LES_DLL=LTTS7Greek.dll LOQ_LES_TABLE=10021d00 LOQ_LES_N=30`):
+on the bench (24 sentences of calls) and on 20 000 held-out words
+(`oracle/words/el.txt`, every 41st word of LibreOffice `el_GR/el_GR.dic`,
+ISO-8859-7), LesAnalizza, LesAccenta, the engine's ConfiniProsodici,
+LesGradiAccentuali, FonTrasParola (20 002 calls) and FonAllofonoLingua
+give the original's records and codes for **every** call. Whole
+transcriptions (`QQ_NO_LEXICON=1`): held-out words 87.2% → **99.995%**
+(19 999 of 20 000; `σία`, a dictionary abbreviation spelled through a
+`\{spell=yes` tag, §11); 3 082 extra words (English, capitalised and
+unaccented upper-case Greek, single letters) 3 081 (`π.χ.`, Greek.lex);
+bench `oracle/bench-el.txt` 48.2% → **100%** of sounds, CAT 98.1% →
+**100%** (the compare tool now takes Greek `;` as a question, as the
+module does). The original's notation glues a word to the next when
+FonAllofonoLingua palatalised the next one's first k/x (`τυρί και`,
+`δύο χιλιάδες`): the sounds are the same, `--compare` counts those as
+different words.
+
+**Greek numbers** (`greek/numeri.rs`). `LesIniNumeri` 0x10007b60 fills
+slots 0 0x10002140 (word ids → strings at 0x1001fea0, 0x4d pairs), 1
+0x100020c0 (phone: area codes 0x1001fa20 × 0xf7, `ELQSearchString` mode
+2, then `ELQNumConvertPhoneNumber` steps 0/1 into its own string), 2
+0x10005e70 (cardinal), 3 0x10005e30, 4 0x10002110, 5 0x10005310
+(currency names 0x1001fe00, 8 rows {symbol, unit, units, cent, cents};
+`"1"` 0x10020d14 takes the singular; a space before and after), 6
+0x10006f50, 7 0x10002170 and 9 0x10007740. Slot 9 has the Spanish
+skeleton: the window from 0x10001950, reading types 5/6 → mode 4 with
++0x48 = 5/6, mode 0xc for a currency symbol next or before or a next word
+among `δρχ` 0x10020ce8, `δράχμη` 0x10020ce0, `δραχμές` 0x10020cd8, `euro`
+0x10020cd0, `eur` 0x10020cc8, `EUR` 0x10020ccc, `ευρώ` 0x1001f2b0,
+`ΕΥΡΏ` 0x10020cc0, 10 for a next `%`; nine recognizers in 0x10005d50's
+order (date 0x100030f0, time 0x10003250, ordinal 0x100036a0, currency
+0x10003880, mode 9 0x10003d30, fraction 0x10004010, phone 0x10004130,
+real 0x10004510, code 0x10004350), else `ELQNumSetDefaultType`, then the
+renderer 0x10007110. Cardinal 0x10005e70: an `m`/`f` in the digits sets
+the gender of the last three; hundreds 0x10005710 stems 0x3a–0x43 +
+`-α` 0x45 / `-οι` 0x46 / `-ες` 0x44 (`-ες` when the number from that digit
+is 1000–999 999); two digits 0x10005a80 (teens `δεκα` 0x10020d18 + unit);
+1/3/4 → μία 0x12, τρείς 0x18, τέσσερις 0x1a, ένας 0x13 (masculine after a
+zero ten, in the thousands or a given gender); units 0x100054f0 (index
+bytes 0x100056a8, `push id` targets 0x10005638). Currency 0x10003880:
+drachma words without a comma append `f` (0x10013bf0, +0x5c = 2, the
+renderer says μία/τρείς/τέσσερις and no name); euro words (and `EURO`
+0x10020cb8) set `€` (0x1001f2b8); a euro word or symbol after the number
+becomes `n`, ctx+0x18 = 1. Amounts 0x100048b0: two decimals → units, the
+name only for €, `και` and cents; others `τελεία` + slot 6. Times
+0x10004ed0: hours 1/21 μία (0x10004f76) / είκοσι μία (0x10020d04), 3 13 23
+`είς` (0x10004fa2) and 4 14 `ις` (0x10020204) patched over the ending,
+`και` + minutes, `λεπτά` 0x5e / `δευτερόλεπτα` 0x5d. Dates 0x100021e0: day
+1 `πρώτη` (0x10020208), the same 3/4 patches (0x100022d0), month word
+0x50+m (genitive). Ordinals 0x100065d0 by groups of three: hundreds a
+cardinal with οστός/οστή (0x10020e64/0x10020e5c), tens stems 0x10020e2c…
+(10/11/12 at 0x10020e3c/0x10020e4c/0x10020e44), units 0x10020dcc… (a
+four-digit number's thousands digit the "n-times" forms 0x10020dc8…),
+group words 0x10020d20/0x10020d28/0x10020d38, endings ός/ή
+0x10020dd8/0x10020dd4 and ος/η 0x10020e38/0x10020e34, more than 12
+digits digit by digit. Fractions 14 pairs at 0x10020200…; `°`/`º`
+0x10020cb4/0x10020cb0 not before `c` 0x10020cac. Replayed on 497 traced
+distinct slot-9 calls (`greek::numeri` test `greek_slot9_trace`,
+fixture `greek/numeri.les`): every reading, ctx+0x18 and rewritten token
+identical. Only reading types 0, 5 and 6 reach the module untagged
+(loqref.c runs with `TaggedText` off): the tag-only entry types 1, 2, 7,
+8, 9, 10, 0xc are ported but untested. `oracle/bench-el-text.txt` (30
+lines): 98.0% of sounds; the rest is Greek.lex (§11).
+
 
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
@@ -1005,7 +1126,7 @@ ambiguous):
 | Katrin | `oracle/bench-de.txt` | | | 98.2% | **100%** |
 | Jorge | `oracle/bench-es.txt` | | | 98.9% | **100%** |
 
-Every other voice with a benchmark: 100% except Afroditi 98.1%, Annika 99.6%,
+Every other voice with a benchmark: 100% except Annika 99.6%,
 Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof 99.5%,
 Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% (§11).
 Giulia and Steven went from 10.8% and 15.6% to 100%.
@@ -1235,7 +1356,19 @@ when a speed/pitch change asks for it.
 
 ## 11. Not done / unknown
 
-- German loanword stress (97.6% held out).
+- Portuguese (`lang/portuguese*`, both variants) is wired with its LES/FON
+  functions, numbers and the voices' own stage (`voicefon/portuguese.rs`)
+  partly ported: bench pt-pt 87.0%, pt-br 88.8% of sounds (from 39–49% with
+  the built-in rules). The port was cut off before its call-by-call check
+  and held-out list.
+- Swedish (`lang/swedish/`): LES, morphology and FonAllofonoLingua are
+  partly written; FonTrasParola isn't, so the module gives no phones and
+  is not wired.
+- The engine's text filters (`lang/textfilter.rs`: LTTS7Util's
+  `ELQTextFilterApply` with the `.lde` RegExp and Lexicon files) are partly
+  ported and not yet run: the `bench-*-text.txt` units, roman numerals and
+  abbreviations that only the `.rex`/`.lex` rewrite (French `km`, `n°`,
+  `XIXe`; German `3-5`, `3. Oktober`) still differ.
 - Italian (§4b): every LES/FON function of LTTS7Italian.dll the engine
   calls is ported; bench-it and the 20 000 held-out words are 100%
   identical. 0x10001290 (participles) is checked on 91 sentences with
@@ -1252,7 +1385,9 @@ when a speed/pitch change asks for it.
   contents we fill with zeros. Neither reaches the output on the benchmarks
   (replays 100% identical). One voiced half of 423 (Bernard) gets other
   pitch marks than the original's, also without effect there.
-- CAT given the original's FON: 100% on 30 voices; Afroditi 98.1%, Annika
+- CAT given the original's FON: 100% on 31 voices (Afroditi 98.1% →
+  100%: Greek asks with `;`, which the compare tool took as no question);
+  Annika
   99.6%, Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof
   99.5%, Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% not
   yet diffed term by term (`LOQ_TRACE_CAT` against `QQ_TRACE_CAT`). The

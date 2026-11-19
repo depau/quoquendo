@@ -1,0 +1,1470 @@
+> NUM type=0 idx=3 a3="dmy" a6="2475" c18=0
+  T 0 3 0 0 t="\xd4\xef"
+  T 1 3 2 0 t="\xf7\xf9\xf1\xe9\xfc"
+  T 2 3 8 0 t="\xe5\xdf\xf7\xe5"
+  T 3 1 13 0 t="2475"
+  T 4 3 18 0 t="\xea\xe1\xf4\xef\xdf\xea\xef\xf5\xf2"
+  T 5 6 28 0 t="."
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xf4\xe5\xf4\xf1\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 3 0 0 t="\xd4\xef"
+  U 1 3 2 0 t="\xf7\xf9\xf1\xe9\xfc"
+  U 2 3 8 0 t="\xe5\xdf\xf7\xe5"
+  U 3 1 13 0 t="2475"
+  U 4 3 18 0 t="\xea\xe1\xf4\xef\xdf\xea\xef\xf5\xf2"
+  U 5 6 28 0 t="."
+> NUM type=0 idx=5 a3="dmy" a6="15" c18=0
+  T 0 3 0 0 t="\xc7"
+  T 1 3 1 0 t="\xf3\xf5\xed\xe1\xf5\xeb\xdf\xe1"
+  T 2 3 10 0 t="\xe8\xe1"
+  T 3 3 13 0 t="\xe3\xdf\xed\xe5\xe9"
+  T 4 3 19 0 t="\xf3\xf4\xe9\xf2"
+  T 5 1 24 0 t="15"
+  T 6 3 27 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 7 1 35 0 t="2024"
+  T 8 6 40 0 t="."
+< NUM ret="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 3 0 0 t="\xc7"
+  U 1 3 1 0 t="\xf3\xf5\xed\xe1\xf5\xeb\xdf\xe1"
+  U 2 3 10 0 t="\xe8\xe1"
+  U 3 3 13 0 t="\xe3\xdf\xed\xe5\xe9"
+  U 4 3 19 0 t="\xf3\xf4\xe9\xf2"
+  U 5 1 24 0 t="15"
+  U 6 3 27 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 7 1 35 0 t="2024"
+  U 8 6 40 0 t="."
+> NUM type=0 idx=7 a3="dmy" a6="2024" c18=0
+  T 0 3 0 0 t="\xc7"
+  T 1 3 1 0 t="\xf3\xf5\xed\xe1\xf5\xeb\xdf\xe1"
+  T 2 3 10 0 t="\xe8\xe1"
+  T 3 3 13 0 t="\xe3\xdf\xed\xe5\xe9"
+  T 4 3 19 0 t="\xf3\xf4\xe9\xf2"
+  T 5 1 24 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  T 6 3 27 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 7 1 35 0 t="2024"
+  T 8 6 40 0 t="."
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 3 0 0 t="\xc7"
+  U 1 3 1 0 t="\xf3\xf5\xed\xe1\xf5\xeb\xdf\xe1"
+  U 2 3 10 0 t="\xe8\xe1"
+  U 3 3 13 0 t="\xe3\xdf\xed\xe5\xe9"
+  U 4 3 19 0 t="\xf3\xf4\xe9\xf2"
+  U 5 1 24 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  U 6 3 27 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 7 1 35 0 t="2024"
+  U 8 6 40 0 t="."
+> NUM type=0 idx=0 a3="dmy" a6="0" c18=0
+  T 0 1 0 0 t="0"
+< NUM ret="\xec\xe7\xe4\xdd\xed" c18=0
+  U 0 1 0 0 t="0"
+> NUM type=0 idx=0 a3="dmy" a6="1" c18=0
+  T 0 1 0 0 t="1"
+< NUM ret="\xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="1"
+> NUM type=0 idx=0 a3="dmy" a6="2" c18=0
+  T 0 1 0 0 t="2"
+< NUM ret="\xe4\xfd\xef" c18=0
+  U 0 1 0 0 t="2"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+< NUM ret="\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="3"
+> NUM type=0 idx=0 a3="dmy" a6="4" c18=0
+  T 0 1 0 0 t="4"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="4"
+> NUM type=0 idx=0 a3="dmy" a6="7" c18=0
+  T 0 1 0 0 t="7"
+< NUM ret="\xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="7"
+> NUM type=0 idx=0 a3="dmy" a6="10" c18=0
+  T 0 1 0 0 t="10"
+< NUM ret="\xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="10"
+> NUM type=0 idx=0 a3="dmy" a6="11" c18=0
+  T 0 1 0 0 t="11"
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="11"
+> NUM type=0 idx=0 a3="dmy" a6="12" c18=0
+  T 0 1 0 0 t="12"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="12"
+> NUM type=0 idx=0 a3="dmy" a6="13" c18=0
+  T 0 1 0 0 t="13"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="13"
+> NUM type=0 idx=0 a3="dmy" a6="14" c18=0
+  T 0 1 0 0 t="14"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="14"
+> NUM type=0 idx=0 a3="dmy" a6="16" c18=0
+  T 0 1 0 0 t="16"
+< NUM ret="\xe4\xe5\xea\xe1\xdd\xee\xe9" c18=0
+  U 0 1 0 0 t="16"
+> NUM type=0 idx=0 a3="dmy" a6="17" c18=0
+  T 0 1 0 0 t="17"
+< NUM ret="\xe4\xe5\xea\xe1\xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="17"
+> NUM type=0 idx=0 a3="dmy" a6="19" c18=0
+  T 0 1 0 0 t="19"
+< NUM ret="\xe4\xe5\xea\xe1\xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="19"
+> NUM type=0 idx=0 a3="dmy" a6="20" c18=0
+  T 0 1 0 0 t="20"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="20"
+> NUM type=0 idx=0 a3="dmy" a6="21" c18=0
+  T 0 1 0 0 t="21"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="21"
+> NUM type=0 idx=0 a3="dmy" a6="30" c18=0
+  T 0 1 0 0 t="30"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="30"
+> NUM type=0 idx=0 a3="dmy" a6="33" c18=0
+  T 0 1 0 0 t="33"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="33"
+> NUM type=0 idx=0 a3="dmy" a6="44" c18=0
+  T 0 1 0 0 t="44"
+< NUM ret="\xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="44"
+> NUM type=0 idx=0 a3="dmy" a6="55" c18=0
+  T 0 1 0 0 t="55"
+< NUM ret="\xf0\xe5\xed\xde\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="55"
+> NUM type=0 idx=0 a3="dmy" a6="69" c18=0
+  T 0 1 0 0 t="69"
+< NUM ret="\xe5\xee\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="69"
+> NUM type=0 idx=0 a3="dmy" a6="70" c18=0
+  T 0 1 0 0 t="70"
+< NUM ret="\xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="70"
+> NUM type=0 idx=0 a3="dmy" a6="88" c18=0
+  T 0 1 0 0 t="88"
+< NUM ret="\xef\xe3\xe4\xfc\xed\xf4\xe1 \xef\xf7\xf4\xfe" c18=0
+  U 0 1 0 0 t="88"
+> NUM type=0 idx=0 a3="dmy" a6="99" c18=0
+  T 0 1 0 0 t="99"
+< NUM ret="\xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="99"
+> NUM type=0 idx=0 a3="dmy" a6="100" c18=0
+  T 0 1 0 0 t="100"
+< NUM ret="\xe5\xea\xe1\xf4\xfc " c18=0
+  U 0 1 0 0 t="100"
+> NUM type=0 idx=0 a3="dmy" a6="101" c18=0
+  T 0 1 0 0 t="101"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed  \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="101"
+> NUM type=0 idx=0 a3="dmy" a6="110" c18=0
+  T 0 1 0 0 t="110"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="110"
+> NUM type=0 idx=0 a3="dmy" a6="111" c18=0
+  T 0 1 0 0 t="111"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xdd\xed\xf4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="111"
+> NUM type=0 idx=0 a3="dmy" a6="113" c18=0
+  T 0 1 0 0 t="113"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xe4\xe5\xea\xe1\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="113"
+> NUM type=0 idx=0 a3="dmy" a6="121" c18=0
+  T 0 1 0 0 t="121"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="121"
+> NUM type=0 idx=0 a3="dmy" a6="200" c18=0
+  T 0 1 0 0 t="200"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="200"
+> NUM type=0 idx=0 a3="dmy" a6="201" c18=0
+  T 0 1 0 0 t="201"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1  \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="201"
+> NUM type=0 idx=0 a3="dmy" a6="300" c18=0
+  T 0 1 0 0 t="300"
+< NUM ret="\xf4\xf1\xe9\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="300"
+> NUM type=0 idx=0 a3="dmy" a6="341" c18=0
+  T 0 1 0 0 t="341"
+< NUM ret="\xf4\xf1\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="341"
+> NUM type=0 idx=0 a3="dmy" a6="400" c18=0
+  T 0 1 0 0 t="400"
+< NUM ret="\xf4\xe5\xf4\xf1\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="400"
+> NUM type=0 idx=0 a3="dmy" a6="500" c18=0
+  T 0 1 0 0 t="500"
+< NUM ret="\xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="500"
+> NUM type=0 idx=0 a3="dmy" a6="600" c18=0
+  T 0 1 0 0 t="600"
+< NUM ret="\xe5\xee\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="600"
+> NUM type=0 idx=0 a3="dmy" a6="700" c18=0
+  T 0 1 0 0 t="700"
+< NUM ret="\xe5\xf0\xf4\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="700"
+> NUM type=0 idx=0 a3="dmy" a6="800" c18=0
+  T 0 1 0 0 t="800"
+< NUM ret="\xef\xf7\xf4\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="800"
+> NUM type=0 idx=0 a3="dmy" a6="900" c18=0
+  T 0 1 0 0 t="900"
+< NUM ret="\xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="900"
+> NUM type=0 idx=0 a3="dmy" a6="999" c18=0
+  T 0 1 0 0 t="999"
+< NUM ret="\xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="999"
+> NUM type=0 idx=0 a3="dmy" a6="1000" c18=0
+  T 0 1 0 0 t="1000"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 " c18=0
+  U 0 1 0 0 t="1000"
+> NUM type=0 idx=0 a3="dmy" a6="1001" c18=0
+  T 0 1 0 0 t="1001"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1  \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="1001"
+> NUM type=0 idx=0 a3="dmy" a6="1100" c18=0
+  T 0 1 0 0 t="1100"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe5\xea\xe1\xf4\xfc " c18=0
+  U 0 1 0 0 t="1100"
+> NUM type=0 idx=0 a3="dmy" a6="1234" c18=0
+  T 0 1 0 0 t="1234"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="1234"
+> NUM type=0 idx=0 a3="dmy" a6="2000" c18=0
+  T 0 1 0 0 t="2000"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="2000"
+> NUM type=0 idx=0 a3="dmy" a6="2001" c18=0
+  T 0 1 0 0 t="2001"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2  \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="2001"
+> NUM type=0 idx=0 a3="dmy" a6="3000" c18=0
+  T 0 1 0 0 t="3000"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="3000"
+> NUM type=0 idx=0 a3="dmy" a6="4567" c18=0
+  T 0 1 0 0 t="4567"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="4567"
+> NUM type=0 idx=0 a3="dmy" a6="9999" c18=0
+  T 0 1 0 0 t="9999"
+< NUM ret="\xe5\xed\xed\xdd\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="9999"
+> NUM type=0 idx=0 a3="dmy" a6="10000" c18=0
+  T 0 1 0 0 t="10000"
+< NUM ret="\xe4\xdd\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="10000"
+> NUM type=0 idx=0 a3="dmy" a6="11000" c18=0
+  T 0 1 0 0 t="11000"
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="11000"
+> NUM type=0 idx=0 a3="dmy" a6="12345" c18=0
+  T 0 1 0 0 t="12345"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xf4\xf1\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="12345"
+> NUM type=0 idx=0 a3="dmy" a6="21000" c18=0
+  T 0 1 0 0 t="21000"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xec\xdf\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="21000"
+> NUM type=0 idx=0 a3="dmy" a6="99999" c18=0
+  T 0 1 0 0 t="99999"
+< NUM ret="\xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="99999"
+> NUM type=0 idx=0 a3="dmy" a6="100000" c18=0
+  T 0 1 0 0 t="100000"
+< NUM ret="\xe5\xea\xe1\xf4\xfc \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2" c18=0
+  U 0 1 0 0 t="100000"
+> NUM type=0 idx=0 a3="dmy" a6="101000" c18=0
+  T 0 1 0 0 t="101000"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed  \xec\xdf\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2" c18=0
+  U 0 1 0 0 t="101000"
+> NUM type=0 idx=0 a3="dmy" a6="200000" c18=0
+  T 0 1 0 0 t="200000"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe5\xf2 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2" c18=0
+  U 0 1 0 0 t="200000"
+> NUM type=0 idx=0 a3="dmy" a6="234567" c18=0
+  T 0 1 0 0 t="234567"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="234567"
+> NUM type=0 idx=0 a3="dmy" a6="999999" c18=0
+  T 0 1 0 0 t="999999"
+< NUM ret="\xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1 # \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1 # \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="999999"
+> NUM type=0 idx=0 a3="dmy" a6="1000000" c18=0
+  T 0 1 0 0 t="1000000"
+< NUM ret="\xdd\xed\xe1 \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xef" c18=0
+  U 0 1 0 0 t="1000000"
+> NUM type=0 idx=0 a3="dmy" a6="1000001" c18=0
+  T 0 1 0 0 t="1000001"
+< NUM ret="\xdd\xed\xe1 \xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="1000001"
+> NUM type=0 idx=0 a3="dmy" a6="2000000" c18=0
+  T 0 1 0 0 t="2000000"
+< NUM ret="\xe4\xfd\xef \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xe1" c18=0
+  U 0 1 0 0 t="2000000"
+> NUM type=0 idx=0 a3="dmy" a6="3456789" c18=0
+  T 0 1 0 0 t="3456789"
+< NUM ret="\xf4\xf1\xdf\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc # \xef\xe3\xe4\xfc\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="3456789"
+> NUM type=0 idx=0 a3="dmy" a6="21000000" c18=0
+  T 0 1 0 0 t="21000000"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1 \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xe1" c18=0
+  U 0 1 0 0 t="21000000"
+> NUM type=0 idx=0 a3="dmy" a6="100000000" c18=0
+  T 0 1 0 0 t="100000000"
+< NUM ret="\xe5\xea\xe1\xf4\xfc \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xe1" c18=0
+  U 0 1 0 0 t="100000000"
+> NUM type=0 idx=0 a3="dmy" a6="123456789" c18=0
+  T 0 1 0 0 t="123456789"
+< NUM ret="\xdd\xed\xe1 \xe4\xfd\xef \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc # \xef\xe3\xe4\xfc\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="123456789"
+> NUM type=0 idx=0 a3="dmy" a6="1000000000" c18=0
+  T 0 1 0 0 t="1000000000"
+< NUM ret="\xdd\xed\xe1 \xe4\xe9\xf3\xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xef" c18=0
+  U 0 1 0 0 t="1000000000"
+> NUM type=0 idx=0 a3="dmy" a6="2000000000" c18=0
+  T 0 1 0 0 t="2000000000"
+< NUM ret="\xe4\xfd\xef \xe4\xe9\xf3\xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xe1" c18=0
+  U 0 1 0 0 t="2000000000"
+> NUM type=0 idx=0 a3="dmy" a6="123456789012" c18=0
+  T 0 1 0 0 t="123456789012"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1  # \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xf0\xe5\xed\xde\xed\xf4\xe1 \xdd\xee\xe9 # \xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 \xef\xf7\xf4\xfe # \xe5\xed\xe5\xed\xde\xed\xf4\xe1  # \xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="123456789012"
+> NUM type=0 idx=0 a3="dmy" a6="1000000000000" c18=0
+  T 0 1 0 0 t="1000000000000"
+< NUM ret="\xdd\xed\xe1 # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed # \xec\xe7\xe4\xdd\xed" c18=0
+  U 0 1 0 0 t="1000000000000"
+> NUM type=0 idx=0 a3="dmy" a6="1.000" c18=0
+  T 0 1 0 0 t="1.000"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 " c18=0
+  U 0 1 0 0 t="1.000"
+> NUM type=0 idx=0 a3="dmy" a6="1.234" c18=0
+  T 0 1 0 0 t="1.234"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="1.234"
+> NUM type=0 idx=0 a3="dmy" a6="12.345" c18=0
+  T 0 1 0 0 t="12.345"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xf4\xf1\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="12.345"
+> NUM type=0 idx=0 a3="dmy" a6="1.234.567" c18=0
+  T 0 1 0 0 t="1.234.567"
+< NUM ret="\xdd\xed\xe1 \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xef # \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe5\xf2 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 # \xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="1.234.567"
+> NUM type=0 idx=0 a3="dmy" a6="12.345.678,90" c18=0
+  T 0 1 0 0 t="12.345.678,90"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xe1 # \xf4\xf1\xe9\xe1\xea\xfc\xf3\xe9\xe5\xf2 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 # \xe5\xee\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 \xef\xf7\xf4\xfe # \xea\xfc\xec\xec\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="12.345.678,90"
+> NUM type=0 idx=0 a3="dmy" a6="3,14" c18=0
+  T 0 1 0 0 t="3,14"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2 \xea\xe1\xe9 \xe4\xe5\xea\xe1\xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="3,14"
+> NUM type=0 idx=0 a3="dmy" a6="0,5" c18=0
+  T 0 1 0 0 t="0,5"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xea\xfc\xec\xec\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="0,5"
+> NUM type=0 idx=0 a3="dmy" a6="12,05" c18=0
+  T 0 1 0 0 t="12,05"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xea\xe1\xe9 \xec\xe7\xe4\xdd\xed \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="12,05"
+> NUM type=0 idx=0 a3="dmy" a6="1,000" c18=0
+  T 0 1 0 0 t="1,000"
+< NUM ret="\xdd\xed\xe1 \xea\xfc\xec\xec\xe1 \xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed" c18=0
+  U 0 1 0 0 t="1,000"
+> NUM type=0 idx=0 a3="dmy" a6="-5" c18=0
+  T 0 1 0 0 t="-5"
+< NUM ret="\xec\xe5\xdf\xef\xed\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="-5"
+> NUM type=0 idx=0 a3="dmy" a6="-3,2" c18=0
+  T 0 1 0 0 t="-3,2"
+< NUM ret="\xec\xe5\xdf\xef\xed\xf4\xf1\xdf\xe1 \xea\xfc\xec\xec\xe1 \xe4\xfd\xef" c18=0
+  U 0 1 0 0 t="-3,2"
+> NUM type=0 idx=0 a3="dmy" a6="+7" c18=0
+  T 0 1 0 0 t="+7"
+< NUM ret="\xf3\xf5\xed\xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="+7"
+> NUM type=0 idx=0 a3="dmy" a6="007" c18=0
+  T 0 1 0 0 t="007"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="007"
+> NUM type=0 idx=0 a3="dmy" a6="0012" c18=0
+  T 0 1 0 0 t="0012"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed \xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="0012"
+> NUM type=5 idx=1 a3="dmy" a6="1" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="1"
+< NUM ret="\xf0\xf1\xfe\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="1"
+> NUM type=6 idx=1 a3="dmy" a6="2" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="2"
+< NUM ret="\xe4\xe5\xfd\xf4\xe5\xf1\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="2"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+  T 1 3 1 0 t="\xef"
+< NUM ret="\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="3"
+  U 1 3 1 0 t="\xef"
+> NUM type=5 idx=1 a3="dmy" a6="21" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="21"
+< NUM ret="\xe5\xe9\xea\xef\xf3\xf4\xfc\xf2 \xf0\xf1\xfe\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="21"
+> NUM type=0 idx=0 a3="dmy" a6="100" c18=0
+  T 0 1 0 0 t="100"
+  T 1 3 3 0 t="\xfc\xf2"
+< NUM ret="\xe5\xea\xe1\xf4\xfc " c18=0
+  U 0 1 0 0 t="100"
+  U 1 3 3 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="1" c18=0
+  T 0 1 0 0 t="1"
+  T 1 3 1 0 t="\xe7\xf2"
+< NUM ret="\xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="1"
+  U 1 3 1 0 t="\xe7\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="15/03/2024" c18=0
+  T 0 1 0 0 t="15/03/2024"
+< NUM ret="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5 \xec\xe1\xf1\xf4\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="15/03/2024"
+> NUM type=0 idx=0 a3="dmy" a6="1/1/2000" c18=0
+  T 0 1 0 0 t="1/1/2000"
+< NUM ret="\xf0\xf1\xfe\xf4\xe7 \xe9\xe1\xed\xef\xf5\xe1\xf1\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="1/1/2000"
+> NUM type=0 idx=0 a3="dmy" a6="31.12.1999" c18=0
+  T 0 1 0 0 t="31.12.1999"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 \xdd\xed\xe1 \xe4\xe5\xea\xe5\xec\xe2\xf1\xdf\xef\xf5 \xf7\xdf\xeb\xe9\xe1 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="31.12.1999"
+> NUM type=0 idx=0 a3="dmy" a6="2024-03-15" c18=0
+  T 0 1 0 0 t="2024-03-15"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="2024-03-15"
+> NUM type=0 idx=0 a3="dmy" a6="15-03-24" c18=0
+  T 0 1 0 0 t="15-03-24"
+< NUM ret="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5 # \xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="15-03-24"
+> NUM type=0 idx=0 a3="dmy" a6="20240315" c18=0
+  T 0 1 0 0 t="20240315"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9  # \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="20240315"
+> NUM type=0 idx=0 a3="dmy" a6="15" c18=0
+  T 0 1 0 0 t="15"
+  T 1 3 2 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 2 1 10 0 t="2024"
+< NUM ret="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="15"
+  U 1 3 2 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 2 1 10 0 t="2024"
+> NUM type=0 idx=2 a3="dmy" a6="2024" c18=0
+  T 0 1 0 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  T 1 3 2 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 2 1 10 0 t="2024"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  U 1 3 2 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 2 1 10 0 t="2024"
+> NUM type=0 idx=1 a3="dmy" a6="15" c18=0
+  T 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  T 1 1 4 0 t="15"
+  T 2 3 7 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 3 1 15 0 t="2024"
+  T 4 3 20 0 t="\xde\xf1\xe8\xe5"
+  T 5 6 25 0 t="."
+< NUM ret="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  U 1 1 4 0 t="15"
+  U 2 3 7 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 3 1 15 0 t="2024"
+  U 4 3 20 0 t="\xde\xf1\xe8\xe5"
+  U 5 6 25 0 t="."
+> NUM type=0 idx=3 a3="dmy" a6="2024" c18=0
+  T 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  T 1 1 4 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  T 2 3 7 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  T 3 1 15 0 t="2024"
+  T 4 3 20 0 t="\xde\xf1\xe8\xe5"
+  T 5 6 25 0 t="."
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  U 1 1 4 0 t="\xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5"
+  U 2 3 7 0 t="\xcc\xe1\xf1\xf4\xdf\xef\xf5"
+  U 3 1 15 0 t="2024"
+  U 4 3 20 0 t="\xde\xf1\xe8\xe5"
+  U 5 6 25 0 t="."
+> NUM type=0 idx=0 a3="dmy" a6="11:45" c18=0
+  T 0 1 0 0 t="11:45"
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 \xea\xe1\xe9 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="11:45"
+> NUM type=0 idx=0 a3="dmy" a6="08:05" c18=0
+  T 0 1 0 0 t="08:05"
+< NUM ret="\xef\xf7\xf4\xfe \xea\xe1\xe9 \xec\xe7\xe4\xdd\xed \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="08:05"
+> NUM type=0 idx=0 a3="dmy" a6="23:59:30" c18=0
+  T 0 1 0 0 t="23:59:30"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xe5\xdf\xf2 \xf0\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1 # \xeb\xe5\xf0\xf4\xdc \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xe4\xe5\xf5\xf4\xe5\xf1\xfc\xeb\xe5\xf0\xf4\xe1" c18=0
+  U 0 1 0 0 t="23:59:30"
+> NUM type=0 idx=0 a3="dmy" a6="9.30" c18=0
+  T 0 1 0 0 t="9.30"
+< NUM ret="\xe5\xed\xed\xdd\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="9.30"
+> NUM type=0 idx=1 a3="dmy" a6="11:45" c18=0
+  T 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  T 1 1 4 0 t="11:45"
+  T 2 3 10 0 t="\xf6\xfd\xe3\xe1\xec\xe5"
+  T 3 6 17 0 t="."
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 \xea\xe1\xe9 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 3 0 0 t="\xd3\xf4\xe9\xf2"
+  U 1 1 4 0 t="11:45"
+  U 2 3 10 0 t="\xf6\xfd\xe3\xe1\xec\xe5"
+  U 3 6 17 0 t="."
+> NUM type=0 idx=0 a3="dmy" a6="10" c18=0
+  T 0 1 0 0 t="10"
+  T 1 2 2 0 t="\x80"
+< NUM ret="\xe4\xdd\xea\xe1  \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="10"
+  U 1 2 2 0 t="n"
+> NUM type=0 idx=1 a3="dmy" a6="10" c18=0
+  T 0 2 0 0 t="\x80"
+  T 1 1 1 0 t="10"
+< NUM ret="\xe4\xdd\xea\xe1  \xe5\xf5\xf1\xfe " c18=0
+  U 0 2 0 0 t="\x80"
+  U 1 1 1 0 t="10"
+> NUM type=0 idx=1 a3="dmy" a6="10,50" c18=0
+  T 0 2 0 0 t="\x80"
+  T 1 1 1 0 t="10,50"
+< NUM ret="\xe4\xdd\xea\xe1  \xe5\xf5\xf1\xfe  \xea\xe1\xe9 \xf0\xe5\xed\xde\xed\xf4\xe1  \xeb\xe5\xf0\xf4\xdc " c18=0
+  U 0 2 0 0 t="\x80"
+  U 1 1 1 0 t="10,50"
+> NUM type=0 idx=0 a3="dmy" a6="10,50" c18=0
+  T 0 1 0 0 t="10,50"
+  T 1 2 5 0 t="\x80"
+< NUM ret="\xe4\xdd\xea\xe1  \xe5\xf5\xf1\xfe  \xea\xe1\xe9 \xf0\xe5\xed\xde\xed\xf4\xe1  \xeb\xe5\xf0\xf4\xdc " c18=1
+  U 0 1 0 0 t="10,50"
+  U 1 2 5 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="1.234,56" c18=0
+  T 0 1 0 0 t="1.234,56"
+  T 1 2 8 0 t="\x80"
+< NUM ret="\xdd\xed\xe1 \xf4\xe5\xeb\xe5\xdf\xe1  # \xe4\xfd\xef # \xf4\xf1\xdf\xe1 # \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xf0\xdd\xed\xf4\xe5 # \xdd\xee\xe9 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="1.234,56"
+  U 1 2 8 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="5" c18=0
+  T 0 1 0 0 t="5"
+  T 1 3 1 0 t="\xe5\xf5\xf1\xfe"
+< NUM ret="\xf0\xdd\xed\xf4\xe5 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="5"
+  U 1 3 1 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="2,5" c18=0
+  T 0 1 0 0 t="2,5"
+  T 1 3 3 0 t="\xe5\xf5\xf1\xfe"
+< NUM ret="\xe4\xfd\xef \xf4\xe5\xeb\xe5\xdf\xe1  \xf0\xdd\xed\xf4\xe5 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="2,5"
+  U 1 3 3 0 t="n"
+> NUM type=0 idx=1 a3="dmy" a6="20" c18=0
+  T 0 2 0 0 t="$"
+  T 1 1 1 0 t="20"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9  \xe4\xef\xeb\xeb\xdc\xf1\xe9\xe1 " c18=0
+  U 0 2 0 0 t="$"
+  U 1 1 1 0 t="20"
+> NUM type=0 idx=0 a3="dmy" a6="20" c18=0
+  T 0 1 0 0 t="20"
+  T 1 2 2 0 t="$"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9  \xe4\xef\xeb\xeb\xdc\xf1\xe9\xe1 " c18=1
+  U 0 1 0 0 t="20"
+  U 1 2 2 0 t="n"
+> NUM type=0 idx=1 a3="dmy" a6="5" c18=0
+  T 0 2 0 0 t="\xa3"
+  T 1 1 1 0 t="5"
+< NUM ret="\xf0\xdd\xed\xf4\xe5 \xf3\xf4\xe5\xf1\xeb\xdf\xed\xe1 " c18=0
+  U 0 2 0 0 t="\xa3"
+  U 1 1 1 0 t="5"
+> NUM type=0 idx=1 a3="dmy" a6="100" c18=0
+  T 0 2 0 0 t="\xa5"
+  T 1 1 1 0 t="100"
+< NUM ret="\xe5\xea\xe1\xf4\xfc  \xe3\xe5\xed " c18=0
+  U 0 2 0 0 t="\xa5"
+  U 1 1 1 0 t="100"
+> NUM type=0 idx=0 a3="dmy" a6="50" c18=0
+  T 0 1 0 0 t="50"
+  T 1 2 2 0 t="%"
+< NUM ret="\xf0\xe5\xed\xde\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="50"
+  U 1 2 2 0 t="%"
+> NUM type=0 idx=0 a3="dmy" a6="12,5" c18=0
+  T 0 1 0 0 t="12,5"
+  T 1 2 4 0 t="%"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xea\xfc\xec\xec\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="12,5"
+  U 1 2 4 0 t="%"
+> NUM type=0 idx=0 a3="dmy" a6="1/2" c18=0
+  T 0 1 0 0 t="1/2"
+< NUM ret="\xec\xe9\xf3\xfc" c18=0
+  U 0 1 0 0 t="1/2"
+> NUM type=0 idx=0 a3="dmy" a6="3/4" c18=0
+  T 0 1 0 0 t="3/4"
+< NUM ret="\xf4\xf1\xdf\xe1 \xf4\xdd\xf4\xe1\xf1\xf4\xe1" c18=0
+  U 0 1 0 0 t="3/4"
+> NUM type=0 idx=0 a3="dmy" a6="2/3" c18=0
+  T 0 1 0 0 t="2/3"
+< NUM ret="\xe4\xfd\xef \xf4\xf1\xdf\xf4\xe1" c18=0
+  U 0 1 0 0 t="2/3"
+> NUM type=0 idx=0 a3="dmy" a6="1/3" c18=0
+  T 0 1 0 0 t="1/3"
+< NUM ret="\xdd\xed\xe1 \xf4\xf1\xdf\xf4\xef" c18=0
+  U 0 1 0 0 t="1/3"
+> NUM type=0 idx=0 a3="dmy" a6="5/8" c18=0
+  T 0 1 0 0 t="5/8"
+< NUM ret="\xf0\xdd\xed\xf4\xe5 # \xef\xf7\xf4\xfe" c18=0
+  U 0 1 0 0 t="5/8"
+> NUM type=0 idx=0 a3="dmy" a6="210" c18=0
+  T 0 1 0 0 t="210"
+  T 1 1 3 0 t="1234567"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="210"
+  U 1 1 3 0 t="1234567"
+> NUM type=0 idx=1 a3="dmy" a6="1234567" c18=0
+  T 0 1 0 0 t="\xe4\xdd\xea\xe1"
+  T 1 1 3 0 t="1234567"
+< NUM ret="\xdd\xed\xe1 \xe4\xfd\xef \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="\xe4\xdd\xea\xe1"
+  U 1 1 3 0 t="1234567"
+> NUM type=0 idx=0 a3="dmy" a6="2101234567" c18=0
+  T 0 1 0 0 t="2101234567"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1 # \xec\xe7\xe4\xdd\xed \xdd\xed\xe1 # \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="2101234567"
+> NUM type=0 idx=0 a3="dmy" a6="6912345678" c18=0
+  T 0 1 0 0 t="6912345678"
+< NUM ret="\xe5\xee\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1 # \xe4\xfe\xe4\xe5\xea\xe1  # \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xf0\xe5\xed\xde\xed\xf4\xe1 \xdd\xee\xe9 # \xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 \xef\xf7\xf4\xfe" c18=0
+  U 0 1 0 0 t="6912345678"
+> NUM type=0 idx=0 a3="dmy" a6="+30" c18=0
+  T 0 1 0 0 t="+30"
+  T 1 1 3 0 t="210"
+  T 2 1 7 0 t="1234567"
+< NUM ret="\xf3\xf5\xed\xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="+30"
+  U 1 1 3 0 t="210"
+  U 2 1 7 0 t="1234567"
+> NUM type=0 idx=1 a3="dmy" a6="210" c18=0
+  T 0 1 0 0 t="\xf3\xf5\xed\xf4\xf1\xe9\xdc\xed\xf4\xe1"
+  T 1 1 3 0 t="210"
+  T 2 1 7 0 t="1234567"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="\xf3\xf5\xed\xf4\xf1\xe9\xdc\xed\xf4\xe1"
+  U 1 1 3 0 t="210"
+  U 2 1 7 0 t="1234567"
+> NUM type=0 idx=2 a3="dmy" a6="1234567" c18=0
+  T 0 1 0 0 t="\xf3\xf5\xed\xf4\xf1\xe9\xdc\xed\xf4\xe1"
+  T 1 1 3 0 t="\xe4\xdd\xea\xe1"
+  T 2 1 7 0 t="1234567"
+< NUM ret="\xdd\xed\xe1 \xe4\xfd\xef \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="\xf3\xf5\xed\xf4\xf1\xe9\xdc\xed\xf4\xe1"
+  U 1 1 3 0 t="\xe4\xdd\xea\xe1"
+  U 2 1 7 0 t="1234567"
+> NUM type=0 idx=0 a3="dmy" a6="210-1234567" c18=0
+  T 0 1 0 0 t="210-1234567"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe4\xdd\xea\xe1  # \xdd\xed\xe1 \xe4\xfd\xef \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="210-1234567"
+> NUM type=0 idx=0 a3="dmy" a6="69" c18=0
+  T 0 1 0 0 t="69"
+  T 1 1 2 0 t="123"
+  T 2 1 6 0 t="45"
+  T 3 1 9 0 t="67"
+< NUM ret="\xe5\xee\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="69"
+  U 1 1 2 0 t="123"
+  U 2 1 6 0 t="45"
+  U 3 1 9 0 t="67"
+> NUM type=0 idx=1 a3="dmy" a6="123" c18=0
+  T 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  T 1 1 2 0 t="123"
+  T 2 1 6 0 t="45"
+  T 3 1 9 0 t="67"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  U 1 1 2 0 t="123"
+  U 2 1 6 0 t="45"
+  U 3 1 9 0 t="67"
+> NUM type=0 idx=2 a3="dmy" a6="45" c18=0
+  T 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  T 1 1 2 0 t="\xf4\xf1\xdf\xe1"
+  T 2 1 6 0 t="45"
+  T 3 1 9 0 t="67"
+< NUM ret="\xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  U 1 1 2 0 t="\xf4\xf1\xdf\xe1"
+  U 2 1 6 0 t="45"
+  U 3 1 9 0 t="67"
+> NUM type=0 idx=3 a3="dmy" a6="67" c18=0
+  T 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  T 1 1 2 0 t="\xf4\xf1\xdf\xe1"
+  T 2 1 6 0 t="\xf0\xdd\xed\xf4\xe5"
+  T 3 1 9 0 t="67"
+< NUM ret="\xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 1 0 0 t="\xe5\xed\xed\xdd\xe1"
+  U 1 1 2 0 t="\xf4\xf1\xdf\xe1"
+  U 2 1 6 0 t="\xf0\xdd\xed\xf4\xe5"
+  U 3 1 9 0 t="67"
+> NUM type=5 idx=1 a3="dmy" a6="3" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="3"
+  T 2 3 20 0 t="\xfc\xf1\xef\xf6\xef\xf2"
+< NUM ret="\xf4\xf1\xdf\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="3"
+  U 2 3 20 0 t="\xfc\xf1\xef\xf6\xef\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="4" c18=0
+  T 0 1 0 0 t="4"
+  T 1 3 1 0 t="\xef"
+  T 2 3 2 0 t="\xea\xe5\xf6\xdc\xeb\xe1\xe9\xef"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="4"
+  U 1 3 1 0 t="\xef"
+  U 2 3 2 0 t="\xea\xe5\xf6\xdc\xeb\xe1\xe9\xef"
+> NUM type=0 idx=0 a3="dmy" a6="2" c18=0
+  T 0 1 0 0 t="2"
+  T 1 3 1 0 t="\xe1"
+< NUM ret="\xe4\xfd\xef" c18=0
+  U 0 1 0 0 t="2"
+  U 1 3 1 0 t="\xe1"
+> NUM type=0 idx=0 a3="dmy" a6="10" c18=0
+  T 0 1 0 0 t="10"
+  T 1 2 2 0 t="\xb0"
+< NUM ret="\xe4\xdd\xea\xe1\xf4\xef\xf2 " c18=0
+  U 0 1 0 0 t="10"
+  U 1 2 2 0 t="\xb0"
+> NUM type=0 idx=0 a3="dmy" a6="20" c18=0
+  T 0 1 0 0 t="20"
+  T 1 2 2 0 t="\xb0"
+  T 2 3 4 0 t="C"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="20"
+  U 1 2 2 0 t="\xb0"
+  U 2 3 4 0 t="C"
+> NUM type=6 idx=1 a3="dmy" a6="5" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="5"
+  T 2 3 20 0 t="\xcc\xe1\xc0\xef\xf5"
+< NUM ret="\xf0\xdd\xec\xf0\xf4\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="5"
+  U 2 3 20 0 t="\xcc\xe1\xc0\xef\xf5"
+> NUM type=0 idx=1 a3="dmy" a6="1990" c18=0
+  T 0 3 0 0 t="\xf4\xef"
+  T 1 1 2 0 t="1990"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 " c18=0
+  U 0 3 0 0 t="\xf4\xef"
+  U 1 1 2 0 t="1990"
+> NUM type=0 idx=3 a3="dmy" a6="1980" c18=0
+  T 0 3 0 0 t="\xf4\xe7"
+  T 1 3 2 0 t="\xe4\xe5\xea\xe1\xe5\xf4\xdf\xe1"
+  T 2 3 11 0 t="\xf4\xef\xf5"
+  T 3 1 15 0 t="1980"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xef\xe3\xe4\xfc\xed\xf4\xe1 " c18=0
+  U 0 3 0 0 t="\xf4\xe7"
+  U 1 3 2 0 t="\xe4\xe5\xea\xe1\xe5\xf4\xdf\xe1"
+  U 2 3 11 0 t="\xf4\xef\xf5"
+  U 3 1 15 0 t="1980"
+> NUM type=0 idx=1 a3="dmy" a6="23" c18=0
+  T 0 3 0 0 t="\xf3\xe5\xeb\xdf\xe4\xe1"
+  T 1 1 6 0 t="23"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 3 0 0 t="\xf3\xe5\xeb\xdf\xe4\xe1"
+  U 1 1 6 0 t="23"
+> NUM type=0 idx=1 a3="dmy" a6="2" c18=0
+  T 0 3 0 0 t="\xf4\xef"
+  T 1 1 2 0 t="2"
+  T 2 3 4 0 t="\xef"
+  T 3 3 5 0 t="\xea\xe1\xe9"
+  T 4 3 9 0 t="\xf4\xef"
+  T 5 1 12 0 t="3"
+  T 6 3 14 0 t="\xef"
+< NUM ret="\xe4\xfd\xef" c18=0
+  U 0 3 0 0 t="\xf4\xef"
+  U 1 1 2 0 t="2"
+  U 2 3 4 0 t="\xef"
+  U 3 3 5 0 t="\xea\xe1\xe9"
+  U 4 3 9 0 t="\xf4\xef"
+  U 5 1 12 0 t="3"
+  U 6 3 14 0 t="\xef"
+> NUM type=0 idx=5 a3="dmy" a6="3" c18=0
+  T 0 3 0 0 t="\xf4\xef"
+  T 1 1 2 0 t="\xe4\xfd\xef"
+  T 2 3 4 0 t="\xef"
+  T 3 3 5 0 t="\xea\xe1\xe9"
+  T 4 3 9 0 t="\xf4\xef"
+  T 5 1 12 0 t="3"
+  T 6 3 14 0 t="\xef"
+< NUM ret="\xf4\xf1\xdf\xe1" c18=0
+  U 0 3 0 0 t="\xf4\xef"
+  U 1 1 2 0 t="\xe4\xfd\xef"
+  U 2 3 4 0 t="\xef"
+  U 3 3 5 0 t="\xea\xe1\xe9"
+  U 4 3 9 0 t="\xf4\xef"
+  U 5 1 12 0 t="3"
+  U 6 3 14 0 t="\xef"
+> NUM type=0 idx=1 a3="dmy" a6="123" c18=0
+  T 0 3 0 0 t="ABC"
+  T 1 1 3 0 t="123"
+< NUM ret="\xe5\xea\xe1\xf4\xfc\xed \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 3 0 0 t="ABC"
+  U 1 1 3 0 t="123"
+> NUM type=0 idx=0 a3="dmy" a6="12" c18=0
+  T 0 1 0 0 t="12"
+  T 1 3 2 0 t="a"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="12"
+  U 1 3 2 0 t="a"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+  T 1 3 1 0 t="\xe5\xf0\xdf"
+  T 2 1 5 0 t="4"
+< NUM ret="\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="3"
+  U 1 3 1 0 t="\xe5\xf0\xdf"
+  U 2 1 5 0 t="4"
+> NUM type=0 idx=0 a3="dmy" a6="1-2" c18=0
+  T 0 1 0 0 t="1-2"
+< NUM ret="\xdd\xed\xe1 # \xe4\xfd\xef" c18=0
+  U 0 1 0 0 t="1-2"
+> NUM type=0 idx=0 a3="dmy" a6="10-20" c18=0
+  T 0 1 0 0 t="10-20"
+< NUM ret="\xe4\xdd\xea\xe1  # \xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="10-20"
+> NUM type=0 idx=0 a3="dmy" a6="2/5/2023" c18=0
+  T 0 1 0 0 t="2/5/2023"
+  T 1 3 8 0 t="\xea\xe1\xe9"
+  T 2 1 12 0 t="3/6/2024"
+< NUM ret="\xe4\xfd\xef \xec\xe1\xc0\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="2/5/2023"
+  U 1 3 8 0 t="\xea\xe1\xe9"
+  U 2 1 12 0 t="3/6/2024"
+> NUM type=0 idx=2 a3="dmy" a6="3/6/2024" c18=0
+  T 0 1 0 0 t="\xf4\xf1\xdf\xe1"
+  T 1 3 8 0 t="\xea\xe1\xe9"
+  T 2 1 12 0 t="3/6/2024"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2 \xe9\xef\xf5\xed\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="\xf4\xf1\xdf\xe1"
+  U 1 3 8 0 t="\xea\xe1\xe9"
+  U 2 1 12 0 t="3/6/2024"
+> NUM type=0 idx=0 a3="dmy" a6="1.5" c18=0
+  T 0 1 0 0 t="1.5"
+< NUM ret="\xdd\xed\xe1 # \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="1.5"
+> NUM type=0 idx=0 a3="dmy" a6="1,5,6" c18=0
+  T 0 1 0 0 t="1,5,6"
+< NUM ret="\xdd\xed\xe1 # \xf0\xdd\xed\xf4\xe5 # \xdd\xee\xe9" c18=0
+  U 0 1 0 0 t="1,5,6"
+> NUM type=0 idx=0 a3="dmy" a6="0,001" c18=0
+  T 0 1 0 0 t="0,001"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xea\xfc\xec\xec\xe1 \xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="0,001"
+> NUM type=0 idx=0 a3="dmy" a6="5" c18=0
+  T 0 1 0 0 t="5"
+  T 1 3 1 0 t="\xe4\xf1\xf7"
+< NUM ret="\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="5"
+  U 1 3 1 0 t="\xe4\xf1\xf7"
+> NUM type=0 idx=0 a3="dmy" a6="1" c18=0
+  T 0 1 0 0 t="1"
+  T 1 3 1 0 t="\xe4\xf1\xf7"
+< NUM ret="\xec\xdf\xe1" c18=0
+  U 0 1 0 0 t="1"
+  U 1 3 1 0 t="\xe4\xf1\xf7"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+  T 1 3 1 0 t="\xe4\xf1\xe1\xf7\xec\xdd\xf2"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2" c18=0
+  U 0 1 0 0 t="3"
+  U 1 3 1 0 t="\xe4\xf1\xe1\xf7\xec\xdd\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="4" c18=0
+  T 0 1 0 0 t="4"
+  T 1 3 1 0 t="\xe4\xf1\xdc\xf7\xec\xe7"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2" c18=0
+  U 0 1 0 0 t="4"
+  U 1 3 1 0 t="\xe4\xf1\xdc\xf7\xec\xe7"
+> NUM type=0 idx=0 a3="dmy" a6="21" c18=0
+  T 0 1 0 0 t="21"
+  T 1 3 2 0 t="\xe4\xf1\xf7"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xec\xdf\xe1" c18=0
+  U 0 1 0 0 t="21"
+  U 1 3 2 0 t="\xe4\xf1\xf7"
+> NUM type=0 idx=0 a3="dmy" a6="1.500" c18=0
+  T 0 1 0 0 t="1.500"
+  T 1 3 5 0 t="\xe4\xf1\xf7"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xe5\xf2 " c18=0
+  U 0 1 0 0 t="1.500"
+  U 1 3 5 0 t="\xe4\xf1\xf7"
+> NUM type=0 idx=0 a3="dmy" a6="12,50" c18=0
+  T 0 1 0 0 t="12,50"
+  T 1 3 5 0 t="\xe4\xf1\xf7"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1  # \xf0\xe5\xed\xde\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="12,50"
+  U 1 3 5 0 t="\xe4\xf1\xf7"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+  T 1 3 1 0 t="EUR"
+< NUM ret="\xf4\xf1\xdf\xe1 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="3"
+  U 1 3 1 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="1" c18=0
+  T 0 1 0 0 t="1"
+  T 1 3 1 0 t="\xc5\xd5\xd1\xbf"
+< NUM ret="\xdd\xed\xe1 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="1"
+  U 1 3 1 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="0,05" c18=0
+  T 0 1 0 0 t="0,05"
+  T 1 2 4 0 t="\x80"
+< NUM ret="\xf0\xdd\xed\xf4\xe5 \xeb\xe5\xf0\xf4\xdc " c18=1
+  U 0 1 0 0 t="0,05"
+  U 1 2 4 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="0,50" c18=0
+  T 0 1 0 0 t="0,50"
+  T 1 2 4 0 t="\x80"
+< NUM ret="\xf0\xe5\xed\xde\xed\xf4\xe1  \xeb\xe5\xf0\xf4\xdc " c18=1
+  U 0 1 0 0 t="0,50"
+  U 1 2 4 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="1,00" c18=0
+  T 0 1 0 0 t="1,00"
+  T 1 2 4 0 t="\x80"
+< NUM ret="\xdd\xed\xe1 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="1,00"
+  U 1 2 4 0 t="n"
+> NUM type=0 idx=1 a3="dmy" a6="1.234" c18=0
+  T 0 2 0 0 t="\x80"
+  T 1 1 1 0 t="1.234"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 \xe5\xf5\xf1\xfe " c18=0
+  U 0 2 0 0 t="\x80"
+  U 1 1 1 0 t="1.234"
+> NUM type=0 idx=1 a3="dmy" a6="3,5" c18=0
+  T 0 2 0 0 t="$"
+  T 1 1 1 0 t="3,5"
+< NUM ret="\xf4\xf1\xdf\xe1 \xf4\xe5\xeb\xe5\xdf\xe1  \xf0\xdd\xed\xf4\xe5 \xe4\xef\xeb\xeb\xdc\xf1\xe9\xe1 " c18=0
+  U 0 2 0 0 t="$"
+  U 1 1 1 0 t="3,5"
+> NUM type=0 idx=0 a3="dmy" a6="100,456" c18=0
+  T 0 1 0 0 t="100,456"
+  T 1 2 7 0 t="\x80"
+< NUM ret="\xe5\xea\xe1\xf4\xfc  \xf4\xe5\xeb\xe5\xdf\xe1  \xf4\xe5\xf4\xf1\xe1\xea\xfc\xf3\xe9\xe1 \xf0\xe5\xed\xde\xed\xf4\xe1 \xdd\xee\xe9 \xe5\xf5\xf1\xfe " c18=1
+  U 0 1 0 0 t="100,456"
+  U 1 2 7 0 t="n"
+> NUM type=0 idx=0 a3="dmy" a6="10" c18=0
+  T 0 1 0 0 t="10"
+  T 1 3 2 0 t="h"
+< NUM ret="\xe4\xdd\xea\xe1 " c18=1
+  U 0 1 0 0 t="10"
+  U 1 3 2 0 t="h"
+> NUM type=0 idx=0 a3="dmy" a6="10" c18=0
+  T 0 1 0 0 t="10"
+  T 1 3 2 0 t="h"
+  T 2 1 4 0 t="30"
+< NUM ret="\xe4\xdd\xea\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=2
+  U 0 1 0 0 t="10"
+  U 1 3 2 0 t="h"
+  U 2 1 4 0 t="30"
+> NUM type=0 idx=0 a3="dmy" a6="25" c18=0
+  T 0 1 0 0 t="25"
+  T 1 3 2 0 t="h"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="25"
+  U 1 3 2 0 t="h"
+> NUM type=0 idx=0 a3="dmy" a6="1:15" c18=0
+  T 0 1 0 0 t="1:15"
+< NUM ret="\xec\xdf\xe1 \xea\xe1\xe9 \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="1:15"
+> NUM type=0 idx=0 a3="dmy" a6="21:30" c18=0
+  T 0 1 0 0 t="21:30"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xec\xdf\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="21:30"
+> NUM type=0 idx=0 a3="dmy" a6="3:00" c18=0
+  T 0 1 0 0 t="3:00"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2" c18=0
+  U 0 1 0 0 t="3:00"
+> NUM type=0 idx=0 a3="dmy" a6="14:05" c18=0
+  T 0 1 0 0 t="14:05"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xea\xe1\xe9 \xec\xe7\xe4\xdd\xed \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="14:05"
+> NUM type=0 idx=0 a3="dmy" a6="4:20" c18=0
+  T 0 1 0 0 t="4:20"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xea\xe1\xe9 \xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="4:20"
+> NUM type=0 idx=0 a3="dmy" a6="13:10" c18=0
+  T 0 1 0 0 t="13:10"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xf1\xe5\xdf\xf2 \xea\xe1\xe9 \xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="13:10"
+> NUM type=0 idx=0 a3="dmy" a6="10:00:30" c18=0
+  T 0 1 0 0 t="10:00:30"
+< NUM ret="\xe4\xdd\xea\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xe4\xe5\xf5\xf4\xe5\xf1\xfc\xeb\xe5\xf0\xf4\xe1" c18=0
+  U 0 1 0 0 t="10:00:30"
+> NUM type=0 idx=0 a3="dmy" a6="10:30:00" c18=0
+  T 0 1 0 0 t="10:30:00"
+< NUM ret="\xe4\xdd\xea\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="10:30:00"
+> NUM type=0 idx=0 a3="dmy" a6="00:00" c18=0
+  T 0 1 0 0 t="00:00"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed" c18=0
+  U 0 1 0 0 t="00:00"
+> NUM type=0 idx=0 a3="dmy" a6="12:00" c18=0
+  T 0 1 0 0 t="12:00"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="12:00"
+> NUM type=0 idx=0 a3="dmy" a6="7:05-10" c18=0
+  T 0 1 0 0 t="7:05-10"
+< NUM ret="\xe5\xf0\xf4\xdc \xea\xe1\xe9 \xec\xe7\xe4\xdd\xed \xf0\xdd\xed\xf4\xe5 # \xe4\xdd\xea\xe1 " c18=0
+  U 0 1 0 0 t="7:05-10"
+> NUM type=0 idx=0 a3="dmy" a6="3/3/2003" c18=0
+  T 0 1 0 0 t="3/3/2003"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2 \xec\xe1\xf1\xf4\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2  \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="3/3/2003"
+> NUM type=0 idx=0 a3="dmy" a6="13/12/2013" c18=0
+  T 0 1 0 0 t="13/12/2013"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xf1\xe5\xdf\xf2 \xe4\xe5\xea\xe5\xec\xe2\xf1\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe4\xe5\xea\xe1\xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="13/12/2013"
+> NUM type=0 idx=0 a3="dmy" a6="4/4/2004" c18=0
+  T 0 1 0 0 t="4/4/2004"
+< NUM ret="\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xe1\xf0\xf1\xe9\xeb\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2  \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="4/4/2004"
+> NUM type=0 idx=0 a3="dmy" a6="14/2/2014" c18=0
+  T 0 1 0 0 t="14/2/2014"
+< NUM ret="\xe4\xe5\xea\xe1\xf4\xdd\xf3\xf3\xe5\xf1\xe9\xf2 \xf6\xe5\xe2\xf1\xef\xf5\xe1\xf1\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe4\xe5\xea\xe1\xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 1 0 0 t="14/2/2014"
+> NUM type=0 idx=0 a3="dmy" a6="21/6/2021" c18=0
+  T 0 1 0 0 t="21/6/2021"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1 \xe9\xef\xf5\xed\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1" c18=0
+  U 0 1 0 0 t="21/6/2021"
+> NUM type=0 idx=0 a3="dmy" a6="23/1/1923" c18=0
+  T 0 1 0 0 t="23/1/1923"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xe5\xdf\xf2 \xe9\xe1\xed\xef\xf5\xe1\xf1\xdf\xef\xf5 \xf7\xdf\xeb\xe9\xe1 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="23/1/1923"
+> NUM type=0 idx=0 a3="dmy" a6="29/2/2023" c18=0
+  T 0 1 0 0 t="29/2/2023"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xe5\xed\xed\xdd\xe1 \xf6\xe5\xe2\xf1\xef\xf5\xe1\xf1\xdf\xef\xf5 \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 1 0 0 t="29/2/2023"
+> NUM type=0 idx=0 a3="dmy" a6="31/4/2020" c18=0
+  T 0 1 0 0 t="31/4/2020"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 \xdd\xed\xe1 # \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="31/4/2020"
+> NUM type=0 idx=0 a3="dmy" a6="1.1.99" c18=0
+  T 0 1 0 0 t="1.1.99"
+< NUM ret="\xf0\xf1\xfe\xf4\xe7 \xe9\xe1\xed\xef\xf5\xe1\xf1\xdf\xef\xf5 \xf7\xdf\xeb\xe9\xe1 \xe5\xed\xed\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xed\xe5\xed\xde\xed\xf4\xe1 \xe5\xed\xed\xdd\xe1" c18=0
+  U 0 1 0 0 t="1.1.99"
+> NUM type=0 idx=0 a3="dmy" a6="32/1/2000" c18=0
+  T 0 1 0 0 t="32/1/2000"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 \xe4\xfd\xef # \xdd\xed\xe1 # \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="32/1/2000"
+> NUM type=5 idx=1 a3="dmy" a6="2" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="2"
+< NUM ret="\xe4\xe5\xfd\xf4\xe5\xf1\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="2"
+> NUM type=6 idx=1 a3="dmy" a6="3" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="3"
+< NUM ret="\xf4\xf1\xdf\xf4\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="3"
+> NUM type=5 idx=1 a3="dmy" a6="4" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="4"
+< NUM ret="\xf4\xdd\xf4\xe1\xf1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="4"
+> NUM type=5 idx=1 a3="dmy" a6="5" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="5"
+< NUM ret="\xf0\xdd\xec\xf0\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="5"
+> NUM type=6 idx=1 a3="dmy" a6="6" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="6"
+< NUM ret="\xdd\xea\xf4\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="6"
+> NUM type=5 idx=1 a3="dmy" a6="7" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="7"
+< NUM ret="\xdd\xe2\xe4\xef\xec\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="7"
+> NUM type=5 idx=1 a3="dmy" a6="8" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="8"
+< NUM ret="\xfc\xe3\xe4\xef\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="8"
+> NUM type=5 idx=1 a3="dmy" a6="9" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="9"
+< NUM ret="\xdd\xed\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="9"
+> NUM type=5 idx=1 a3="dmy" a6="10" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="10"
+< NUM ret="\xe4\xdd\xea\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="10"
+> NUM type=5 idx=1 a3="dmy" a6="11" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="11"
+< NUM ret="\xe5\xed\xe4\xdd\xea\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="11"
+> NUM type=6 idx=1 a3="dmy" a6="12" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="12"
+< NUM ret="\xe4\xf9\xe4\xdd\xea\xe1\xf4\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="12"
+> NUM type=5 idx=1 a3="dmy" a6="13" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="13"
+< NUM ret="\xe4\xdd\xea\xe1\xf4\xef\xf2 \xf4\xf1\xdf\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="13"
+> NUM type=5 idx=1 a3="dmy" a6="19" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="19"
+< NUM ret="\xe4\xdd\xea\xe1\xf4\xef\xf2 \xdd\xed\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="19"
+> NUM type=0 idx=0 a3="dmy" a6="20" c18=0
+  T 0 1 0 0 t="20"
+  T 1 3 2 0 t="\xfc\xf2"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 " c18=0
+  U 0 1 0 0 t="20"
+  U 1 3 2 0 t="\xfc\xf2"
+> NUM type=5 idx=1 a3="dmy" a6="22" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="22"
+< NUM ret="\xe5\xe9\xea\xef\xf3\xf4\xfc\xf2 \xe4\xe5\xfd\xf4\xe5\xf1\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="22"
+> NUM type=0 idx=0 a3="dmy" a6="30" c18=0
+  T 0 1 0 0 t="30"
+  T 1 3 2 0 t="\xfc\xf2"
+< NUM ret="\xf4\xf1\xe9\xdc\xed\xf4\xe1 " c18=0
+  U 0 1 0 0 t="30"
+  U 1 3 2 0 t="\xfc\xf2"
+> NUM type=5 idx=1 a3="dmy" a6="45" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="45"
+< NUM ret="\xf4\xe5\xf3\xf3\xe5\xf1\xe1\xea\xef\xf3\xf4\xfc\xf2 \xf0\xdd\xec\xf0\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="45"
+> NUM type=5 idx=1 a3="dmy" a6="99" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="99"
+< NUM ret="\xe5\xed\xe5\xed\xe7\xea\xef\xf3\xf4\xfc\xf2 \xdd\xed\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="99"
+> NUM type=5 idx=1 a3="dmy" a6="101" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="101"
+< NUM ret="\xe5\xea\xe1\xf4\xef\xf3\xf4\xfc\xf2 \xf0\xf1\xfe\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="101"
+> NUM type=5 idx=1 a3="dmy" a6="110" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="110"
+< NUM ret="\xe5\xea\xe1\xf4\xef\xf3\xf4\xfc\xf2 \xe4\xdd\xea\xe1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="110"
+> NUM type=0 idx=0 a3="dmy" a6="200" c18=0
+  T 0 1 0 0 t="200"
+  T 1 3 3 0 t="\xfc\xf2"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 " c18=0
+  U 0 1 0 0 t="200"
+  U 1 3 3 0 t="\xfc\xf2"
+> NUM type=5 idx=1 a3="dmy" a6="234" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="234"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xef\xf3\xf4\xfc\xf2 \xf4\xf1\xe9\xe1\xea\xef\xf3\xf4\xfc\xf2 \xf4\xdd\xf4\xe1\xf1\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="234"
+> NUM type=0 idx=0 a3="dmy" a6="1000" c18=0
+  T 0 1 0 0 t="1000"
+  T 1 3 4 0 t="\xfc\xf2"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 " c18=0
+  U 0 1 0 0 t="1000"
+  U 1 3 4 0 t="\xfc\xf2"
+> NUM type=5 idx=1 a3="dmy" a6="1001" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="1001"
+< NUM ret="\xf7\xe9\xeb\xe9\xef\xf3\xf4\xfc\xf2 \xf0\xf1\xfe\xf4\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="1001"
+> NUM type=0 idx=0 a3="dmy" a6="2000" c18=0
+  T 0 1 0 0 t="2000"
+  T 1 3 4 0 t="\xfc\xf2"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="2000"
+  U 1 3 4 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="3000" c18=0
+  T 0 1 0 0 t="3000"
+  T 1 3 4 0 t="\xfc\xf2"
+< NUM ret="\xf4\xf1\xe5\xdf\xf2 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="3000"
+  U 1 3 4 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="10000" c18=0
+  T 0 1 0 0 t="10000"
+  T 1 3 5 0 t="\xfc\xf2"
+< NUM ret="\xe4\xdd\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="10000"
+  U 1 3 5 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="11000" c18=0
+  T 0 1 0 0 t="11000"
+  T 1 3 5 0 t="\xfc\xf2"
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 " c18=0
+  U 0 1 0 0 t="11000"
+  U 1 3 5 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="100000" c18=0
+  T 0 1 0 0 t="100000"
+  T 1 3 6 0 t="\xfc\xf2"
+< NUM ret="\xe5\xea\xe1\xf4\xfc \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2" c18=0
+  U 0 1 0 0 t="100000"
+  U 1 3 6 0 t="\xfc\xf2"
+> NUM type=0 idx=0 a3="dmy" a6="1000000" c18=0
+  T 0 1 0 0 t="1000000"
+  T 1 3 7 0 t="\xfc\xf2"
+< NUM ret="\xdd\xed\xe1 \xe5\xea\xe1\xf4\xef\xec\xec\xfd\xf1\xe9\xef" c18=0
+  U 0 1 0 0 t="1000000"
+  U 1 3 7 0 t="\xfc\xf2"
+> NUM type=5 idx=1 a3="dmy" a6="1234567" c18=0
+  T 0 5 0 0 t="\\{number=ordinalM"
+  T 1 1 18 0 t="1234567"
+< NUM ret="\xe5\xea\xe1\xf4\xef\xec\xec\xf5\xf1\xe9\xef\xf3\xf4\xfc\xf2 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xef\xf3\xf4\xfc\xf2 \xf4\xf1\xe9\xe1\xea\xef\xf3\xf4\xfc\xf2 \xf4\xdd\xf4\xe1\xf1\xf4\xef\xf2 \xf7\xe9\xeb\xe9\xef\xf3\xf4\xfc\xf2 \xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xef\xf3\xf4\xfc\xf2 \xe5\xee\xe7\xea\xef\xf3\xf4\xfc\xf2 \xdd\xe2\xe4\xef\xec\xef\xf2 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalM"
+  U 1 1 18 0 t="1234567"
+> NUM type=6 idx=1 a3="dmy" a6="11" c18=0
+  T 0 5 0 0 t="\\{number=ordinalF"
+  T 1 1 18 0 t="11"
+< NUM ret="\xe5\xed\xe4\xdd\xea\xe1\xf4\xe7 " c18=0
+  U 0 5 0 0 t="\\{number=ordinalF"
+  U 1 1 18 0 t="11"
+> NUM type=0 idx=4 a3="dmy" a6="11.45" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="time"
+  T 4 1 13 0 t="11.45"
+< NUM ret="\xdd\xed\xf4\xe5\xea\xe1 \xea\xe1\xe9 \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="time"
+  U 4 1 13 0 t="11.45"
+> NUM type=0 idx=4 a3="dmy" a6="2101234567" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="telephone"
+  T 4 1 18 0 t="2101234567"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9 \xdd\xed\xe1 # \xec\xe7\xe4\xdd\xed \xdd\xed\xe1 # \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1 # \xf3\xe1\xf1\xdc\xed\xf4\xe1 \xf0\xdd\xed\xf4\xe5 # \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="telephone"
+  U 4 1 18 0 t="2101234567"
+> NUM type=0 idx=4 a3="dmy" a6="210,123" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="telephone"
+  T 4 1 18 0 t="210,123"
+< NUM ret="\xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xe4\xdd\xea\xe1 \xea\xfc\xec\xec\xe1 \xe5\xea\xe1\xf4\xfc\xed \xe5\xdf\xea\xef\xf3\xe9 \xf4\xf1\xdf\xe1" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="telephone"
+  U 4 1 18 0 t="210,123"
+> NUM type=0 idx=4 a3="dmy" a6="20240315" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="date"
+  T 4 1 13 0 t="20240315"
+< NUM ret="\xe5\xdf\xea\xef\xf3\xe9  # \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="date"
+  U 4 1 13 0 t="20240315"
+> NUM type=0 idx=4 a3="dmy" a6="1234" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="digits"
+  T 4 1 15 0 t="1234"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="digits"
+  U 4 1 15 0 t="1234"
+> NUM type=0 idx=4 a3="dmy" a6="12,34" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="digits"
+  T 4 1 15 0 t="12,34"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xea\xe1\xe9 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="digits"
+  U 4 1 15 0 t="12,34"
+> NUM type=0 idx=4 a3="dmy" a6="1.234,5" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="cardinal"
+  T 4 1 17 0 t="1.234,5"
+< NUM ret="\xf7\xdf\xeb\xe9\xe1 \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xea\xfc\xec\xec\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="cardinal"
+  U 4 1 17 0 t="1.234,5"
+> NUM type=0 idx=4 a3="dmy" a6="1.234,567" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="cardinal"
+  T 4 1 17 0 t="1.234,567"
+< NUM ret="\xdd\xed\xe1 # \xe4\xe9\xe1\xea\xfc\xf3\xe9\xe1 \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xf0\xe5\xed\xf4\xe1\xea\xfc\xf3\xe9\xe1 \xe5\xee\xde\xed\xf4\xe1 \xe5\xf0\xf4\xdc" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="cardinal"
+  U 4 1 17 0 t="1.234,567"
+> NUM type=0 idx=4 a3="dmy" a6="12,50" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="currency"
+  T 4 1 17 0 t="12,50"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1 \xea\xe1\xe9 \xf0\xe5\xed\xde\xed\xf4\xe1 " c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="currency"
+  U 4 1 17 0 t="12,50"
+> NUM type=0 idx=6 a3="dmy" a6="3,5" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="time"
+  T 4 2 13 0 t="_"
+  T 5 3 14 0 t="duration"
+  T 6 1 22 0 t="3,5"
+< NUM ret="\xf4\xf1\xdf\xe1 \xea\xfc\xec\xec\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="time"
+  U 4 2 13 0 t="_"
+  U 5 3 14 0 t="duration"
+  U 6 1 22 0 t="3,5"
+> NUM type=0 idx=4 a3="dmy" a6="12345678" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="real"
+  T 4 1 13 0 t="12345678"
+< NUM ret="\xe4\xfe\xe4\xe5\xea\xe1  # \xf4\xf1\xe9\xdc\xed\xf4\xe1 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xf0\xe5\xed\xde\xed\xf4\xe1 \xdd\xee\xe9 # \xe5\xe2\xe4\xef\xec\xde\xed\xf4\xe1 \xef\xf7\xf4\xfe" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="real"
+  U 4 1 13 0 t="12345678"
+> NUM type=0 idx=4 a3="dmy" a6="007" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="code"
+  T 4 1 13 0 t="007"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xec\xe7\xe4\xdd\xed \xe5\xf0\xf4\xdc" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="code"
+  U 4 1 13 0 t="007"
+> NUM type=0 idx=6 a3="dmy" a6="2024/03/15" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="date"
+  T 4 2 13 0 t="_"
+  T 5 3 14 0 t="ymd"
+  T 6 1 17 0 t="2024/03/15"
+< NUM ret="\xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="date"
+  U 4 2 13 0 t="_"
+  U 5 3 14 0 t="ymd"
+  U 6 1 17 0 t="2024/03/15"
+> NUM type=0 idx=6 a3="dmy" a6="03/15/2024" c18=0
+  T 0 2 0 0 t="\\"
+  T 1 3 2 0 t="number"
+  T 2 2 8 0 t="="
+  T 3 3 9 0 t="date"
+  T 4 2 13 0 t="_"
+  T 5 3 14 0 t="mdy"
+  T 6 1 17 0 t="03/15/2024"
+< NUM ret="\xec\xe7\xe4\xdd\xed \xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5 # \xe4\xfd\xef \xf7\xe9\xeb\xe9\xdc\xe4\xe5\xf2 \xe5\xdf\xea\xef\xf3\xe9 \xf4\xdd\xf3\xf3\xe5\xf1\xe1" c18=0
+  U 0 2 0 0 t="\\"
+  U 1 3 2 0 t="number"
+  U 2 2 8 0 t="="
+  U 3 3 9 0 t="date"
+  U 4 2 13 0 t="_"
+  U 5 3 14 0 t="mdy"
+  U 6 1 17 0 t="03/15/2024"
+> NUM type=0 idx=0 a3="dmy" a6="3" c18=0
+  T 0 1 0 0 t="3"
+  T 1 6 1 0 t="'"
+< NUM ret="\xf4\xf1\xdf\xf4\xef\xf2 " c18=0
+  U 0 1 0 0 t="3"
+  U 1 6 1 0 t="'"
+> NUM type=0 idx=0 a3="dmy" a6="20" c18=0
+  T 0 1 0 0 t="20"
+  T 1 2 2 0 t="\xb0"
+< NUM ret="\xe5\xe9\xea\xef\xf3\xf4\xfc\xf2 " c18=0
+  U 0 1 0 0 t="20"
+  U 1 2 2 0 t="\xb0"
+> NUM type=0 idx=0 a3="dmy" a6="-12,5" c18=0
+  T 0 1 0 0 t="-12,5"
+< NUM ret="\xec\xe5\xdf\xef\xed\xe4\xfe\xe4\xe5\xea\xe1 \xea\xfc\xec\xec\xe1 \xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="-12,5"
+> NUM type=0 idx=0 a3="dmy" a6="+3:15" c18=0
+  T 0 1 0 0 t="+3:15"
+< NUM ret="\xf3\xf5\xed\xf4\xf1\xdf\xe1 # \xe4\xe5\xea\xe1\xf0\xdd\xed\xf4\xe5" c18=0
+  U 0 1 0 0 t="+3:15"
+> NUM type=0 idx=0 a3="dmy" a6="-1/2" c18=0
+  T 0 1 0 0 t="-1/2"
+< NUM ret="\xec\xe9\xf3\xfc" c18=0
+  U 0 1 0 0 t="-1/2"
+> NUM type=0 idx=0 a3="dmy" a6="1/12" c18=0
+  T 0 1 0 0 t="1/12"
+< NUM ret="\xdd\xed\xe1 # \xe4\xfe\xe4\xe5\xea\xe1 " c18=0
+  U 0 1 0 0 t="1/12"
+> NUM type=0 idx=0 a3="dmy" a6="7/8" c18=0
+  T 0 1 0 0 t="7/8"
+< NUM ret="\xe5\xf0\xf4\xdc # \xef\xf7\xf4\xfe" c18=0
+  U 0 1 0 0 t="7/8"
+> NUM type=0 idx=0 a3="dmy" a6="1/1000" c18=0
+  T 0 1 0 0 t="1/1000"
+< NUM ret="\xdd\xed\xe1 \xf7\xe9\xeb\xe9\xef\xf3\xf4\xfc" c18=0
+  U 0 1 0 0 t="1/1000"
+> NUM type=0 idx=0 a3="dmy" a6="3,141592" c18=0
+  T 0 1 0 0 t="3,141592"
+< NUM ret="\xf4\xf1\xdf\xe1 \xea\xfc\xec\xec\xe1 # \xdd\xed\xe1 # \xf4\xdd\xf3\xf3\xe5\xf1\xe1 # \xdd\xed\xe1 # \xf0\xdd\xed\xf4\xe5 # \xe5\xed\xed\xdd\xe1 # \xe4\xfd\xef" c18=0
+  U 0 1 0 0 t="3,141592"

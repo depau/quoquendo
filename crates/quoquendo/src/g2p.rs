@@ -7,7 +7,7 @@
 //! Loquendo voices declare in their `.sde` — and those alphabets really differ:
 //! Italian has `Ts Gn Gl N M` and geminates `p: tt:`; German has `Hk Hut ph
 //! Pf x c R OE: y: HAI` and `R` for /r/. A language with no rules here falls
-//! back to a generic grapheme map (after transliterating Cyrillic and Greek),
+//! back to a generic grapheme map (after transliterating Cyrillic),
 //! so it is still audible.
 //!
 //! Every rule below is **estimated**: the engine's own letter-to-sound rules
@@ -41,7 +41,7 @@ impl Language {
     /// The languages whose module is ported (`crate::lang`): they have no
     /// built-in rules, only the original's module from the language pack.
     pub fn is_ported(self) -> bool {
-        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German)
+        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek)
     }
 
     pub fn from_voice(mother_tongue: &str, aliases: &str) -> Language {
@@ -219,8 +219,8 @@ fn is_vowel_char(c: char) -> bool {
     matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y')
 }
 
-/// Transliterate scripts we have no rules for into Latin letters, so Cyrillic
-/// and Greek text still reaches the syllabary instead of vanishing.
+/// Transliterate scripts we have no rules for into Latin letters, so
+/// Cyrillic text still reaches the syllabary instead of vanishing.
 fn transliterate(w: &[char]) -> Vec<char> {
     let mut out = Vec::with_capacity(w.len());
     for c in w {
@@ -259,31 +259,6 @@ fn transliterate(w: &[char]) -> Vec<char> {
             'э' => "e".into(),
             'ю' => "u".into(),
             'я' => "a".into(),
-            // Greek
-            'α' => "a".into(),
-            'β' => "v".into(),
-            'γ' => "g".into(),
-            'δ' => "d".into(),
-            'ε' => "e".into(),
-            'ζ' => "z".into(),
-            'η' => "i".into(),
-            'θ' => "th".into(),
-            'ι' => "i".into(),
-            'κ' => "k".into(),
-            'λ' => "l".into(),
-            'μ' => "m".into(),
-            'ν' => "n".into(),
-            'ξ' => "ks".into(),
-            'ο' => "o".into(),
-            'π' => "p".into(),
-            'ρ' => "r".into(),
-            'σ' | 'ς' => "s".into(),
-            'τ' => "t".into(),
-            'υ' => "i".into(),
-            'φ' => "f".into(),
-            'χ' => "x".into(),
-            'ψ' => "ps".into(),
-            'ω' => "o".into(),
             other => strip_accent(*other).to_string(),
         };
         out.extend(mapped.chars());
@@ -452,8 +427,8 @@ fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
 }
 
 /// A word's phones by the built-in rules, for the languages without a
-/// ported module (Portuguese, Greek…). The five ported languages (Italian,
-/// English, Spanish, French, German) have no rules: without their module
+/// ported module (Portuguese…). The ported languages (Italian, English,
+/// Spanish, French, German, Greek) have no rules: without their module
 /// they read nothing, and the voice reports its language data missing.
 pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
@@ -474,18 +449,18 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     }
     let accent_final = word.chars().last().map(|c| ACCENTS.iter().any(|(a, _)| *a == c)).unwrap_or(false);
     let w: Vec<char> = match lang {
-        Language::Russian | Language::Greek => transliterate(&raw),
+        Language::Russian => transliterate(&raw),
         _ => raw.clone(),
     };
     let mut out = match lang {
-        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French => unreachable!(),
+        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek => unreachable!(),
         Language::Catalan => catalan(&w),
         Language::Portuguese => portuguese(&w),
         Language::Dutch => dutch(&w),
         Language::Swedish | Language::Danish | Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
         Language::Polish => polish(&w),
-        Language::Turkish | Language::Russian | Language::Greek | Language::Generic => generic(&w),
+        Language::Turkish | Language::Russian | Language::Generic => generic(&w),
     };
     stress(&mut out, lang, accent_final);
     out
@@ -1028,12 +1003,10 @@ mod tests {
     }
 
     #[test]
-    fn cyrillic_and_greek_reach_the_syllabary() {
+    fn cyrillic_reaches_the_syllabary() {
         let ru = word_to_symbols("привет", &Frontend::rules(Language::Russian));
         assert!(!ru.is_empty(), "Russian must produce symbols");
         assert!(ru.iter().any(|s| is_vowel(s)));
-        let el = word_to_symbols("γεια", &Frontend::rules(Language::Greek));
-        assert!(!el.is_empty(), "Greek must produce symbols");
     }
 
     #[test]

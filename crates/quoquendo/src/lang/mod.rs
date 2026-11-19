@@ -8,8 +8,12 @@ pub mod elqnum;
 pub mod english;
 pub mod french;
 pub mod german;
+pub mod greek;
 pub mod italian;
+pub mod portuguese;
 pub mod spanish;
+pub mod swedish;
+pub mod textfilter;
 
 use crate::g2p::{Language, Token};
 use std::sync::Arc;
@@ -48,6 +52,10 @@ pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
         Language::English => english::English::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::German => german::German::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::French => french::French::from_files(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::Greek => greek::Greek::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::Portuguese => portuguese::Portuguese::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+        // Swedish (`swedish`) is not wired yet: its FON stage is unfinished
+        // (MECHANICS §11), so Swedish voices keep the built-in rules
         _ => None,
     }
 }
