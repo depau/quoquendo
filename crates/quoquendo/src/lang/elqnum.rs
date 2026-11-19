@@ -612,19 +612,32 @@ pub fn validate_date(order: &[u8], date: &mut Date, min_year: u32) -> bool {
 }
 
 /// `ELQNumFormatVXML10Date` (Util 0x10014ac0): an 8-digit `YYYYMMDD` date
-/// (month at most 12, day at most 31 and possible in that month).
-pub fn format_vxml10_date(s: &[u8]) -> Option<Date> {
+/// (month at most 12, day at most 31 and possible in that month). Like the
+/// C, `date` is cleared first and gets each part as it is read, so a failed
+/// date keeps what was read before the failure.
+pub fn format_vxml10_date(s: &[u8], date: &mut Date) -> bool {
     let s = cs(s);
-    if s.len() != 8 || !s.iter().all(u8::is_ascii_digit) {
-        return None;
+    date.day = 0;
+    date.month = 0;
+    date.year = 0;
+    if s.len() != 8 {
+        return false;
     }
-    let year = atol(&s[..4]) as u32;
-    let month = atol(&s[4..6]) as u32;
-    let day = atol(&s[6..8]) as u32;
-    if month > 12 || day > 31 || (day >= 30 && month == 2) || (day == 31 && matches!(month, 4 | 6 | 9 | 11)) {
-        return None;
+    let digits = |p: &[u8]| p.iter().take_while(|c| c.is_ascii_digit()).count() == p.len();
+    if !digits(&s[..4]) {
+        return false;
     }
-    Some(Date { day, month, year, sep: 0 })
+    date.year = atol(&s[..4]) as u32;
+    if !digits(&s[4..6]) {
+        return false;
+    }
+    date.month = atol(&s[4..6]) as u32;
+    if !digits(&s[6..8]) {
+        return false;
+    }
+    date.day = atol(&s[6..8]) as u32;
+    let (day, month) = (date.day, date.month);
+    !(month > 12 || day > 31 || (day >= 30 && month == 2) || (day == 31 && matches!(month, 4 | 6 | 9 | 11)))
 }
 
 /// `ELQNumSetDefaultType` (Util 0x100150d0): `obj` becomes a plain number

@@ -16,6 +16,7 @@ mod fixtures;
 mod fon;
 mod les;
 mod morph;
+mod numeri;
 
 use super::common::{Pe, Phone, Word};
 use db::Table;
@@ -189,6 +190,9 @@ impl super::common::Les for German {
     fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
         digits.bytes().map(|d| vec![d]).collect()
     }
+    fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        numeri::leggi_numero(self, toks, i, kind, dmy)
+    }
     fn gestisci_maiuscole(&self, w: &mut [Word]) {
         German::gestisci_maiuscole(self, w)
     }
@@ -224,6 +228,9 @@ impl super::common::Les for German {
         // (26 of 34) or 0 — TODO(common): pass it through
         self.pronunciabile_c(w, 1)
     }
+    fn pronunciabile_flag(&self, w: &[u8], flag: u8) -> bool {
+        self.pronunciabile_c(w, flag)
+    }
     fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
         self.symbol_name_mode(c, mode)
     }
@@ -238,7 +245,7 @@ impl super::common::Les for German {
 }
 
 impl super::Module for German {
-    fn analyse(&self, text: &str) -> Vec<crate::g2p::Token> {
-        super::common::analyse(self, text)
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<crate::g2p::Token> {
+        super::common::analyse(self, text, voice)
     }
 }

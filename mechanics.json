@@ -839,104 +839,612 @@
   {
    "name": "English function tables",
    "group": "fon-english",
-   "value": {"EnglishUs": "0x100290d0 (30 pairs)", "EnglishGb": "0x100291c0 (29)", "EnglishAu": "0x100292a8 (29)"},
+   "value": {
+    "EnglishUs": "0x100290d0 (30 pairs)",
+    "EnglishGb": "0x100291c0 (29)",
+    "EnglishAu": "0x100292a8 (29)"
+   },
    "source": "LTTS7English.dll export English 0x100019f0 (first englishus/gb/au token of the descriptor's Language)"
   },
   {
    "name": "English phone symbol tables",
    "group": "fon-english",
-   "value": {"EnglishUs": "0x10043180 (81)", "EnglishGb": "0x10042ec0 (84)", "EnglishAu": "0x10042940 (85)"},
+   "value": {
+    "EnglishUs": "0x10043180 (81)",
+    "EnglishGb": "0x10042ec0 (84)",
+    "EnglishAu": "0x10042940 (85)"
+   },
    "source": "ELQGetPhonemes 0x10017a80 / 0x10017290 / 0x10011fb0; read by 0x1000bf00 (symbols at most 5 characters, 0x1000bf90)"
   },
   {
    "name": "English lexicon columns",
    "group": "fon-english",
-   "value": ["grafemica", "fonetica", "gradoaccentuale", "grammaticale", "gennum", "tempomodo"],
+   "value": [
+    "grafemica",
+    "fonetica",
+    "gradoaccentuale",
+    "grammaticale",
+    "gennum",
+    "tempomodo"
+   ],
    "source": "LTTS7English.dll 0x10027cd0, SELECT ... FROM lessico built by 0x10001460; searched by LTTS7Util ELQDBTableFind 0x10005df0 (ELQstricmp 0x100285e0)"
   },
   {
    "name": "English stress grades",
    "group": "fon-english",
-   "value": {"ACC": 0, "ACD": 2, "DEA": 3, "unset": 14},
+   "value": {
+    "ACC": 0,
+    "ACD": 2,
+    "DEA": 3,
+    "unset": 14
+   },
    "source": "LTTS7English.dll 0x100100f0 (strings 0x1002b830, 0x1002b834, 0x1002b838)"
   },
   {
    "name": "English unknown-word ending table",
    "group": "fon-english",
-   "value": {"address": "0x10040410", "entries": 624, "classes": {"1": "0x33", "2": "0x2a", "3": "0x29", "5": "0x2d", "else": "0xee"}},
+   "value": {
+    "address": "0x10040410",
+    "entries": 624,
+    "classes": {
+     "1": "0x33",
+     "2": "0x2a",
+     "3": "0x29",
+     "5": "0x2d",
+     "else": "0xee"
+    }
+   },
    "source": "LTTS7English.dll 0x1000f240 via 0x1000f1b0 / 0x1000eff0"
   },
   {
    "name": "English prosodic split",
    "group": "fon-english",
-   "value": {"min_words_each_side": 2, "min_letters_before": 15, "min_letters_after": 18},
+   "value": {
+    "min_words_each_side": 2,
+    "min_letters_before": 15,
+    "min_letters_after": 18
+   },
    "source": "LTTS7English.dll 0x1000dce0 (> 0xe and > 0x11 letters), LesConfiniProsodici 0x1000eb20 sets boundary 0x0a"
   },
   {
    "name": "English FonAllofonoLingua",
    "group": "fon-english",
-   "value": {"EnglishUs": "0x100182a0", "EnglishGb/Au": "0x100122c0", "linking r": "0x18c2", "glides": {"j": "0x10ce", "w": "0x401ece"}},
+   "value": {
+    "EnglishUs": "0x100182a0",
+    "EnglishGb/Au": "0x100122c0",
+    "linking r": "0x18c2",
+    "glides": {
+     "j": "0x10ce",
+     "w": "0x401ece"
+    }
+   },
    "source": "LTTS7English.dll function tables; FON ctx+0x20 = sentence record count, chunk+4 = chunk record count, chunk+0x18 = first record"
   },
   {
    "name": "English abbreviations",
    "group": "fon-english",
-   "value": {"address": "0x100288e0", "entries": 252},
+   "value": {
+    "address": "0x100288e0",
+    "entries": 252
+   },
    "source": "LesGetAbbreviazioni 0x10001120 (+0 abbreviation, +4 expansion), LesGetNumeroAbbreviazioni 0x10001110 returns 0xfc"
   },
   {
    "name": "Spanish function tables",
    "group": "fon-spanish",
-   "value": {"castilian": "0x100298b8", "superspanish": "0x10029720", "americanspanish": "0x100297e8", "mexican": "0x10029988", "chilean": "0x10029a58", "argentine": "0x10029b28", "pairs": 26},
+   "value": {
+    "castilian": "0x100298b8",
+    "superspanish": "0x10029720",
+    "americanspanish": "0x100297e8",
+    "mexican": "0x10029988",
+    "chilean": "0x10029a58",
+    "argentine": "0x10029b28",
+    "pairs": 26
+   },
    "source": "LTTS7Spanish.dll export Spanish 0x1000d060 (Language names matched with ELQstricmp)"
   },
   {
    "name": "Spanish variant phone tables",
    "group": "fon-spanish",
-   "value": {"castilian (0)": "0x100292a0", "mexican (1)": "0x100292b0", "argentine (2)": "0x10029298", "chilean (3)": "0x100292a8", "american (4)": "0x10029290", "super (5)": "0x10029288"},
+   "value": {
+    "castilian (0)": "0x100292a0",
+    "mexican (1)": "0x100292b0",
+    "argentine (2)": "0x10029298",
+    "chilean (3)": "0x100292a8",
+    "american (4)": "0x10029290",
+    "super (5)": "0x10029288"
+   },
    "source": "ELQGetPhonemes 0x1000c810..0x1000c860; FonTrasParola 0x1000d510 picks them by **(ctx+0x44)"
   },
   {
    "name": "Spanish character classes",
    "group": "fon-spanish",
-   "value": {"address": "0x10028198", "stride": 8, "flags": {"letter": "0x01", "vowel": "0x10", "upper": "0x20", "accented": "0x80"}},
+   "value": {
+    "address": "0x10028198",
+    "stride": 8,
+    "flags": {
+     "letter": "0x01",
+     "vowel": "0x10",
+     "upper": "0x20",
+     "accented": "0x80"
+    }
+   },
    "source": "ELQGetGraphemes 0x1000c800"
   },
   {
    "name": "Spanish stress endings",
    "group": "fon-spanish",
-   "value": {"address": "0x100221b0", "entries": "0x28c", "stride": 12},
+   "value": {
+    "address": "0x100221b0",
+    "entries": "0x28c",
+    "stride": 12
+   },
    "source": "LesAccenta 0x10001600 -> 0x10001210 -> 0x100011c0 -> 0x100010c0 (same code as LTTS7Italian.dll)"
   },
   {
    "name": "Spanish FonTrasParola letter sets",
    "group": "fon-spanish",
-   "value": {"consonants": "0x1002a264", "vowels": "0x1002a27c", "voiced": "0x1002a238", "voiceless": "0x1002a22c", "nasals": "0x1002a1fc", "acute": "0x1002a290"},
+   "value": {
+    "consonants": "0x1002a264",
+    "vowels": "0x1002a27c",
+    "voiced": "0x1002a238",
+    "voiceless": "0x1002a22c",
+    "nasals": "0x1002a1fc",
+    "acute": "0x1002a290"
+   },
    "source": "FonTrasParola 0x1000d510 strchr operands"
   },
   {
    "name": "Spanish LesAnalizza ending lists",
    "group": "fon-spanish",
-   "value": {"infinitive clitics": ["0x100277e8", 29], "gerunds": ["0x10027860", 32], "verb": ["0x10027688", 88], "noun": ["0x100278e0", 42], "adjective": ["0x10027988", 61]},
+   "value": {
+    "infinitive clitics": [
+     "0x100277e8",
+     29
+    ],
+    "gerunds": [
+     "0x10027860",
+     32
+    ],
+    "verb": [
+     "0x10027688",
+     88
+    ],
+    "noun": [
+     "0x100278e0",
+     42
+    ],
+    "adjective": [
+     "0x10027988",
+     61
+    ]
+   },
    "source": "0x1000b4d0 ELQSearchString(word, table, 8, count)"
   },
   {
    "name": "Spanish LesConfiniProsodici tables",
    "group": "fon-spanish",
-   "value": {"locutions": {"5": ["0x10025ffc", 3], "4": ["0x10026008", 17], "3": ["0x10026050", 49], "2": ["0x10026118", 61]}, "interjections": {"3": ["0x10025fd0", 1], "2": ["0x10025fd4", 1], "1": ["0x10025fd8", 9]}, "modal forms": {"code": "0x1000911b", "count": 347}, "pause limits": {"words": 5, "letters": 24}},
+   "value": {
+    "locutions": {
+     "5": [
+      "0x10025ffc",
+      3
+     ],
+     "4": [
+      "0x10026008",
+      17
+     ],
+     "3": [
+      "0x10026050",
+      49
+     ],
+     "2": [
+      "0x10026118",
+      61
+     ]
+    },
+    "interjections": {
+     "3": [
+      "0x10025fd0",
+      1
+     ],
+     "2": [
+      "0x10025fd4",
+      1
+     ],
+     "1": [
+      "0x10025fd8",
+      9
+     ]
+    },
+    "modal forms": {
+     "code": "0x1000911b",
+     "count": 347
+    },
+    "pause limits": {
+     "words": 5,
+     "letters": 24
+    }
+   },
    "source": "0x10008eb0, 0x10008cd0, 0x10009100, 0x10008b40"
   },
   {
    "name": "Spanish letter names",
    "group": "fon-spanish",
-   "value": {"index": "0x10003a5c", "jumps": "0x10003934", "american b/v/w index": "0x10003be8", "american jumps": "0x10003bd8"},
+   "value": {
+    "index": "0x10003a5c",
+    "jumps": "0x10003934",
+    "american b/v/w index": "0x10003be8",
+    "american jumps": "0x10003bd8"
+   },
    "source": "LesGetSymbolName 0x10003b60 -> 0x10003690; 0x10003c20 -> 0x10003ba0"
   },
   {
    "name": "Spanish number words",
    "group": "fon-spanish",
-   "value": {"address": "0x10024f80", "entries": 87},
+   "value": {
+    "address": "0x10024f80",
+    "entries": 87
+   },
    "source": "LesIniNumeri slot 0 0x10003470 ({id, word})"
+  },
+  {
+   "name": "Spanish number slots",
+   "group": "fon-spanish",
+   "value": {
+    "LesIniNumeri": "0x10007ec0",
+    "0 word": "0x10003470",
+    "1 phone": "0x10002980",
+    "2 cardinal": "0x10006e10",
+    "3 digit": "0x10006dd0",
+    "4 by digits": "0x100029d0",
+    "5 currency": "0x10005f10",
+    "6 decimals": "0x10007d00",
+    "7 date": "0x100034a0",
+    "9 reader": "0x10007490"
+   },
+   "source": "LTTS7Spanish.dll LesIniNumeri 0x10007ec0"
+  },
+  {
+   "name": "Spanish number recognizers and renderers",
+   "group": "fon-spanish",
+   "value": {
+    "order": "0x100067c0",
+    "date": "0x10003d90",
+    "time": "0x10003ef0",
+    "ordinal": "0x10004340",
+    "currency": "0x10004510",
+    "type 9": "0x10004ea0",
+    "fraction": "0x10005140",
+    "phone": "0x10005260",
+    "real": "0x10005640",
+    "code": "0x10005480",
+    "renderer": "0x100068a0",
+    "ordinal reading": "0x10002090",
+    "time reading": "0x10005a00",
+    "date reading": "0x10003510",
+    "amount reading": "0x10002a00",
+    "fraction reading": "0x10001a80",
+    "token fetch": "0x10001990",
+    "area code": "0x10002910",
+    "two digits": "0x100065b0",
+    "hundreds": "0x10006310",
+    "unit word": "0x100060f0"
+   },
+   "source": "LTTS7Spanish.dll slot 9 0x10007490"
+  },
+  {
+   "name": "Spanish number tables",
+   "group": "fon-spanish",
+   "value": {
+    "unit word index": "0x100062a8",
+    "unit word jumps": "0x10006238",
+    "currency names": "0x10024ea0 (11 x {symbol, unit, units, cent, cents})",
+    "area codes": "0x10024ac0 (0xf7, ELQSearchString mode 2)",
+    "fractions": "0x1002532c..0x10025238",
+    "ordinal stems": "0x100254d0.., 0x10025454.., 0x100253d8.., 0x10025370..",
+    "o / a": "0x100188e4 / 0x10018f84"
+   },
+   "source": "LTTS7Spanish.dll number code"
+  },
+  {
+   "name": "Italian number slots",
+   "group": "fon",
+   "value": {
+    "LesIniNumeri": "0x1000b4d0",
+    "0 word": "0x10005680",
+    "1 phone": "0x100049b0",
+    "2 cardinal": "0x1000a0b0",
+    "3 digit": "0x1000a070",
+    "4 by digits": "0x10004a10",
+    "5 currency": "0x10008eb0",
+    "6 decimals": "0x1000b310",
+    "7 date": "0x100056b0",
+    "9 reader": "0x1000a810"
+   },
+   "source": "LTTS7Italian.dll LesIniNumeri 0x1000b4d0"
+  },
+  {
+   "name": "Italian number recognizers and renderers",
+   "group": "fon",
+   "value": {
+    "order": "0x1000a730 (mode jumps 0x1000a7d4)",
+    "date": "0x100058a0",
+    "time": "0x10005a00",
+    "ordinal": "0x10005cc0",
+    "currency": "0x10005eb0",
+    "type 9": "0x10006990",
+    "fraction": "0x10006c40",
+    "phone": "0x10009770",
+    "phone check": "0x10008360 (states 0x10008e58/0x10008e10)",
+    "cardinal": "0x10006f30",
+    "code": "0x10006d60",
+    "renderer": "0x10009980 (jumps 0x10009e7c)",
+    "ordinal reading": "0x100040a0",
+    "time reading": "0x10008020",
+    "date reading": "0x10005720",
+    "phone reading": "0x10004550 (jumps 0x10004984)",
+    "amount reading": "0x10004a40",
+    "fraction test / reading": "0x10003db0 / 0x10003a90",
+    "prefix length": "0x100044a0",
+    "token fetch": "0x10002ce0",
+    "two digits": "0x10009560",
+    "hundreds": "0x100092e0",
+    "number word": "0x100090c0"
+   },
+   "source": "LTTS7Italian.dll slot 9 0x1000a810"
+  },
+  {
+   "name": "Italian number tables",
+   "group": "fon",
+   "value": {
+    "words": "0x1002d3d0 (0x53 x {id, word})",
+    "currency names": "0x1002d268 (18 x {code, unit, units, cent, cents})",
+    "prefix lists": "0x1002ca70/0x2ea country, 0x1002cd5c/0x17 free phone, 0x1002cd78/0x469 area, 0x1002d1e8/0x79 mobile (ELQSearchCompactString mode 2)",
+    "currency words after a number": "0x1002c310.. 0x1002fcf8.. (34)",
+    "ordinal stems": "0x1002fc88..0x1002fc1c, 'non' immediate",
+    "fractions": "0x1002fc10..0x1002fb28 (14)",
+    "o / a": "0x10017a8c / 0x10018c8c",
+    "esim": "0x1002fc14",
+    "primo": "0x1002fca8",
+    "free phone": "0x1002fdd4"
+   },
+   "source": "LTTS7Italian.dll number code"
+  },
+  {
+   "name": "Number reading type from tags",
+   "group": "fon-common",
+   "value": {
+    "ordinalM": 5,
+    "ordinalF": 6,
+    "telephone": 1,
+    "time": 7,
+    "code": 2,
+    "cardinal/real/integer": 10,
+    "currency": 12,
+    "date": 8
+   },
+   "source": "LoqTTS7.dll 0x10030670 (tag number=…), passed to slot 9 by 0x1003eb80"
+  },
+  {
+   "name": "English number slots",
+   "group": "fon-english",
+   "value": {
+    "LesIniNumeri": "0x1000beb0",
+    "0 word": "0x10004c50",
+    "1 phone": "0x1000b300",
+    "2 cardinal": "0x100094a0",
+    "3 digit": "0x10009450",
+    "4 by digits": "0x10004c20",
+    "5 currency": "0x100089d0",
+    "6 decimals": "0x1000b3b0",
+    "7 date": "0x10004c80",
+    "8 oh": "0x10002ee0",
+    "9 reader": "0x1000b540"
+   },
+   "source": "LTTS7English.dll LesIniNumeri 0x1000beb0"
+  },
+  {
+   "name": "English number recognizers and renderers",
+   "group": "fon-english",
+   "value": {
+    "order": "0x10009150",
+    "ordinal": "0x10005380",
+    "date": "0x10004d30",
+    "year range": "0x100048d0",
+    "month date": "0x10004610",
+    "time": "0x100050d0",
+    "currency": "0x10005590",
+    "type 9": "0x10005c80",
+    "fraction": "0x10005f40",
+    "phone": "0x10006100",
+    "cardinal": "0x100068b0",
+    "code": "0x10006690",
+    "renderer": "0x10009ea0",
+    "ordinal reading": "0x10003720",
+    "time reading": "0x10007c30",
+    "duration reading": "0x100080a0",
+    "date reading": "0x10009230",
+    "year": "0x10008be0",
+    "range reading": "0x10009040",
+    "decade reading": "0x10009d80",
+    "fraction reading": "0x100071a0",
+    "denominator": "0x10002f10",
+    "money reading": "0x10007230",
+    "token fetch": "0x10001b90",
+    "fraction test": "0x100033f0",
+    "two digits": "0x100088d0",
+    "hundreds": "0x10008650",
+    "number word": "0x10008430",
+    "month": "0x100045e0",
+    "country code": "0x10004bb0"
+   },
+   "source": "LTTS7English.dll slot 9 0x1000b540"
+  },
+  {
+   "name": "English number tables",
+   "group": "fon-english",
+   "value": {
+    "words": "0x1002a088 (0x5b x {id, word})",
+    "number word index": "0x100085e8",
+    "number word jumps": "0x10008578",
+    "months": "0x10029e38 (0x24 x {name, month})",
+    "eras": "0x10029f80",
+    "year words": "0x10029f58 (10)",
+    "currency names": "0x10029f98 (12 x {code, unit, units, cent, cents})",
+    "scale words": "0x10029dd8 (12 x {word, replacement})",
+    "phone prefixes": "0x10029f88 (3, ELQSearchString 0x12)",
+    "ordinal endings": "0x1002a57c.. (28 key/ending pairs)",
+    "denominators": "0x1002a64c..0x1002a590",
+    "date format": "US 0x11 mdy, GB/AU 0x10 dmy (ctx+0x20 -> +0x34)",
+    "time format": "7, 0x1a duration (ctx+0x20 -> +0x30)"
+   },
+   "source": "LTTS7English.dll number code"
+  },
+  {
+   "name": "German number slots",
+   "group": "German FON",
+   "value": {
+    "LesIniNumeri": "0x10007100",
+    "0 word": "0x100026a0",
+    "1 phone": "0x10002620",
+    "2 cardinal": "0x10006590",
+    "3 digit": "0x10006550",
+    "4 by digits": "0x10002670",
+    "5 currency": "0x10005490",
+    "6 decimals": "0x10006f40",
+    "7 date": "0x100026d0",
+    "9 reader": "0x10006c20"
+   },
+   "source": "LTTS7German.dll LesIniNumeri 0x10007100"
+  },
+  {
+   "name": "German number recognizers",
+   "group": "German FON",
+   "value": {
+    "order": "0x10005f20",
+    "date": "0x10003cb0",
+    "date words": "0x10002e80",
+    "time": "0x10003ec0",
+    "ordinal": "0x10004050",
+    "money": "0x100042b0",
+    "real": "0x10004630",
+    "fraction": "0x100048e0",
+    "phone": "0x10004a00",
+    "integer": "0x10004df0",
+    "code": "0x10004c30",
+    "renderer": "0x10006000",
+    "ordinal reading": "0x10001e30",
+    "date reading": "0x10005c50",
+    "time reading": "0x100051b0",
+    "money reading": "0x10002740",
+    "fraction reading": "0x10001740",
+    "two digits": "0x10005b20",
+    "hundreds": "0x100058c0",
+    "number word": "0x100056a0",
+    "dative": "0x100024a0",
+    "area code": "0x100025a0"
+   },
+   "source": "slot 9 0x10006c20"
+  },
+  {
+   "name": "German number tables",
+   "group": "German FON",
+   "value": {
+    "words": [
+     "0x10027798",
+     83
+    ],
+    "area codes": [
+     "0x10027318",
+     247
+    ],
+    "currencies": [
+     "0x100276f8",
+     8
+    ],
+    "months": [
+     "0x10027a30",
+     31
+    ],
+    "prepositions": [
+     "0x100272f0",
+     10
+    ],
+    "year words": [
+     "0x10027b28",
+     8
+    ],
+    "jahr": [
+     "0x10027b48",
+     3
+    ],
+    "currency names": [
+     "0x10026b68",
+     10
+    ],
+    "ordinals": [
+     "0x10027d8c",
+     19
+    ],
+    "fractions": [
+     "0x10027c88",
+     14
+    ],
+    "ste": "0x10027c8c",
+    "Uhr": "0x100280b4",
+    "hundert": "0x100280c0",
+    "zweitausend": "0x100280cc"
+   },
+   "source": "LTTS7German.dll"
+  },
+  {
+   "name": "voice phone stage binder",
+   "group": "voice stage",
+   "value": "0x1002d730",
+   "source": "LoqTTS7.dll: FonVidAllofonoVoce +0x18, FonVidAllofonoAnalisi +0x1c, FonVidMetaFonema +0x20, FonVidAnalisi2Sintesi +0x24, FonVidIngloba +0x28; defaults 0x1002d100"
+  },
+  {
+   "name": "phones into the voice's inventory",
+   "group": "voice stage",
+   "value": "0x1002da60 → 0x1003fdc0",
+   "source": "LoqTTS7.dll; helpers 0x1003fb20 (consonant distance), 0x1003f830 (vowel distance), 0x1003f980/0x1003f8d0/0x1003f750/0x1003f7b0 (classes), 0x1003fd00; targets built by 0x1002d910; voicefon::VoiceFon::nearest"
+  },
+  {
+   "name": "engine → library feature word",
+   "group": "voice stage",
+   "value": "0x10050d50",
+   "source": "LoqTTS7.dll, inverse of 0x10050780; applied when GetVersion minor < 3 (0x10051210); voicefon::to_library"
+  },
+  {
+   "name": "phones said",
+   "group": "voice stage",
+   "value": "0x1002d180",
+   "source": "LoqTTS7.dll: FonVidMetaFonema per phone writes table ids at output +0xc; word end 0x77 when record boundary != 0"
+  },
+  {
+   "name": "analysis flag",
+   "group": "voice stage",
+   "value": "FON ctx[4]+0x214 = 0",
+   "source": "FonVidAllofonoAnalisi used only when set; no analysis-only allophone appears in any cached event"
+  },
+  {
+   "name": "voice function tables",
+   "group": "voice stage",
+   "value": "Allison 0x1000a8d8, Katrin/Stefan 0x1000aeb8, Jorge 0x10008878, Dave 0x1000c8d0, Steven 0x1000a910, Susan 0x1000b8e8, Kate 0x1000a978, Bernard 0x10008960, Juliette 0x10008980, Florence 0x10009760, Carmen 0x10008850, Leonor 0x10008898, Diego 0x100087a0, Esperanza 0x100087b0, Francisca 0x100087f0, Carlos 0x100085d8, Soledad 0x10008608, Ximena 0x100085f8, Elizabeth 0x1000a950, Simon 0x1000a978, Grace 0x1000b998, Alan 0x1000a960",
+   "source": "LTTS7<Voice>.dll; checked with the export name before a port is used (voicefon/*.rs)"
+  },
+  {
+   "name": "Allison word replacements",
+   "group": "voice stage",
+   "value": "0x1000d000, 0x444-byte entries to '-1' 0x1000a994",
+   "source": "LTTS7Allison.dll 0x10001210: word[0x40], codes, grade +0x440"
+  },
+  {
+   "name": "Katrin/Stefan glottal stop",
+   "group": "voice stage",
+   "value": "0x800014 (Hk)",
+   "source": "LTTS7Katrin.dll/LTTS7Stefan.dll FonVidAllofonoVoce 0x100011e0; kept words 0x1000af20–0x1000af8c"
   }
  ]
 }

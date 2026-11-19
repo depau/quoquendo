@@ -388,6 +388,9 @@ impl super::common::Les for French {
         // the engine's calls on plain text pass argument 4 = 0
         self.pronunciabile_c(w, 0)
     }
+    fn pronunciabile_flag(&self, w: &[u8], flag: u8) -> bool {
+        self.pronunciabile_c(w, flag)
+    }
     fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
         French::symbol_name(self, c, mode)
     }
@@ -415,8 +418,8 @@ impl super::common::Les for French {
 }
 
 impl super::Module for French {
-    fn analyse(&self, text: &str) -> Vec<Token> {
-        super::common::analyse(self, text)
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<Token> {
+        super::common::analyse(self, text, voice)
     }
 }
 

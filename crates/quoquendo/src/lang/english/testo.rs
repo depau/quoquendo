@@ -4,7 +4,8 @@
 //! (0x1000a600), LesGetAbbreviazioni (0x10001120, 0xfc entries).
 
 use super::{English, Variant};
-use crate::lang::common::{record, Abbreviation, Word};
+use crate::lang::common::{record, tok, Abbreviation, Tok, Word};
+use crate::lang::elqnum::{extract_date, is_number, Date};
 
 /// Character flag (0x10027d00 +4): upper case.
 const UPPER: u32 = 0x20;
@@ -266,18 +267,122 @@ fn spell(en: &English, t: &[u8], last_suffix: &[u8]) -> Vec<Word> {
 /// expansion, one record (0x17, 200, 200); a word in `'s` whose stem is
 /// not readable has its stem spelled and `'s` (0x1002a908) appended to the
 /// last name. Otherwise the word is spelled letter by letter.
-pub(super) fn elabora_parola(en: &English, token: &[u8], _idx: usize, flag408: u8, spell_arg: u8, mode: u8) -> Option<Vec<Word>> {
+fn word_records(en: &English, token: &[u8], flag408: bool, spell_arg: u8, mode: u8) -> Vec<Word> {
     let pron = pronunciabile(en, token);
-    if mode == 0 && (pron || spell_arg != 0 || flag408 != 0) {
+    if mode == 0 && (pron || spell_arg != 0 || flag408) {
         if token.len() >= 2 && token.ends_with(b"'s") {
             let stem = &token[..token.len() - 2];
             if !pronunciabile(en, stem) {
-                return Some(spell(en, stem, b"'s"));
+                return spell(en, stem, b"'s");
             }
         }
-        return Some(vec![add(token, 0x17, 200, 200)]);
+        return vec![add(token, 0x17, 200, 200)];
     }
-    Some(spell(en, token, b""))
+    spell(en, token, b"")
+}
+
+/// The month names FUN_100045e0 knows (0x10029e38, 0x24 entries
+/// `{ name, month }`), compared ignoring ASCII case: the month, 0 if none.
+const MONTHS: u32 = 0x10029e38;
+const MONTH_COUNT: u32 = 0x24;
+
+fn month_of(en: &English, w: &[u8]) -> u32 {
+    (0..MONTH_COUNT)
+        .find(|&k| super::stricmp(en.pe.cstr(en.pe.u32(MONTHS + 8 * k)), w).is_eq())
+        .map_or(0, |k| en.pe.u32(MONTHS + 8 * k + 4))
+}
+
+/// FUN_10001b90 with a positive count: the `n`th token after `i`, tags
+/// (kind 5) not counted, and its index; past the text's end, the engine's
+/// end-of-buffer token (kind 7, empty text) at `toks.len()`. (The engine
+/// also stops at absolute index 30 of its 31-token window, which the
+/// tokenizer port does not model.)
+fn next_token(toks: &[Tok], i: usize, mut n: usize) -> (Vec<u8>, usize) {
+    let mut pos = i;
+    while n > 0 {
+        if pos >= toks.len() {
+            break;
+        }
+        pos += 1;
+        if toks.get(pos).map_or(true, |t| t.kind != tok::TAG) {
+            n -= 1;
+        }
+    }
+    (toks.get(pos).map_or(Vec::new(), |t| t.text.clone()), pos.min(toks.len()))
+}
+
+/// `ELQNumExtractDate` step 0 for one order, with the Util port.
+fn extract(order: &[u8], s: &[u8]) -> Option<Date> {
+    let mut d = Date::default();
+    extract_date(order, s, &mut d).then_some(d)
+}
+
+/// LesElaboraParola's month-name dates (0x1000a71d–0x1000abfe): token `i`
+/// a month name (`January`, `Jan`, `Jan.` … FUN_100045e0), then, after an
+/// optional `.` token, A B C D: `A` a day (`d`) and `B , C` with C a year,
+/// or `B` one of `st nd rd th` and `C , D` with D a year, or `B` a
+/// suffix and `C` a year, or `B` a year; or `A` one of `- / .` and B
+/// `day<A>year` cut at the first such character. The day, month and year
+/// read, and the engine's ctx+0x18 (tokens used; also set, with no date,
+/// when the last form's day or year does not parse).
+fn month_date(en: &English, toks: &[Tok], i: usize) -> (Option<(u32, u32, u32)>, usize) {
+    let month = month_of(en, &toks[i].text);
+    if !(1..=12).contains(&month) {
+        return (None, 0);
+    }
+    let t = |n| next_token(toks, i, n);
+    let (t1, t2, t3, t4, t5) = (t(1), t(2), t(3), t(4), t(5));
+    let ((a, _), (b, ib), (c, ic), (d, _)) = if t1.0 == b"." { (t2, t3, t4, t5) } else { (t1, t2, t3, t4) };
+    let year_of = |s: &[u8]| extract(b"y", s).map(|y| y.year);
+    let number = |s: &[u8]| is_number(s, b"", true);
+    let suffix = |s: &[u8]| [&b"st"[..], b"nd", b"rd", b"th"].iter().any(|x| super::stricmp(s, x).is_eq());
+    if let Some(day) = extract(b"d", &a).map(|x| x.day) {
+        if b == b"," && number(&c) {
+            if let Some(y) = year_of(&c) {
+                return (Some((day, month, y)), ic - i);
+            }
+        }
+        if suffix(&b) {
+            if c == b"," {
+                if let Some(y) = year_of(&d) {
+                    return (Some((day, month, y)), ib - i);
+                }
+            }
+            return match number(&c).then(|| year_of(&c)).flatten() {
+                Some(y) => (Some((day, month, y)), ic - i),
+                None => (None, 0),
+            };
+        }
+        return match number(&b).then(|| year_of(&b)).flatten() {
+            Some(y) => (Some((day, month, y)), ib - i),
+            None => (None, 0),
+        };
+    }
+    if !(a == b"-" || a == b"/" || a == b".") {
+        return (None, 0);
+    }
+    let Some(cut) = b.iter().position(|ch| a.contains(ch)) else {
+        return (None, 0);
+    };
+    let date = extract(b"d", &b[..cut]).and_then(|x| year_of(&b[cut + 1..]).map(|y| (x.day, month, y)));
+    (date, ib - i)
+}
+
+/// LesElaboraParola (0x1000a600) on token `i` of the token buffer: a
+/// month-name date read (FUN_10009230 with the session's date order, the
+/// engine default `dmy`), each word a record (0x17, 200, 200); else the
+/// word (`word_records`). With the tokens it used (ctx+0x18).
+pub(super) fn elabora_parola_at(en: &English, toks: &mut [Tok], i: usize, _idx: usize, spell_arg: u8, mode: u8) -> Option<(Vec<Word>, usize)> {
+    let (date, used) = month_date(en, toks, i);
+    if let Some((day, month, year)) = date {
+        let mut out = Vec::new();
+        super::numeri::format_date(en, &mut out, b"dmy", day, month, year);
+        if !out.is_empty() {
+            let words = out.split(|&c| c == b' ').filter(|w| !w.is_empty()).map(|w| add(w, 0x17, 200, 200)).collect();
+            return Some((words, used));
+        }
+    }
+    Some((word_records(en, &toks[i].text, toks[i].expanded, spell_arg, mode), used))
 }
 
 /// LesGetAbbreviazioni (0x10001120): LesGetNumeroAbbreviazioni (0x10001110)
@@ -293,27 +398,4 @@ pub(super) fn abbreviazioni(en: &English) -> Vec<Abbreviation> {
         })
         .collect();
     crate::lang::common::abbreviation_table(en, &pairs)
-}
-
-#[cfg(test)]
-mod probe {
-    #[test]
-    #[ignore]
-    fn testo_probe() {
-        let root = "/tmp/qqv/LTTS7";
-        let read = |p: String| std::fs::read(&p).unwrap();
-        let files = crate::lang::ModuleFiles {
-            dll: read(format!("{root}/bin/LTTS7English.dll")),
-            mother_tongue: "EnglishUs".into(),
-            dbl: Some(read(format!("{root}/data/languages/English/EnglishUs.dbl"))),
-            gpr: None,
-            lexicons: Vec::new(),
-            phones: Vec::new(),
-        };
-        let en = super::English::from_files(&files).unwrap();
-        for w in std::env::var("QQ_W").unwrap().split(',') {
-            let w = w.as_bytes();
-            println!("{} find={:?} pron={}", String::from_utf8_lossy(w), en.lex.find(w), super::pronunciabile(&en, w));
-        }
-    }
 }

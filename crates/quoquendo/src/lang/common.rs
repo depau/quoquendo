@@ -382,9 +382,11 @@ pub trait Les {
     /// The module's character classes for the tokenizer: (a letter, upper
     /// case, its lower case).
     fn letter(&self, c: u8) -> (bool, bool, u8);
-    /// A number's words, in order (the engine reads numbers with the
-    /// readers `LesIniNumeri` installs).
-    fn number_words(&self, digits: &str) -> Vec<Vec<u8>>;
+    /// A number's words when the module has no number reader
+    /// (`leggi_numero` gives `None`): the digits as they are.
+    fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
+        vec![digits.as_bytes().to_vec()]
+    }
     /// `LesAnalizza`: word classes.
     fn analizza(&self, w: &mut [Word]);
     /// `LesAccenta`: the stress marked in the spelling.
@@ -477,6 +479,13 @@ pub trait Les {
     /// (else the engine spells it). Default: yes (no such function).
     fn pronunciabile(&self, _w: &[u8]) -> bool {
         true
+    }
+    /// `LesPronunciabile` with its char argument: the engine passes 1 when
+    /// it decides whether a dotted acronym's letters read as a word
+    /// (0x10030620, from the initials path of 0x10031410). Default:
+    /// `pronunciabile` whatever the flag.
+    fn pronunciabile_flag(&self, w: &[u8], _flag: u8) -> bool {
+        self.pronunciabile(w)
     }
     /// `LesGetSymbolName` (LES +0x30): the name of a letter or symbol
     /// (`mode` 0 in words, 1 or 2 when spelling everything). Default: none.
@@ -1039,6 +1048,9 @@ pub struct Abbreviation {
 pub fn abbreviation_table<L: Les + ?Sized>(l: &L, pairs: &[(Vec<u8>, Vec<u8>)]) -> Vec<Abbreviation> {
     pairs
         .iter()
+        // an abbreviation ending in a space (English `gov `) never matches
+        // a token (0x10037a70 compares the whole string)
+        .filter(|(a, _)| !a.last().is_some_and(|&c| ws(c)))
         .map(|(a, e)| Abbreviation {
             tokens: lex_all(l, a, false, false).iter().map(|tk| folded(l, &tk.text)).collect(),
             expansion: e.clone(),
@@ -1154,6 +1166,45 @@ pub fn gestisci_maiuscole<L: Les + ?Sized>(l: &L, w: &mut [Word]) {
     }
 }
 
+/// The reading type the engine hands the number reader (0x10030670, tag
+/// `number`, kept at ctx+0x20c for the token the tag stands before) and the
+/// date order (ctx+0x32c, "dmy" unless a `number=date…` tag sets it):
+/// `ordinalM`/`MasculineOrdinal`/`ordinal` 5, `ordinalF`/`FeminineOrdinal`
+/// 6, `telephone`/`phone` 1, `time…` 7, `code`/`digits`/`code_digits` 2,
+/// `cardinal`/`real…`/`integer` 10, `currency…` 0xc, `date[<order>]` 8;
+/// otherwise 0. Text filters (`.lex`) put such tags before numbers (`1º`
+/// → `\{number=ordinalM}1`).
+fn number_tag(toks: &[Tok], i: usize) -> (u32, Vec<u8>) {
+    let mut kind = 0;
+    let mut dmy = b"dmy".to_vec();
+    let mut k = i;
+    while k > 0 && toks[k - 1].kind == tok::TAG {
+        k -= 1;
+    }
+    for t in &toks[k..i] {
+        let body = t.text.strip_prefix(b"\\{").unwrap_or(&t.text);
+        let body = body.strip_suffix(b"}").unwrap_or(body);
+        let Some(v) = body.strip_prefix(b"number=") else { continue };
+        kind = match v {
+            b"ordinalM" | b"MasculineOrdinal" | b"ordinal" => 5,
+            b"ordinalF" | b"FeminineOrdinal" => 6,
+            b"telephone" | b"phone" => 1,
+            b"time" | b"time_duration" | b"time_default" => 7,
+            b"code" | b"digits" | b"code_digits" => 2,
+            b"cardinal" | b"real" | b"integer" | b"real_extended" | b"real_short" | b"real_decimal" | b"real_default" => 10,
+            b"currency" | b"currency_extended" | b"currency_short" | b"currency_decimal" | b"currency_default" => 0xc,
+            v if v.starts_with(b"date") => {
+                if v.len() > 4 {
+                    dmy = v[4..v.len().min(11)].to_vec();
+                }
+                8
+            }
+            _ => kind,
+        };
+    }
+    (kind, dmy)
+}
+
 /// The records for one token (0x10031410, the paths plain text takes:
 /// no SSML say-as, the engine's default settings). `skip` takes how many
 /// following tokens are used up (a number reader's, `°C`).
@@ -1165,14 +1216,19 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
         tok::NUMBER => {
             // a lone short token makes the reading's last word 0x7b (0x10031380)
             let mut alone = t.len() <= 1 && toks.iter().enumerate().all(|(k, tk)| k == i || matches!(tk.kind, tok::TAG | tok::PUNCT));
-            let reading = match l.leggi_numero(toks, i, 0, b"dmy") {
+            let (kind, dmy) = number_tag(toks, i);
+            let reading = match l.leggi_numero(toks, i, kind, &dmy) {
                 Some((r, used)) => {
                     *skip = used;
                     r
                 }
                 None => l.number_words(&String::from_utf8_lossy(&t)).join(&b' '),
             };
-            let info = if t == b"1" { 0x0f } else { 0x10 };
+            // each piece goes into the token's text and through
+            // LesElaboraParola (LES +0x44, the engine's own when the module
+            // has none); its last record then becomes a number word: class
+            // 0x15, sub 'z', info 0x0f when the token's text was "1" (the
+            // number itself for the first piece, the piece before after)
             let mut n = 0;
             for piece in reading.split(|&c| c == b' ').filter(|p| !p.is_empty()) {
                 if piece == b"#" {
@@ -1183,7 +1239,19 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
                     }
                     continue;
                 }
-                out.push(record(piece.to_vec(), 0x15, b'z', info));
+                let info = if toks[i].text == b"1" { 0x0f } else { 0x10 };
+                toks[i].text = piece.to_vec();
+                let before = out.len();
+                match l.elabora_parola_at(toks, i, idx, 0, 0) {
+                    Some((r, _)) => out.extend(r),
+                    None => out.extend(elabora_parola(l, piece, toks[i].expanded, 0, 0)),
+                }
+                if out.len() > before {
+                    let r = out.last_mut().unwrap();
+                    r.f[CLASS] = 0x15;
+                    r.f[SUB] = b'z';
+                    r.f[INFO] = info;
+                }
                 n += 1;
             }
             if n > 0 {
@@ -1241,7 +1309,7 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
                 return;
             }
             let letters: Vec<u8> = t.iter().copied().filter(|&c| l.is_letter(c)).collect();
-            if letters.len() > 1 && l.pronunciabile(&letters) {
+            if letters.len() > 1 && l.pronunciabile_flag(&letters, 1) {
                 let mut w = letters;
                 l.normalizza_accento(&mut w);
                 out.push(record(w, 0x15, 0x84, 9));
@@ -1763,8 +1831,10 @@ fn re_replace(re: &[ReNode], with: &[u8], t: &[u8]) -> Vec<u8> {
 /// 0x1002d060) runs them: phrases end at punctuation (code 0x17 `@` for
 /// `|`, 0x13 `#` otherwise), a boundary 0x0a (or 8, 0x0c–0x0e) adds a
 /// short pause, a word with boundary 0 (elision) shares the next one's.
-/// Then FonAllofonoLingua over each chunk's phone list.
-pub fn analyse<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Token> {
+/// Then FonAllofonoLingua over each chunk's phone list, and the voice's
+/// own phone stage when `voice` is given (`voicefon`: what the voice says,
+/// in its phone table).
+pub fn analyse<L: Les + ?Sized>(l: &L, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<Token> {
     let mut tokens = Vec::new();
     for mut s in sentences(l, text) {
         let w = &mut s.words;
@@ -1780,7 +1850,7 @@ pub fn analyse<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Token> {
             // one whose boundary adds a pause (0x1002c300: chunk +0x18 its
             // first record, +4 their count); record indices restart in each
             let b = (a..w.len()).find(|&i| w[i].f[CLASS] == b'2' || pause_bound(w[i].f[BOUND])).unwrap_or(w.len() - 1);
-            fon_chunk(l, w, a, b, s.mode, &mut tokens);
+            fon_chunk(l, w, a, b, s.mode, voice, &mut tokens);
             a = b + 1;
         }
     }
@@ -1815,8 +1885,9 @@ pub fn modalita_frase(w: &[Word]) -> i32 {
 }
 
 /// One FON chunk: FonTrasParola and FonTrasConfini word by word, then
-/// FonAllofonoLingua over the chunk's phone list, then its tokens.
-fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode: i32, tokens: &mut Vec<Token>) {
+/// FonAllofonoLingua over the chunk's phone list, the voice's stage, then
+/// its tokens.
+fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode: i32, voice: Option<&crate::voicefon::VoiceFon>, tokens: &mut Vec<Token>) {
     let w = &sentence[a..=b];
     let mut phones: Vec<Phone> = Vec::new();
     let pause = |word: usize, code: u32| Phone {
@@ -1868,14 +1939,19 @@ fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode
     while k < phones.len() - 1 {
         k = l.allofono_in(sentence, a, w, &mut phones, k).wrapping_add(1);
     }
+    if let Some(v) = voice {
+        let said = v.run(sentence, a, w.len(), &phones);
+        return emit(w, &said, mode, &|c| v.name(c).to_string(), tokens);
+    }
     phones.pop();
-    emit(l, w, &phones, mode, tokens);
+    emit(w, &phones, mode, &|c| l.symbol(c).unwrap_or("").to_string(), tokens);
 }
 
-/// A sentence's phones as tokens: records joined into one word until one
-/// with a boundary (an elided word shares the next one's), a pause for each
-/// pause entry (an added one, a comma's, the sentence end's).
-fn emit<L: Les + ?Sized>(l: &L, w: &[Word], phones: &[Phone], mode: i32, tokens: &mut Vec<Token>) {
+/// A chunk's phones as tokens: a word ends after a phone of kind 0x77
+/// (the engine's word end, so an elided word shares the next one's, and a
+/// word whose last phone FonAllofonoLingua deleted runs into the next), a
+/// pause for each pause entry (an added one, a comma's, the sentence end's).
+fn emit(w: &[Word], phones: &[Phone], mode: i32, symbol: &dyn Fn(u32) -> String, tokens: &mut Vec<Token>) {
     let mut text: Vec<u8> = Vec::new();
     let mut syms: Vec<String> = Vec::new();
     let mut next_rec = 0usize;
@@ -1888,7 +1964,7 @@ fn emit<L: Les + ?Sized>(l: &L, w: &[Word], phones: &[Phone], mode: i32, tokens:
                 (ADDED_PAUSE_MS, "phrase break")
             } else if r.f[SUB] == b'|' {
                 let reason = match mode {
-                    3 => "question",
+                    2 | 3 => "question",
                     6 => "exclamation",
                     _ => "sentence break",
                 };
@@ -1901,13 +1977,13 @@ fn emit<L: Les + ?Sized>(l: &L, w: &[Word], phones: &[Phone], mode: i32, tokens:
             continue;
         }
         while next_rec <= o {
-            if next_rec > 0 && w[next_rec - 1].f[BOUND] != 0 {
-                flush_word(tokens, &mut text, &mut syms);
-            }
             text.extend(&w[next_rec].text);
             next_rec += 1;
         }
-        syms.push(l.symbol(c).unwrap_or("").to_string());
+        syms.push(symbol(c));
+        if p.kind == 0x77 {
+            flush_word(tokens, &mut text, &mut syms);
+        }
     }
     flush_word(tokens, &mut text, &mut syms);
 }

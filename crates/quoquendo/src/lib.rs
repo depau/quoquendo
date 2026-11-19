@@ -33,6 +33,7 @@ pub mod spanish;
 pub mod speex;
 pub mod sqlite;
 pub mod synth;
+pub mod voicefon;
 pub mod wise;
 pub mod x87;
 
@@ -393,6 +394,13 @@ impl Voice {
                 phones: db.tables.as_ref().map(|t| t.phone_features()).unwrap_or_default(),
             }),
             None => frontend,
+        };
+        // the voice library's phone stage runs after the module's FON in
+        // the original, for every voice; the fitted rules were fitted to
+        // the phones voices say and already include it
+        let frontend = match files.library.as_deref().and_then(voicefon::VoiceFon::from_library) {
+            Some(v) if frontend.has_module() => frontend.with_voice(v),
+            _ => frontend,
         };
         Ok(Voice {
             descriptor,

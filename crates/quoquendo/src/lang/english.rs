@@ -12,6 +12,7 @@ mod allofono_gb;
 mod allofono_us;
 mod disambigua;
 mod fon;
+mod numeri;
 mod omografi;
 mod prosodia;
 mod testo;
@@ -566,6 +567,9 @@ impl super::common::Les for English {
     fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
         english_number_words(digits)
     }
+    fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        Some(English::leggi_numero(self, toks, i, kind, dmy))
+    }
     fn gestisci_maiuscole(&self, w: &mut [Word]) {
         English::gestisci_maiuscole(self, w)
     }
@@ -589,14 +593,18 @@ impl super::common::Les for English {
     fn pronunciabile(&self, w: &[u8]) -> bool {
         testo::pronunciabile(self, w)
     }
+    fn pronunciabile_flag(&self, w: &[u8], flag: u8) -> bool {
+        // FUN_10002de0: any nonzero flag reads as not pronounceable
+        flag == 0 && testo::pronunciabile(self, w)
+    }
     fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
         testo::symbol_name(self, c, mode)
     }
     fn normalizza_accento(&self, w: &mut Vec<u8>) {
         testo::normalizza_accento(self, w)
     }
-    fn elabora_parola(&self, token: &[u8], idx: usize, flag408: u8, spell: u8, mode: u8) -> Option<Vec<Word>> {
-        testo::elabora_parola(self, token, idx, flag408, spell, mode)
+    fn elabora_parola_at(&self, toks: &mut [super::common::Tok], i: usize, idx: usize, spell: u8, mode: u8) -> Option<(Vec<Word>, usize)> {
+        testo::elabora_parola_at(self, toks, i, idx, spell, mode)
     }
     fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
         self.abbreviations.get_or_init(|| testo::abbreviazioni(self))
@@ -613,8 +621,8 @@ impl super::common::Les for English {
 }
 
 impl super::Module for English {
-    fn analyse(&self, text: &str) -> Vec<crate::g2p::Token> {
-        super::common::analyse(self, text)
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<crate::g2p::Token> {
+        super::common::analyse(self, text, voice)
     }
 }
 

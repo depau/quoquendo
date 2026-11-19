@@ -16,8 +16,10 @@ use std::sync::Arc;
 
 /// A ported language module: the original's FON stage for its language.
 pub trait Module: Send + Sync {
-    /// Text → words with their phones, and pauses, as `g2p::analyse` gives.
-    fn analyse(&self, text: &str) -> Vec<Token>;
+    /// Text → words with their phones, and pauses, as `g2p::analyse` gives;
+    /// with `voice`, the phones the voice says after its own stage
+    /// (`voicefon`), else the module's.
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<Token>;
 }
 
 /// What a language module is built from.

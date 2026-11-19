@@ -453,6 +453,40 @@ module's morphological analyser. FonAllofonoLingua (1 964 lines) rewrites
 phones by the engine's feature codes (0x19e2 → 0x59f2 before 0x1942…);
 not ported, our fitted allophone rules match it on both benchmarks.
 
+**German numbers** (`lang/german/numeri.rs`). `LesIniNumeri` 0x10007100
+installs slot 0 word by id 0x100026a0 (0x53 `{id, char*}` pairs at
+0x10027798, `""` 0x10026b34), 1 phone number 0x10002620 (area-code length
+0x100025a0: `ELQSearchString` flag 2 over 0xf7 codes at 0x10027318, then
+`ELQNumConvertPhoneNumber` steps 0 and 1), 2 cardinal 0x10006590, 3 digit
+0x10006550 (`null`/`eins`, else 0x100056a0: words of 1–20 and the tens), 4
+by-digits 0x10002670, 5 currency name 0x10005490 (8 × `{code, unit, units,
+cent, cents}` at 0x100276f8), 6 decimals 0x10006f40, 7 date extraction
+0x100026d0 (two-digit years from 80, from 0 after `.`), 9 the reader
+0x10006c20 (slot 8 is empty). Slot 9 makes the reading mode the engine's
+kind (5/6 ordinal → 4 with +0x48 5/6; 0xc when a currency sign is next to
+the number or `euro euros dollar pfunde usd gbp jpy pfund eur yen` follows)
+and tries nine recognizers, the mode's own first (0x10005f20: mode 1→6,
+2→8, 4→2, 7→1, 9→4, 10→7, 11→5, 12→3): date 0x10003cb0 (slot 7 in the
+`dmy` order, the day dative when the token before starts one of `am vom
+zum bis im dem den des einen einem` 0x100272f0, by 0x100024a0; else
+0x10002e80: a day before a month name 0x10027a30 and a year after it — one
+or two tokens used — or a four-digit year after `bis`, after `bis im jahr
+jahre jahren seit von zwischen` 0x10027b28, after `und`/`bis` and a number,
+or after a month name), time 0x10003ec0 (`ELQNumIsTime`), ordinal
+0x10004050, money 0x100042b0 (a currency name after the number becomes `n`
+and is used), real 0x10004630 (mode 9 only), fraction 0x100048e0
+(0x10001b40's 14 fractions), phone 0x10004a00 (over six digits starting
+with an area code), integer 0x10004df0 (up to five digits, a decimal comma,
+dot groups), code 0x10004c30 (mode 2). The renderer 0x10006000 reads kind
+0 by `ELQNumConvertRealNumber` (longer pieces by slot 1 in pairs), 4 by
+0x10001e30 (ordinals 1–19 from a table, else the cardinal + `ste`), 7 by
+0x100051b0 (`h Uhr mm`, ` minuten ` ` sekunden `), 8 by 0x10005c50 (day
+ordinal, month word 0x51–0x5c, year `neunzehn hundert neunzig` /
+`zweitàusend` / an integer after 2000), 0xb by 0x10001740, 0xc by
+0x10002740. The cardinal goes position by position: `eintàusend` for 1xxx,
+`einhundert`, `eine Milliòn`/`Milliònen`, `eine Milliàrde`/`Milliàrden`,
+`ein und zwanzig` (0x10005b20), a trailing ` # ` dropped.
+
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
 newline) — its transcription confirms `#50` and `@500`.
@@ -507,12 +541,49 @@ of sounds (20 of 20 sentences identical, 3 before); held-out words 87.1% →
 The engine's own tokenizer (LoqTTS7.dll TOP/LES) is approximated
 (`Italian::sentences`): lower case, proper nouns (capitalised inside a
 sentence: class 0x15), elisions as their own record joined to the next
-(boundary 0), numbers read by `g2p::italian_number` (class 0x15,
-subclass `z`, the last `y`), punctuation records (class `2`, `|` ends a
+(boundary 0), punctuation records (class `2`, `|` ends a
 sentence, `}` inside). Not ported yet (§11): the engine's spelling of
-unpronounceable words (`LesPronunciabile`: `CD` → `T$ i-dd i`), its
-number/date/time/currency readers, abbreviations, `Italian.lex`, and
-0x10001290 (stress of class `-` participles in sentences).
+unpronounceable words (`LesPronunciabile`: `CD` → `T$ i-dd i`),
+abbreviations, `Italian.lex`, and 0x10001290 (stress of class `-`
+participles in sentences).
+
+**Numbers** (`italian/numeri.rs`). `LesIniNumeri` 0x1000b4d0 fills slots
+0 word 0x10005680 (0x53 `{id, word}` at 0x1002d3d0), 1 phone 0x100049b0
+(area code by 0x100044a0, then `ELQNumConvertPhoneNumber`), 2 cardinal
+0x1000a0b0 (hundreds 0x100092e0, two digits 0x10009560, number word
+0x100090c0; groups `mille`/`mila`, `unmilione`/`milioni`,
+`unmiliardo`/`miliardi` followed by word 0 ` # `, dropped at the end), 3
+digit 0x1000a070, 4 by digits 0x10004a10, 5 currency 0x10008eb0 (18
+`{code, unit, units, cent, cents}` at 0x1002d268), 6 decimals 0x1000b310,
+7 date 0x100056b0 (`ELQNumExtractDate`; two-digit years from 80 in the
+1900s unless written with `/`) and 9 the reader 0x1000a810. Slot 9 maps
+the engine's type to a mode (5/6 → 4 with +0x48 5/6), forces mode 12 when
+the next token is a currency symbol or one of 34 names/codes
+(0x1002c310…, 0x1002fcf8…) or the previous one a symbol, copies the token
+into the 0xd4-byte object, and runs the recognizers in 0x1000a730's
+order (the mode's own first, jumps 0x1000a7d4): date 0x100058a0, time
+0x10005a00 (`h.mm`, `h:mm[:ss]`, `3,14` is a time too), ordinal
+0x10005cc0 (`°`/`º` next but `°C`, or an apostrophe), currency
+0x10005eb0 (symbol before/after, or a name after, which becomes `n` or
+empty; ctx+0x18 = 1), type 9 0x10006990, fraction 0x10006c40 (14 known,
+0x1002fc10…), phone 0x10009770 (mode 0: the state machine 0x10008360 joins
+following digit groups, prefixes 0x1002ca70 country / 0x1002cd5c free
+phone / 0x1002cd78 area / 0x1002d1e8 mobile, `ELQSearchCompactString`
+mode 2; ctx+0x18 = the groups used; token 0's type set to 1), cardinal
+0x10006f30 (up to 5 digits, dotted groups, decimals) and code 0x10006d60;
+each failing one restores the token by `ELQNumSetDefaultType`. The renderer
+0x10009980 (jumps 0x10009e7c) switches on the kind: 0
+`ELQNumConvertRealNumber` (so 6+ digit numbers are read in pairs), 1 phone
+0x10004550, 2/3/9/10 integers and `virgola` decimals, 4 ordinals 0x100040a0
+(stems 0x1002fc80…, `esim` 0x1002fc14, `o`/`a`), 7 times 0x10008020
+(`una`, `e`, ` minuti `/` secondi `), 8 dates 0x10005720 (`primo `, months
+word 0x50+m), 11 fractions 0x10003a90, 12 money 0x10004a40 (ranges,
+`uno`/`una`/`un`, `e … centesimi`, `zero … di euro`). Replayed on the 426
+slot-9 calls traced on `oracle/bench-it-text.txt` and 0…999 999 999 999
+plus odd forms (Roberto): all equal in reading, ctx+0x18 and rewritten
+tokens. `bench-it-text.txt` whole lines: 5 → 18 of 30 identical (with
+0x1000cdf0 classing `e`/`un`/`di` of a reading as function words); the
+rest are abbreviations, acronyms, roman numerals and `%` (§11).
 
 ## 4c. English FON, ported from LTTS7English.dll (`lang/english.rs`)
 
@@ -550,23 +621,43 @@ alphabetic word of LibreOffice `en/en_US.dic`, `en_GB.dic`, `en_AU.dic`)
 and on the benchmarks, every stage gives the original's records and codes
 for **every** call, all three variants.
 
+**Numbers** (`english/numeri.rs`). `LesIniNumeri` 0x1000beb0 fills slots
+0–9: word by id 0x10004c50 (0x5b `{id, word}` at 0x1002a088), digits with
+`oh` 0x1000b300, cardinal 0x100094a0 (to 15 digits; hundreds 0x10008650,
+two digits 0x100088d0, 1–90 words 0x10008430 = index bytes 0x100085e8 →
+jumps 0x10008578 → `push id`; " and " 0x1002a8d4 after a hundred, a
+trailing ` # ` dropped), digit 0x10009450, by-digits 0x10004c20 (flag, >15
+digits, >3 with leading zeros, one digit), currency names 0x100089d0 (12 ×
+`{code, unit, units, cent, cents}` at 0x10029f98), decimals 0x1000b3b0,
+date extraction 0x10004c80 (ExtractDate step 0 + 1), `oh` 0x10002ee0, and
+the reader slot 9 0x1000b540. Slot 9 picks a mode (the engine's type;
+0 with `%` next → 10/11 by the fraction test 0x100033f0; 5/6 → 4 with
++0x48 5/6; 0xc when a currency symbol or code is next or a symbol
+before), copies the token into the 0xd4-byte object and runs the
+recognizers 0x10009150 (ordinal 0x10005380, date 0x10004d30, time
+0x100050d0, currency 0x10005590, type 9 0x10005c80, fraction 0x10005f40,
+phone 0x10006100, cardinal/decimal 0x100068b0, code 0x10006690; the mode's
+own moved first), each swapping `.`/`,` and returning false through
+`ELQNumSetDefaultType`; the renderer 0x10009ea0 switches on the kind:
+0 `ELQNumConvertRealNumber`, 1 slot 1, 2/3/9/10 integers and decimals
+(`point`), 4 ordinals 0x10003720 (endings: compare chain from 0x1002a57c
+`1`→`first` … `00`→`hundredth`), 7 times 0x10007c30 (`o'clock`; `am` after
+it becomes token `a.m.` of type 4) or durations 0x100080a0 (time format
+0x1a), 8 dates 0x10009230 (month word 0x50+m, ordinal day, year
+0x10008be0; ranges 0x10009040 `to`/`and`; decades 0x10009d80), 11
+fractions 0x100071a0 (plural denominators 0x10002f10), 12 money 0x10007230
+(scale words 0x10029dd8, cents). Token access is 0x10001b90 (control tags
+skipped, 31 entries). Dates use the engine's date format (ctx+0x20 → +0x34:
+0x11 `mdy` for the US voice, 0x10 `dmy` for GB/AU; months 0x10029e38, 0x24
+names; year words 0x10029f58, eras 0x10029f80). Replayed on 642 traced
+slot-9 calls (num1 and `oracle/bench-en-text.txt`, US/GB/AU): all equal
+in reading, ctx+0x18 and rewritten tokens.
+
 Not ported yet (§11): the text hooks the engine's tokenizer calls
 (LesPronunciabile 0x10002e90, LesGetSymbolName 0x100021e0 / 0x100021a0,
 LesNormalizzaAccento 0x1000c3b0, LesElaboraParola 0x1000a600,
-abbreviations 0x100288e0, 0xfc pairs) and the number readers
-(LesIniNumeri 0x1000beb0, slot 9 0x1000b540, with LTTS7Util `ELQNum*` in
-`lang/elqnum.rs`). The **voice library's own phone stage** comes after
-FON (LoqTTS7 0x1002c300 calls the voice's function at +0x18 per phone,
-after the voice-phone mapping 0x1002da60 / 0x1003fdc0). It is
-`FonVidIngloba`, `FonVidAnalisi2Sintesi`, `FonVidMetaFonema`,
-`FonVidAllofonoAnalisi` and `FonVidAllofonoVoce` in LTTS7Allison.dll,
-LTTS7Dave.dll, LTTS7Kate.dll, LTTS7Grace.dll, LTTS7Alan.dll… (Jorge,
-Katrin and Bernard have all but `FonVidIngloba`; Roberto and Marcello have
-none). It changes the phones that are said: Allison says `s d` for the
-module's `s t`, `HTh u` for `th u`, and drops the `Hw`/`Hj` glides. The
-module's transcription (`ttsPhoneticTranscription`, `.fon`) equals the
-port; the phones in the events (`--compare` FON) do not until that stage
-is ported.
+abbreviations 0x100288e0, 0xfc pairs). After FON the voice library's
+own phone stage changes what is said (§4e).
 
 ## 4d. Spanish FON, ported from LTTS7Spanish.dll (`lang/spanish.rs`)
 
@@ -610,10 +701,143 @@ the original's records and codes for **every** call. Whole
 transcriptions (`QQ_NO_LEXICON=1`): held-out words 99.97% (Spain) and
 99.96% (America) identical, the rest all-capital acronyms the engine
 spells (§11); bench `oracle/bench-es.txt` 100% for Jorge, Carmen and
-Leonor (99.8% before); `bench-es-am.txt` 90.0–91.2% (81.4–83% before),
-every difference a number: the numbers are read by the module's
-LesIniNumeri slot 9 (0x10007490) and its slots 0–6 through LTTS7Util's
-ELQNum*, not ported yet (§11).
+Leonor (99.8% before); `bench-es-am.txt` 100% for Carlos, Soledad,
+Ximena (91.2% before), 99.1% for Diego, Esperanza, Francisca (90.0%
+before; the rest is their voice library's phone stage, `h` for `Hh` and
+`J` for `Y`, §4c).
+
+**Numbers** (`lang/spanish/numeri.rs`). The engine (0x1003eb80) calls
+only slot 9 of the table `LesIniNumeri` (0x10007ec0) fills: 0x10007490,
+cdecl `(ctx, type, idx, dmy, token buffer, out, text)`, the tokens used
+returned in ctx+0x18 (`Les::leggi_numero`). The reading type comes from a
+`\{number=…}` tag before the token (0x10030670: ordinalM 5, ordinalF 6,
+telephone 1, time 7, code 2, cardinal/real 10, currency 12, date 8 with
+its order), which the `.lex` filters write (`1º` → `\{number=ordinalM}1`);
+else 0 and `dmy`. Slot 9 fetches the tokens around (0x10001990: tags
+skipped, at most 7 back, an end entry type 7), turns type 5/6 into 4
+with the gender at obj+0x48, 12 when a currency symbol or word
+(`euro`, `dólares`, `USD`, `pesos`, `libra esterlina`…) is next or a symbol
+before, 10 before `%`; then runs nine recognizers (0x100067c0 puts the
+type's own first) on the 0xd4-byte number object, the first that accepts
+setting its kind, else `ELQNumSetDefaultType`: date 0x10003d90 (slot 7
+0x100034a0, `ELQNumExtractDate` in the order, two-digit years from 80
+unless `/`), time 0x10003ef0 (`ELQNumIsTime`; an hour before `h` takes
+it and its minutes), ordinal 0x10004340 (type 4, or before `°`/`º` not
+followed by `c`, or `'`), currency 0x10004510 (the word after becomes
+`n`; `.` and `,` swap unless a dot groups thousands), type 9 0x10004ea0,
+fraction 0x10005140 (14 fixed ones, `medio`, `tres cuartos`), telephone
+0x10005260 (more than six digits after an area code of the 0xf7 at
+0x10024ac0), real 0x10005640 (up to five digits, one decimal comma,
+dot-grouped thousands) and code 0x10005480 (type 2 only). The renderer
+0x100068a0 reads them: plain numbers through `ELQNumConvertRealNumber`
+(six digits and more by the telephone slot: pairs, `diez # cero cero #
+cero uno`), integers by `ELQNumConvertInteger`/`ConvertBigInteger` and
+the cardinal slot 0x10006e10 (one-digit numbers by slot 3; `cien`/`ciento`,
+`dosmil`, `veintiun`, `un millón #`, the final `un` + `o`), decimals by
+slot 6 0x10007d00 (`coma`, up to three digits as a number, leading zeros
+and longer ones digit by digit), ordinals 0x10002090 (`priméro`,
+`milésimo …`), times 0x10005a00 (`doce  # treinta`, `minutos`,
+`segundos`), dates 0x10003510 (`quince  de marzo  de dosmil
+veinticuatro`), amounts 0x10002a00 (`un`/`una` for one unit, cents, `de
+dólar`, the names at 0x10024ea0) and fractions 0x10001a80. Checked call
+by call (`spanish::numeri::tests::spanish_slot9_trace`, the tracer's
+`> NUM`/`< NUM` lines): 311 calls each for America (Carlos) and Spain
+(Jorge) on `oracle/bench-es-text.txt`, `bench-es-am.txt` and private
+lists of cardinals, grouped and decimal numbers, ordinals, dates, times,
+currencies, fractions and telephone numbers: every reading, token count
+and rewritten token identical; `bench-es-text.txt` transcriptions 30 of
+30 identical (0 before).
+
+## 4e. The voice's own phone stage (`voicefon.rs`)
+
+The module's transcription (`ttsPhoneticTranscription`, `.fon`, event 2
+`TTSEVT_LANGUAGEPHONEME`) is not what the voice says (event 3,
+`TTSEVT_VOICEPHONEME`): LoqTTS7.dll's phrase loop (0x1002c300) hands each
+chunk's phone list, after FonAllofonoLingua, to the voice library. Its one
+export (`Allison` 0x10001140…) walks a `{name, function}` table like the
+language modules' (Allison 0x1000a8d8, Katrin/Stefan 0x1000aeb8, Jorge
+0x10008878, Dave 0x1000c8d0, Steven 0x1000a910, Susan 0x1000b8e8, Kate
+0x1000a978, Bernard 0x10008960, …); the binder 0x1002d730 takes
+`FonVidAllofonoVoce` (voice +0x18), `FonVidAllofonoAnalisi` (+0x1c),
+`FonVidMetaFonema` (+0x20), `FonVidAnalisi2Sintesi` (+0x24) and
+`FonVidIngloba` (+0x28); a library without them (Roberto, the Italian
+voices) gets the default 0x1002d100 for +0x1c/+0x20 and no +0x18.
+
+1. **Into the voice's inventory**, 0x1002da60. The mapping targets
+   (voice +0x10, built by 0x1002d910) are the library's phone table
+   (`ELQGetPhonemes`, `{name, id, class, code}` 16 bytes, ids checked
+   equal to positions by 0x1002cf20); when the library's `GetVersion`
+   minor number is below 3 (0x10051210: Allison 7.0.0, Katrin 7.0.1, Dave
+   7.1.1, `LTTSDLLVERSION7.0.1` Bernard) only entries whose code lacks bit
+   3 or is a pause (0x18, 0x28), as engine words (0x10050780). Each phone
+   (engine code) goes to its nearest target, 0x1003fdc0: an exact match
+   (both sides normalised: a `0xc2` palatal/velar with 0x100002 becomes
+   `0x1e02` with 0x400002 / 0x200002), else the last equal up to the tone
+   bits `0xc` (not index 0); else none for tone `0xc` and for a `0x1e2`
+   at place 0x802; affricates (`0x102`) the same up to 0x1ff3 / 0x1fe3,
+   else two phones, the nearest stop and fricative (0x1003fb20 below
+   15); consonants the nearest by manner (0x1003f980, tables 0x1003fa04,
+   0x1003fa98) and place (0x1003f8d0) with feature adjustments, below 5,
+   or for the 0x1003fd00 class the best of its class (+1 same tone, +1
+   same voicing), an aspirated one preceded by the nearest vowel to
+   0x501; vowels and diphthongs by height (0x1003f750), backness
+   (0x1003f7b0) and features (0x1003f830, below 100), a diphthong the
+   voice lacks as two vowels, a nasalised or 0x200001 vowel the voice
+   lacks plus a nasal/glide; pauses the third/fourth target. Unmapped
+   phones are dropped. For an older library the target's engine word is
+   turned back into the library's (0x10050d50, `voicefon::to_library`)
+   and the first table entry with that code (or `| 0x2000004`) taken. The
+   list's slots keep their kinds; codes and records are written back.
+2. **`FonVidAllofonoVoce`** per phone (`i = 0; while i < len - 1`, the
+   length re-read; the function may move `i`), with the chunk's records
+   (text, stress grade +0x12, boundary +0x11, the neighbours'), the list
+   (`ELQList`: delete, add before/after) and the sentence's record count
+   (ctx +0x20).
+3. **The phones said**, 0x1002d180: `FonVidMetaFonema(ctx, &in, &out,
+   table)` per phone writes table ids into the output records (+0xc) and
+   advances both; the default (0x1002d100, and each library's copy) is
+   the id of the first entry with the phone's code, else 1. A word's last
+   output phone is marked 0x77 when its record's boundary is not 0, the
+   last of the phrase 0x69, the closing entry 0x70.
+   `FonVidAllofonoAnalisi` replaces MetaFonema only when FON ctx[4]
+   +0x214 is set (the engine's analysis mode): the events of every voice
+   show none of the analysis-only allophones it writes (Katrin's `HB HD
+   HG Hv Hz Hh`, ids 64–86, never appear in 60 cached utterances), so it
+   is not ported, nor `FonVidAnalisi2Sintesi` / `FonVidIngloba` (CAT
+   side).
+
+Ported per voice (`voicefon/*.rs`; used only when the library's export
+name and function table read back as ported; literals and tables read
+from the library by address):
+
+| voice | AllofonoVoce | MetaFonema | what they do |
+|---|---|---|---|
+| Katrin, Stefan | 0x100011e0 | 0x10002ea0 (default), Stefan 0x10002ae0 | a glottal stop `Hk` before a vowel-initial word after a vowel or voiced consonant (stressed word, or after boundary 4), before an unstressed one (grade 3) elsewhere, and between vowels in hiatus inside a word (not in the words at 0x1000af20–0x1000af8c: ideàl, georgie, washington, loquendo…); b d g before a consonant inside a word unreleased (`Hub Hud Hug`); Stefan says unaspirated p t k as b d g |
+| Allison | 0x10001450, word replacements 0x10001210 (0x444-byte entries from 0x1000d000 to `-1` 0x1000a994: word, codes, grade) | 0x100037a0 | `because`, `could`, `for`, `our`, `that`, `them`, `your`… replaced (0x48 = the word's last phone); `to/into/onto` weak or flapped (`HTh`); h of unstressed words after a stop or fricative and after `must`/`and`/`there` dropped; d + `you…` → `Dg`; `and` + I/he… → `Hud`; `-tional` (ʃ n̩), `dot it`, `believe`, `tz`; unaspirated p t k said b d g, word-initial `Hw Hj Hg Hk` not said |
+| Dave 0x10001210, Steven 0x100014e0, Susan 0x10001210, Kate 0x100014a0, Elizabeth, Simon, Grace, Alan 0x100014a0 | each its own (word dictionaries 0x1000d000, 0x54-byte entries in the 7.3+ libraries) | Dave 0x10004cf0, Steven 0x10003ac0, Susan 0x10004250, Kate 0x100039e0, … | the same kinds of rules, per voice (see each file) |
+| Jorge, Carmen, Diego, Carlos | nothing | default; Diego 0x10001280 / Francisca 0x100012c0 say 0x1800104 as `h`; Carlos 0x100013e0, Ximena 0x10001490 map analysis ids to synthesis ones (0x10001370 / 0x10001420) | Leonor 0x100011e0 s + `r:` → 0x501014c, DH after `` `a `` dropped before a vowel/sonorant word; Esperanza `Y` → `J`; Francisca h → 0x1800104 between a vowel and f/t; Soledad 0x10001210 s / dd before the next word; Ximena 0x10001060 |
+| Bernard 0x10001230, Juliette 0x10001230, Florence 0x10001210 | | default | Bernard: a nasal vowel + consonant of a word written `-e`/`-es` before a consonant word keeps the `e` (`HEh`); Juliette: s → z before a voiced word, final dd → n after a nasal vowel, else it voices the consonant ending the word before; Florence: voicing assimilation across words after a nasal vowel (not `donc`, `quelconque`, before `million`, `mètre(s)`) |
+
+The stage runs for module-backed voices only (`g2p::Frontend::with_voice`):
+the fitted rules were fitted to the phones the voices say, so they
+already include it. `--fon-list` leaves it out (`without_voice`): it is
+compared with the original's `.fonlist`, the module's transcription.
+FON ctx +0x18, which Dave, Kate, Grace and Alan read (7–10 → `I`), is
+the module's scratch "tokens used" count (LTTS7English 0x10004610,
+0x10004d30, 0x10007230); it is stale at FON time and below 7 in ordinary
+sentences: taken as not 7–10 (§11).
+
+Sounds identical to the original's events (`--compare`, `QQ_NO_LEXICON=1`),
+before → after: Katrin bench-de 95.5% → **100%**, Stefan 91.9% →
+**100%** (bench-de2 100% both); Allison bench-en 97.2% → **100%**, Dave
+96.8% → **100%**, Steven 98.3% → **100%**, Susan 97.2% → **100%**, Kate
+bench-en-gb 96.7% → **100%**, Elizabeth 96.1% → **100%**, Simon 95.9% →
+**100%**, Grace bench-en-au 95.3% → **100%**, Alan 92.6% → **100%**;
+Jorge, Roberto and the Italian, Spanish and French voices stay or reach
+100%. `oracle/bench-en-voice.txt` (42 sentences aimed at these rules):
+Steven 100%, the other eight English voices 99.9%, the one phone left
+a module difference (`students sent`: our English LES adds a `#50`
+pause the original's event 2 does not have, so `Ts` is split).
 
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
@@ -903,7 +1127,12 @@ join's units before/after and every half-phone's pitch marks),
 function table swapped for a logging thunk — each LES function's word
 records before and after, FonTrasParola's word and codes, FonTrasConfini's
 arguments — to `<prefix>.les`; `LOQ_LES_DLL`/`LOQ_LES_TABLE` for another
-module than Italian's; `oracle/parse_les.py` turns it into JSON lines,
+module than Italian's, with `LOQ_LES_N` its pair count (default 19;
+hooking past a shorter table corrupts the next one and the voice fails to
+load with 15). The slot-9 number reader `LesIniNumeri` installs is
+hooked too: `> NUM`/`< NUM` lines with the type, index, date order, text,
+reading and ctx+0x18, and the token buffer before (`T`) and after (`U`);
+`LOQ_NUM_ONLY=1` logs only those. `oracle/parse_les.py` turns it into JSON lines,
 §4b). quoquendo's counterparts: `QQ_TRACE_CAT=1`,
 `QQ_CHECK_MARKS=<trace.join>`, `--check-decode <trace.dec>`,
 `QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
@@ -973,11 +1202,11 @@ when a speed/pitch change asks for it.
   original call for call; the 20 held-out words still differing are all
   spelled out by the engine (`AN` `` `a-`E n: e ``, `CD`, `CPU`, `DNA`,
   `b`, `dg`…): LoqTTS7.dll's TOP/LES spelling of words LesPronunciabile
-  (0x1000b2e0 → 0x1000b140) rejects is not ported, nor its number, date,
-  time, currency and abbreviation readers (LesIniNumeri's 0x10005680…,
-  LesEspandiAbbreviazioni), the `Italian.lex` lexicon (`CA FE DB 60`, not
+  (0x1000b2e0 → 0x1000b140) rejects is not ported, nor its abbreviation
+  readers (LesEspandiAbbreviazioni), the `Italian.lex` lexicon (`CA FE DB 60`, not
   decrypted yet) and 0x10001290 (stress of class-`-` participles inside
-  sentences; alone such words take the noun class and match). The fitted
+  sentences; alone such words take the noun class and match). Numbers
+  (slot 9, §4b) read as the original. The fitted
   rules (`g2p::italian`, `it-position.tsv`, `it-quality.tsv`) remain as
   the front end of Italian voices whose tree lacks LTTS7Italian.dll.
 - The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
@@ -1019,17 +1248,21 @@ when a speed/pitch change asks for it.
   (`LoqCatalan6.1.dll`, `Catalan6.1.phd`/`.lex`) and Mandarin
   (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from; none for
   Galician or Valencian was found.
-- Spanish numbers (§4d): the engine reads a number token with the module's
-  LesIniNumeri slot 9 (0x10007490, `Les::leggi_numero`), which calls back
-  its slots 0–6 (word by id 0x10003470, phone numbers 0x10002980, cardinal
-  0x10006e10, digit 0x10006dd0, by-digits 0x100029d0, currency
-  0x10005f10, decimals 0x10007d00) through LTTS7Util's ELQNum*
-  (`lang/elqnum.rs`, `NumSlots`). Not ported: `Spanish::number` reads the
-  digits one by one with the slot-0 words, so `bench-es-am.txt`'s two
-  number sentences (2475, 15 de marzo de 2024) are its only differences
-  (Carlos 91.2%); `oracle/bench-es-text.txt` is not written yet.
+- German numbers (§4): slot 9 matches the original on every traced call
+  (541, `numeri::tests::replay_slot9`). What still differs on
+  `oracle/bench-de-text.txt` is the engine's side: the reading's words are
+  not split like typed ones (`neun-zehn`, `fünf-hundert` in the original),
+  the text filters' `\{number=ordinalM}` before `3.`/`1. Mai`, the `Uhr`
+  dropped after a time, `030 1234567` joined into one kind-10 number and
+  `3-5` read `bis`.
 - Spanish all-capital acronyms (`ABS`, `CEE`, `PNV`, `UGT`): the original
   spells them letter by letter (`` `a-BH `e-`e s e ``); our tokenizer reads
   them as words. These are the 6–7 held-out words of 20 000 left (99.97%
   Spain, 99.96% America); the module's own LesPronunciabile and
   LesGetSymbolName are ported, the engine's acronym decision is not.
+- English numbers (§4c): slot 9 matches the original on every traced call.
+  Left on `oracle/bench-en-text.txt`: after `11:45 am` the module rewrites
+  the next token to `a.m.` of type 4, which the original then spells
+  (`` `HEI-Hg `E m ``); quoquendo's tokenizer side still reads `am`. The
+  engine's date/time format settings (ctx+0x20 +0x34, +0x30) are taken
+  as the defaults seen in the traces, not from `\{…}` tags.

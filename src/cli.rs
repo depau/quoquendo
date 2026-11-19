@@ -443,7 +443,9 @@ fn learn_lexicon(file: &std::path::Path, voice: Option<&str>) -> Result<(), Stri
 }
 
 fn fon_list(list: &std::path::Path, voice: Option<&str>) {
-    let fe = find_voice(voice).map(|v| v.frontend).unwrap_or_else(|_| g2p::Frontend::rules(Language::Italian));
+    // compared with the original's `.fonlist` (its module's transcription):
+    // the voice library's stage is not in it
+    let fe = find_voice(voice).map(|v| v.frontend.without_voice()).unwrap_or_else(|_| g2p::Frontend::rules(Language::Italian));
     let text = std::fs::read_to_string(list).unwrap_or_default();
     let mut out = String::new();
     for line in text.lines().filter(|l| !l.trim().is_empty()) {

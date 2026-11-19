@@ -343,7 +343,8 @@ int main(int argc, char **argv) {
         snprintf(path, sizeof path, "%s.les", argv[4]);
         leslog = fopen(path, "wb");
         if (hook_language(argv[1], getenv("LOQ_LES_DLL") ? getenv("LOQ_LES_DLL") : "LTTS7Italian.dll",
-                          getenv("LOQ_LES_TABLE") ? strtoul(getenv("LOQ_LES_TABLE"), 0, 16) : 0x10031ff8, NSLOT) < 0) return 2;
+                          getenv("LOQ_LES_TABLE") ? strtoul(getenv("LOQ_LES_TABLE"), 0, 16) : 0x10031ff8,
+                          getenv("LOQ_LES_N") ? atoi(getenv("LOQ_LES_N")) : 19) < 0) return 2;
     }
     CHECK(ttsLoadPersona(reader, argv[2], NULL, NULL));
     CHECK(ttsSetTextEncoding(reader, 65001));

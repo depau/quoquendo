@@ -8,6 +8,8 @@
 
 use super::common::{among, at, exceptions, field::*, Endings, Pe, Word};
 
+mod numeri;
+
 /// The function table's address and the names it must hold there.
 const FUNCTIONS: u32 = 0x10031ff8;
 
@@ -135,14 +137,14 @@ impl Italian {
     }
 
     /// 0x1000cdf0: words not yet classified (0x17, or 0x15 without a
-    /// subclass, or subclass `z` except `e`, `un`, `di`) take the function
-    /// word list's class.
+    /// subclass, or `e`, `un`, `di` of subclass `z`, a number's reading)
+    /// take the function word list's class.
     fn function_words(&self, w: &mut [Word]) {
         for r in w.iter_mut() {
             let c = r.f[CLASS];
             let look = c == 0x17
                 || (c == 0x15 && r.f[SUB] == 0xc8)
-                || (r.f[SUB] == b'z' && ![0x100186cc, 0x100173cc, 0x100186e4].iter().any(|&s| r.text == self.s(s)));
+                || (r.f[SUB] == b'z' && [0x100186cc, 0x100173cc, 0x100186e4].iter().any(|&s| r.text == self.s(s)));
             if !look {
                 continue;
             }
@@ -2065,6 +2067,9 @@ impl super::common::Les for Italian {
         let f = self.flags(c);
         (f & 0x1 != 0, f & UPPER != 0, self.chars[c as usize].0)
     }
+    fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        self.leggi(toks, i, kind, dmy)
+    }
     fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
         let spoken = match digits.parse::<u64>() {
             Ok(n) if digits.len() <= 12 => crate::g2p::italian_number(n),
@@ -2098,7 +2103,7 @@ impl super::common::Les for Italian {
 }
 
 impl super::Module for Italian {
-    fn analyse(&self, text: &str) -> Vec<crate::g2p::Token> {
-        super::common::analyse(self, text)
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<crate::g2p::Token> {
+        super::common::analyse(self, text, voice)
     }
 }

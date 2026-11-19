@@ -422,6 +422,9 @@ pub struct Frontend {
     /// the original's language module, ported (`lang`), reading its tables
     /// from the language pack's DLL
     module: Option<std::sync::Arc<dyn crate::lang::Module>>,
+    /// the voice library's own phone stage after the module's FON
+    /// (`voicefon`); the fitted rules already give the voice's phones
+    voice: Option<std::sync::Arc<crate::voicefon::VoiceFon>>,
 }
 
 impl Frontend {
@@ -432,6 +435,7 @@ impl Frontend {
             data: None,
             lexicon: None,
             module: None,
+            voice: None,
         }
     }
 
@@ -441,6 +445,19 @@ impl Frontend {
         if let Some(m) = crate::lang::load(self.lang, files) {
             self.module = Some(m);
         }
+        self
+    }
+
+    /// Run the voice library's phone stage after the language module.
+    pub fn with_voice(mut self, voice: crate::voicefon::VoiceFon) -> Frontend {
+        self.voice = Some(std::sync::Arc::new(voice));
+        self
+    }
+
+    /// The language module's FON alone, as the original's
+    /// `ttsPhoneticTranscription` (`.fon`) gives it: no voice stage.
+    pub fn without_voice(mut self) -> Frontend {
+        self.voice = None;
         self
     }
 
@@ -492,6 +509,7 @@ impl Frontend {
             data: Some(std::sync::Arc::new(data)),
             lexicon: None,
             module: None,
+            voice: None,
         }
     }
 
@@ -2167,7 +2185,7 @@ pub fn italian_number(n: u64) -> String {
 pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
     // the original's own module, when the voice's language pack has it
     if let Some(m) = &fe.module {
-        return m.analyse(text);
+        return m.analyse(text, fe.voice.as_deref());
     }
     let lang = fe.lang;
     let mut tokens: Vec<Token> = Vec::new();

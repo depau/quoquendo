@@ -51,6 +51,8 @@ const NOUN_ENDINGS: (u32, u32) = (0x100278e0, 0x2a);
 const ADJECTIVE_ENDINGS: (u32, u32) = (0x10027988, 0x3d);
 
 /// Phone codes (engine feature words) the module writes.
+mod numeri;
+
 mod ph {
     pub const A: u32 = 0x441;
     pub const A_: u32 = 0x10441;
@@ -1870,8 +1872,8 @@ impl common::Les for Spanish {
         let f = self.flags(c);
         (f & LETTER != 0, f & UPPER != 0, self.chars[c as usize].0)
     }
-    fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
-        self.number(digits)
+    fn leggi_numero(&self, toks: &mut [common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        Spanish::leggi_numero(self, toks, i, kind, dmy)
     }
     fn analizza(&self, w: &mut [Word]) {
         Spanish::analizza(self, w)
@@ -1915,8 +1917,8 @@ impl common::Les for Spanish {
 }
 
 impl super::Module for Spanish {
-    fn analyse(&self, text: &str) -> Vec<crate::g2p::Token> {
-        common::analyse(self, text)
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<crate::g2p::Token> {
+        common::analyse(self, text, voice)
     }
 }
 
@@ -2556,24 +2558,3 @@ impl Spanish {
         }
     }
 }
-
-// --- Numbers (LesIniNumeri 0x10007ec0) ---------------------------------------
-
-impl Spanish {
-    /// A number's words: the module's number words by id (0x10003470, the
-    /// table 0x10024f80 of 0x57 `{ id, word }`).
-    fn number(&self, digits: &str) -> Vec<Vec<u8>> {
-        digits.bytes().map(|d| self.number_word(if d == b'0' { 0xf } else { (d - b'0') as u32 })).collect()
-    }
-
-    /// 0x10003470: the number word with id `id` ("" when none).
-    fn number_word(&self, id: u32) -> Vec<u8> {
-        (0..0x57u32)
-            .find(|&k| self.pe.u32(NUMBER_WORDS + 8 * k) == id)
-            .map(|k| self.pe.cstr(self.pe.u32(NUMBER_WORDS + 8 * k + 4)).to_vec())
-            .unwrap_or_default()
-    }
-}
-
-/// The number words by id (0x10024f80).
-const NUMBER_WORDS: u32 = 0x10024f80;
