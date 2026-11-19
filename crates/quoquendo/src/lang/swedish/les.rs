@@ -530,13 +530,14 @@ impl Swedish {
             } else if k == g + 1 && is(grp, b"GRP_f_firstacc_1") {
                 slots[g][1] = 1;
             } else if is(grp, b"GRP_f_last_1") {
+                // the stem's own vowel count (read after `pop edi`: argument 6)
                 slots[g][4] = 0;
-                set(&mut slots[g], 0, nv, 1);
+                set(&mut slots[g], 0, c.ng, 1);
             } else if is(grp, b"GRP_f_first_2") {
                 set(&mut slots[g], 0, 1, 2);
             } else if is(grp, b"GRP_f_last_1_or") {
                 if is(c.grp2, b"GRP_s_penlast_1_shiftable") {
-                    set(&mut slots[g], 0, nv, 1);
+                    set(&mut slots[g], 0, c.ng, 1);
                 }
             } else if is(grp, b"GRP_f_first_2_mono") && is(c.grp2, b"GRP_s_mono") {
                 slots[g][1] = 2;

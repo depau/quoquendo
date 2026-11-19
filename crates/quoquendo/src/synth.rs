@@ -1339,7 +1339,7 @@ mod tests {
 
     #[test]
     fn phrases_split_at_punctuation_only() {
-        let ph = from_tokens(&analyse("een twee, drie?", &crate::g2p::Frontend::rules(Language::Dutch)));
+        let ph = from_tokens(&analyse("een twee, drie?", &crate::g2p::Frontend::rules(Language::Finnish)));
         assert_eq!(ph.len(), 2);
         assert!(!ph[0].full_stop && ph[1].mood == Some('I'), "comma keeps the tune open, ? makes a question");
     }

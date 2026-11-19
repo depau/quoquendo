@@ -9,9 +9,13 @@
 //! `Swedish.dbl` with the module's own query. Nothing is copied, nothing
 //! runs.
 
-// TEMP-SV: restore `mod allofono; mod fon; mod numeri;` once ported
+mod allofono;
+mod fon;
 mod les;
 mod morf;
+mod numeri;
+#[cfg(test)]
+mod trace;
 
 use super::common::{Pe, Phone, Word};
 pub(crate) use morf::{Analyses, Entry};
@@ -122,7 +126,7 @@ fn abbreviations(dbl: Option<&[u8]>) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut t: Vec<(Vec<u8>, Vec<u8>)> = rows
         .iter()
         .filter_map(|r| {
-            let a = col(r, 6).filter(|a| !a.is_empty())?;
+            let a = col(r, 2).filter(|a| !a.is_empty())?;
             Some((a, col(r, 0).unwrap_or_default()))
         })
         .collect();
@@ -207,8 +211,7 @@ impl super::common::Les for Swedish {
         digits.bytes().map(|d| vec![d]).collect()
     }
     fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
-        let _ = (toks, i, kind, dmy);
-        None // TEMP-SV
+        numeri::leggi_numero(self, toks, i, kind, dmy)
     }
     fn elabora_parola_at(&self, toks: &mut [super::common::Tok], i: usize, idx: usize, spell: u8, mode: u8) -> Option<(Vec<Word>, usize)> {
         Some((Swedish::elabora_parola(self, toks, i, idx, spell, mode), 0))
@@ -226,12 +229,10 @@ impl super::common::Les for Swedish {
         Swedish::gradi(self, w)
     }
     fn tras_parola(&self, w: &[Word], i: usize) -> Vec<u32> {
-        let _ = (w, i);
-        Vec::new() // TEMP-SV
+        Swedish::tras_parola(self, w, i)
     }
     fn allofono(&self, w: &[Word], phones: &mut Vec<Phone>, i: usize) -> usize {
-        let _ = (w, phones);
-        i // TEMP-SV
+        Swedish::allofono(self, w, phones, i)
     }
     fn symbol(&self, code: u32) -> Option<&str> {
         Swedish::symbol(self, code)

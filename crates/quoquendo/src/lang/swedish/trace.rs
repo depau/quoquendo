@@ -9,7 +9,7 @@
 //!   cargo test -p quoquendo --release swedish_trace -- --ignored --nocapture
 
 use super::{LexInfo, Swedish};
-use crate::lang::common::{field::*, Les, Word};
+use crate::lang::common::{field::*, Word};
 
 #[derive(Clone)]
 struct Rec {
@@ -23,6 +23,8 @@ struct Call {
     mode: i32,
     before: Vec<Rec>,
     after: Vec<Rec>,
+    /// FonTrasParola: (word, idx, codes)
+    tp: Option<(Vec<u8>, usize, Vec<u32>)>,
 }
 
 fn unesc(s: &str) -> Vec<u8> {
@@ -76,7 +78,7 @@ fn parse(text: &[u8]) -> Vec<Call> {
                     let v: Vec<&str> = line[p + 5..].split(',').collect();
                     i32::from_str_radix(v.get(2).unwrap_or(&"0"), 16).unwrap_or(0)
                 });
-                calls.push(Call { name, mode, before: Vec::new(), after: Vec::new() });
+                calls.push(Call { name, mode, before: Vec::new(), after: Vec::new(), tp: None });
                 side = 1;
                 continue;
             }
@@ -85,6 +87,22 @@ fn parse(text: &[u8]) -> Vec<Call> {
         }
         if line.starts_with("< Les") {
             side = if side == 1 { 2 } else { 0 };
+            continue;
+        }
+        if line.starts_with("> FonTrasParola") {
+            let idx = line.split(" idx=").nth(1).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+            calls.push(Call { name: "FonTrasParola".into(), mode: 0, before: Vec::new(), after: Vec::new(), tp: Some((field(line, "word").unwrap_or_default(), idx, Vec::new())) });
+            side = 0;
+            continue;
+        }
+        if line.starts_with("< FonTrasParola") {
+            if let Some(c) = calls.last_mut() {
+                if let Some(tp) = c.tp.as_mut() {
+                    let o = line.split(" out=").nth(1).unwrap_or("").split(' ').next().unwrap_or("");
+                    tp.2 = o.split(',').filter(|x| !x.is_empty()).map(|x| u32::from_str_radix(x, 16).unwrap_or(0)).collect();
+                }
+            }
+            side = 0;
             continue;
         }
         if line.starts_with("> ") || line.starts_with("< ") {
@@ -154,7 +172,36 @@ fn swedish_trace() {
         let calls = parse(&data);
         // the LexInfo each record carries, from the analyser, per sentence
         let mut lex: Vec<Vec<u32>> = Vec::new();
+        // the sentence after LesGradiAccentuali, and the next FON record
+        let mut done: Vec<Word> = Vec::new();
+        let mut fon_at = 0usize;
         for c in &calls {
+            if let Some((word, _idx, want)) = &c.tp {
+                // the next non-punctuation record, within its FON chunk
+                while fon_at < done.len() && done[fon_at].f[CLASS] == b'2' {
+                    fon_at += 1;
+                }
+                if fon_at >= done.len() {
+                    continue;
+                }
+                let mut a = fon_at;
+                while a > 0 && !(done[a - 1].f[CLASS] == b'2' || matches!(done[a - 1].f[BOUND], 0x0a | 0x08 | 0x0e | 0x0c | 0x0d)) {
+                    a -= 1;
+                }
+                let got = sv.tras_parola(&done[a..], fon_at - a);
+                let e = stats.entry("FonTrasParola".into()).or_default();
+                e.0 += 1;
+                if &got != want || done[fon_at].text != *word {
+                    e.1 += 1;
+                    if e.1 <= max {
+                        let li = LexInfo::of(&done[fon_at]);
+                        let morphs: Vec<String> = li.best().unwrap_or(&[]).iter().map(|m| format!("{}/{}/{}{}", String::from_utf8_lossy(sv.m_str(m.m)), String::from_utf8_lossy(sv.category(sv.m_cat(m.m)).unwrap_or(b"-")), String::from_utf8_lossy(sv.group(sv.m_grp(m.m)).unwrap_or(b"-")), sv.m_alt(m.m).map(|a| format!("({})", String::from_utf8_lossy(a))).unwrap_or_default())).collect();
+                        println!("FON {} [{}] grade {:02x} slots {:?}\n  ours {:x?}\n  orig {:x?}", String::from_utf8_lossy(word), morphs.join("+"), done[fon_at].f[GRADE], &li.slots[..li.best().map_or(1, |b| b.len().max(1))], got, want);
+                    }
+                }
+                fon_at += 1;
+                continue;
+            }
             let mut w: Vec<Word> = c.before.iter().map(word).collect();
             if c.name == "Analizza" {
                 lex = w
@@ -187,6 +234,13 @@ fn swedish_trace() {
                 }
             }
             let want: Vec<Word> = c.after.iter().map(word).collect();
+            if c.name == "GradiAccentuali" {
+                done = want.clone();
+                for (r, d) in done.iter_mut().zip(&lex) {
+                    r.data = d.clone();
+                }
+                fon_at = 0;
+            }
             let same = w.len() == want.len() && w.iter().zip(&want).all(|(a, b)| a.text == b.text && a.f[0xc..0x14] == b.f[0xc..0x14]);
             let e = stats.entry(c.name.clone()).or_default();
             e.0 += 1;

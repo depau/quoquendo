@@ -41,7 +41,7 @@ impl Language {
     /// The languages whose module is ported (`crate::lang`): they have no
     /// built-in rules, only the original's module from the language pack.
     pub fn is_ported(self) -> bool {
-        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese)
+        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish)
     }
 
     pub fn from_voice(mother_tongue: &str, aliases: &str) -> Language {
@@ -423,8 +423,8 @@ fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
 }
 
 /// A word's phones by the built-in rules, for the languages without a
-/// ported module (Dutch, Swedish…). The ported languages (Italian, English,
-/// Spanish, French, German, Greek, Portuguese) have no rules: without their
+/// ported module (Danish…). The ported languages (Italian, English,
+/// Spanish, French, German, Greek, Portuguese, Dutch, Swedish) have no rules: without their
 /// module they read nothing, and the voice reports its language data missing.
 pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
@@ -449,10 +449,9 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
         _ => raw.clone(),
     };
     let mut out = match lang {
-        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese => unreachable!(),
+        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish => unreachable!(),
         Language::Catalan => catalan(&w),
-        Language::Dutch => dutch(&w),
-        Language::Swedish | Language::Danish | Language::Norwegian => nordic(&w),
+        Language::Danish | Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
         Language::Polish => polish(&w),
         Language::Turkish | Language::Russian | Language::Generic => generic(&w),
@@ -530,69 +529,7 @@ fn catalan(w: &[char]) -> Vec<String> {
     out
 }
 
-// --- Dutch ------------------------------------------------------------------
-
-fn dutch(w: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
-    let n = w.len();
-    while i < n {
-        let c = plain(w, i).unwrap_or(' ');
-        let mut used = 1;
-        if starts(w, i, "ij") || starts(w, i, "ei") {
-            push_all(&mut out, &["EI"]);
-            used = 2;
-        } else if starts(w, i, "au") || starts(w, i, "ou") {
-            push_all(&mut out, &["AU"]);
-            used = 2;
-        } else if starts(w, i, "oo") {
-            push_all(&mut out, &["o:"]);
-            used = 2;
-        } else if starts(w, i, "ee") {
-            push_all(&mut out, &["e:"]);
-            used = 2;
-        } else if starts(w, i, "uu") {
-            push_all(&mut out, &["y:"]);
-            used = 2;
-        } else if starts(w, i, "aa") {
-            push_all(&mut out, &["a:"]);
-            used = 2;
-        } else if starts(w, i, "ch") {
-            push_all(&mut out, &["x"]);
-            used = 2;
-        } else if starts(w, i, "qu") {
-            push_all(&mut out, &["k"]);
-            used = 2;
-        } else {
-            match c {
-                'g' => push_all(&mut out, &["x"]),
-                'j' => push_all(&mut out, &["y:"]),
-                'w' => push_all(&mut out, &["v"]),
-                'v' => push_all(&mut out, &["f"]),
-                'z' => push_all(&mut out, &["s"]),
-                'h' => push_all(&mut out, &["h"]),
-                'r' => push_all(&mut out, &["R"]),
-                'q' => push_all(&mut out, &["k"]),
-                'x' => push_all(&mut out, &["k", "s"]),
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                'i' => push_all(&mut out, &["i"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["u"]),
-                'y' => push_all(&mut out, &["y:"]),
-                'b' | 'd' | 'f' | 'k' | 'l' | 'm' | 'n' | 'p' | 's' | 't' => {
-                    let s = c.to_string();
-                    out.push(s);
-                }
-                _ => {}
-            }
-        }
-        i += used.max(1);
-    }
-    out
-}
-
-// --- Swedish, Danish, Norwegian --------------------------------------------
+// --- Danish, Norwegian -------------------------------------------------------
 
 fn nordic(w: &[char]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -912,10 +849,10 @@ mod tests {
     #[test]
     fn ported_languages_have_no_rules() {
         // their phones come only from the original's module
-        for l in [Language::Italian, Language::English, Language::Spanish, Language::French, Language::German, Language::Portuguese] {
+        for l in [Language::Italian, Language::English, Language::Spanish, Language::French, Language::German, Language::Portuguese, Language::Dutch] {
             assert!(syms("casa", l).is_empty(), "{l:?}");
         }
-        assert!(!syms("casa", Language::Dutch).is_empty());
+        assert!(!syms("casa", Language::Finnish).is_empty());
     }
 
     #[test]
@@ -935,7 +872,7 @@ mod tests {
 
     #[test]
     fn words_and_pauses() {
-        let t = analyse("O meu nome é Roberto.", &Frontend::rules(Language::Dutch));
+        let t = analyse("O meu nome é Roberto.", &Frontend::rules(Language::Finnish));
         let words: Vec<&str> = t
             .iter()
             .filter_map(|x| match x {
