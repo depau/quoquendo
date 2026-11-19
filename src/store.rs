@@ -39,7 +39,37 @@ pub enum StoreEvent {
     Failed(String),
     /// a download, import or unpack failed
     InstallFailed(String),
+    /// a download stopped by its `Cancel` (the installer's file name);
+    /// nothing of it was kept
+    Cancelled(String),
 }
+
+/// Stops a running download: checked between chunks, so it ends within
+/// one network read, and the files it had stored are removed.
+#[derive(Clone, Default)]
+pub struct Cancel(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Cancel {
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// `Err(CANCELLED)` once cancelled.
+    fn check(&self) -> Result<(), String> {
+        if self.is_cancelled() {
+            Err(CANCELLED.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// The error a cancelled download stops with.
+const CANCELLED: &str = "cancelled";
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct InstalledVoice {
@@ -215,13 +245,15 @@ mod native {
         });
     }
 
-    fn get(url: &str, task: &str, tx: &Tx) -> Result<Vec<u8>, String> {
+    fn get(url: &str, task: &str, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
+        cancel.check()?;
         let resp = ureq::get(url).call().map_err(|e| format!("{url}: {e}"))?;
         let total = resp.header("Content-Length").and_then(|l| l.parse::<u64>().ok());
         let mut body = resp.into_reader();
         let mut out = Vec::with_capacity(total.unwrap_or(0) as usize);
         let mut buf = vec![0u8; 256 * 1024];
         loop {
+            cancel.check()?;
             let n = body.read(&mut buf).map_err(|e| format!("{url}: {e}"))?;
             if n == 0 {
                 break;
@@ -236,25 +268,49 @@ mod native {
         Ok(out)
     }
 
-    /// From the mirror: Ok(None) when it can't serve this installer.
-    fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx) -> Result<Option<Vec<String>>, String> {
-        let Ok(cat) = get(&format!("{mirror}/v1/catalog.json"), inst.label, tx) else { return Ok(None) };
+    /// From the mirror: Ok(None) when it can't serve this installer. The
+    /// files it stored are removed again unless every one arrived.
+    fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx, cancel: &Cancel) -> Result<Option<Vec<String>>, String> {
+        let cat = match get(&format!("{mirror}/v1/catalog.json"), inst.label, tx, cancel) {
+            Ok(cat) => cat,
+            Err(_) if !cancel.is_cancelled() => return Ok(None),
+            Err(e) => return Err(e),
+        };
         let Ok(cat) = serde_json::from_slice::<MirrorCatalog>(&cat) else { return Ok(None) };
         let Some(files) = cat.files_for(inst.file) else { return Ok(None) };
         let root = store_root()?;
         let need = missing(files, |f| std::fs::metadata(root.join(&f.path)).is_ok_and(|m| m.len() == f.size));
         let total: u64 = need.iter().map(|f| f.size).sum();
         let mut done = 0;
+        let mut stored: Vec<PathBuf> = Vec::new();
+        // a failed fetch falls back to the installer (Ok(None)); a bad
+        // checksum or a write error is final
+        let mut stop: Option<Result<Option<Vec<String>>, String>> = None;
         for f in &need {
-            let Ok(data) = get(&catalog::mirror_url(mirror, &f.path), inst.label, tx) else { return Ok(None) };
-            check(f, &data)?;
-            install::write_files(&root, &[(f.path.clone(), data)])?;
+            let data = match get(&catalog::mirror_url(mirror, &f.path), inst.label, tx, cancel) {
+                Ok(data) => data,
+                Err(_) => {
+                    stop = Some(Ok(None));
+                    break;
+                }
+            };
+            if let Err(e) = check(f, &data).and_then(|()| install::write_files(&root, &[(f.path.clone(), data)])) {
+                stop = Some(Err(e));
+                break;
+            }
+            stored.push(root.join(&f.path));
             done += f.size;
             let _ = tx.send(StoreEvent::Progress {
                 task: inst.label.to_string(),
                 done,
                 total: Some(total),
             });
+        }
+        if let Some(stop) = stop {
+            for p in &stored {
+                let _ = std::fs::remove_file(p);
+            }
+            return if cancel.is_cancelled() { Err(CANCELLED.into()) } else { stop };
         }
         let voices: Vec<String> = cat.voices.iter().filter(|v| v.installer == inst.file).map(|v| v.name.clone()).collect();
         install::record_installer(&root, inst.file, &voices)?;
@@ -264,22 +320,29 @@ mod native {
     /// Download an installer's voices: their files from the mirror when it
     /// has them, else the installer itself from archive.org (then unpacked
     /// with `import_installer`).
-    pub fn download(inst: &'static Installer, mirror: Option<String>, tx: Tx) {
+    pub fn download(inst: &'static Installer, mirror: Option<String>, tx: Tx, cancel: Cancel) {
         std::thread::spawn(move || {
+            let failed = |e: String| {
+                if cancel.is_cancelled() {
+                    StoreEvent::Cancelled(inst.file.to_string())
+                } else {
+                    StoreEvent::InstallFailed(e)
+                }
+            };
             if let Some(m) = mirror {
-                match from_mirror(&m, inst, &tx) {
+                match from_mirror(&m, inst, &tx, &cancel) {
                     Ok(Some(voices)) => return drop(tx.send(StoreEvent::Installed(voices))),
                     Ok(None) => {}
-                    Err(e) => return drop(tx.send(StoreEvent::InstallFailed(e))),
+                    Err(e) => return drop(tx.send(failed(e))),
                 }
             }
             let url = catalog::installer_url(inst.file, None).unwrap_or_default();
-            let _ = tx.send(match get(&url, inst.label, &tx) {
+            let _ = tx.send(match get(&url, inst.label, &tx, &cancel) {
                 Ok(bytes) => StoreEvent::Fetched {
                     file: inst.file.to_string(),
                     bytes,
                 },
-                Err(e) => StoreEvent::InstallFailed(e),
+                Err(e) => failed(e),
             });
         });
     }
@@ -584,7 +647,8 @@ mod web {
     }
 
     /// `fetch` a URL whole, reporting progress.
-    async fn get(url: &str, task: &str, tx: &Tx) -> Result<Vec<u8>, String> {
+    async fn get(url: &str, task: &str, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
+        cancel.check()?;
         let window = web_sys::window().ok_or("no window")?;
         let resp: web_sys::Response = JsFuture::from(window.fetch_with_str(url)).await.map_err(js)?.unchecked_into();
         if !resp.ok() {
@@ -595,6 +659,11 @@ mod web {
         let reader: web_sys::ReadableStreamDefaultReader = body.get_reader().unchecked_into();
         let mut out = Vec::with_capacity(total.unwrap_or(0) as usize);
         loop {
+            if cancel.is_cancelled() {
+                // stops the network transfer too
+                let _ = reader.cancel();
+                return Err(CANCELLED.into());
+            }
             let chunk = JsFuture::from(reader.read()).await.map_err(js)?;
             let done = js_sys::Reflect::get(&chunk, &"done".into()).map(|d| d.is_truthy()).unwrap_or(true);
             if done {
@@ -611,8 +680,14 @@ mod web {
         Ok(out)
     }
 
-    async fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx) -> Result<Option<Vec<String>>, String> {
-        let Ok(cat) = get(&format!("{mirror}/v1/catalog.json"), inst.label, tx).await else { return Ok(None) };
+    /// From the mirror: Ok(None) when it can't serve this installer. Nothing
+    /// is stored until every file has arrived.
+    async fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx, cancel: &Cancel) -> Result<Option<Vec<String>>, String> {
+        let cat = match get(&format!("{mirror}/v1/catalog.json"), inst.label, tx, cancel).await {
+            Ok(cat) => cat,
+            Err(_) if !cancel.is_cancelled() => return Ok(None),
+            Err(e) => return Err(e),
+        };
         let Ok(cat) = serde_json::from_slice::<MirrorCatalog>(&cat) else { return Ok(None) };
         let Some(files) = cat.files_for(inst.file) else { return Ok(None) };
         let index = load_index().await;
@@ -620,7 +695,11 @@ mod web {
         let need = missing(files.clone(), |f| stored.contains(&f.path));
         let mut fetched = Vec::new();
         for f in &need {
-            let Ok(data) = get(&catalog::mirror_url(mirror, &f.path), inst.label, tx).await else { return Ok(None) };
+            let data = match get(&catalog::mirror_url(mirror, &f.path), inst.label, tx, cancel).await {
+                Ok(data) => data,
+                Err(_) if !cancel.is_cancelled() => return Ok(None),
+                Err(e) => return Err(e),
+            };
             check(f, &data)?;
             fetched.push((f.path.clone(), data));
         }
@@ -637,13 +716,20 @@ mod web {
     /// Download an installer's voices: their files from the mirror when it
     /// has them, else the installer through the mirror's archive.org proxy
     /// (archive.org itself sends no CORS header for `.exe` files).
-    pub fn download(inst: &'static Installer, mirror: Option<String>, tx: Tx) {
+    pub fn download(inst: &'static Installer, mirror: Option<String>, tx: Tx, cancel: Cancel) {
         spawn_local(async move {
+            let failed = |e: String| {
+                if cancel.is_cancelled() {
+                    StoreEvent::Cancelled(inst.file.to_string())
+                } else {
+                    StoreEvent::InstallFailed(e)
+                }
+            };
             if let Some(m) = &mirror {
-                match from_mirror(m, inst, &tx).await {
+                match from_mirror(m, inst, &tx, &cancel).await {
                     Ok(Some(voices)) => return drop(tx.send(StoreEvent::Installed(voices))),
                     Ok(None) => {}
-                    Err(e) => return drop(tx.send(StoreEvent::InstallFailed(e))),
+                    Err(e) => return drop(tx.send(failed(e))),
                 }
             }
             let Some(url) = catalog::installer_url(inst.file, mirror.as_deref()) else {
@@ -652,12 +738,12 @@ mod web {
                     inst.file
                 ))));
             };
-            let _ = tx.send(match get(&url, inst.label, &tx).await {
+            let _ = tx.send(match get(&url, inst.label, &tx, &cancel).await {
                 Ok(bytes) => StoreEvent::Fetched {
                     file: inst.file.to_string(),
                     bytes,
                 },
-                Err(e) => StoreEvent::InstallFailed(e),
+                Err(e) => failed(e),
             });
         });
     }

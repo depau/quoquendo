@@ -273,6 +273,8 @@ private fun CatalogRow(model: MainModel, i: Installer) {
         },
         trailingContent = {
             when {
+                // unpacking runs in native code and can't stop halfway
+                state is Download.Running && state.unpacking -> {}
                 state is Download.Running || state is Download.Queued ->
                     IconButton(onClick = { model.cancel(i) }) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
                 state is Download.Failed ->

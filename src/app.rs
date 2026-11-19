@@ -66,6 +66,8 @@ struct Explore {
 enum DownloadState {
     Queued,
     Running { done: u64, total: Option<u64> },
+    /// cancelled, until its task has stopped and removed what it stored
+    Cancelling,
     Unpacking,
     Failed(String),
 }
@@ -73,6 +75,8 @@ enum DownloadState {
 struct Download {
     installer: &'static Installer,
     state: DownloadState,
+    /// stops it while it runs
+    cancel: store::Cancel,
 }
 
 /// The developer tools' state (desktop only).
@@ -268,10 +272,10 @@ impl App {
             match event {
                 StoreEvent::Progress { task, done, total } => {
                     if let Some(d) = self.downloads.iter_mut().find(|d| d.installer.label == task || d.installer.file == task) {
-                        if !matches!(d.state, DownloadState::Unpacking) {
-                            d.state = DownloadState::Running { done, total };
-                        } else {
-                            self.status = format!("Storing {task}… {}", catalog::size_label(done));
+                        match d.state {
+                            DownloadState::Unpacking => self.status = format!("Storing {task}… {}", catalog::size_label(done)),
+                            DownloadState::Cancelling => {}
+                            _ => d.state = DownloadState::Running { done, total },
                         }
                     } else {
                         self.status = format!("{task}: {}", catalog::size_label(done));
@@ -326,12 +330,24 @@ impl App {
                     }
                 }
                 StoreEvent::Fetched { file, bytes } => {
-                    if let Some(d) = self.downloads.iter_mut().find(|d| d.installer.file == file) {
-                        d.state = DownloadState::Unpacking;
+                    // a picked file has no download entry; a cancelled
+                    // download's bytes are dropped
+                    match self.downloads.iter().position(|d| d.installer.file == file) {
+                        Some(i) if matches!(self.downloads[i].state, DownloadState::Cancelling) => {
+                            self.downloads.remove(i);
+                            self.status = format!("Cancelled {file}");
+                            continue;
+                        }
+                        Some(i) => self.downloads[i].state = DownloadState::Unpacking,
+                        None => {}
                     }
                     self.status = format!("Unpacking {file}…");
                     self.unpacking = Some(file.clone());
                     store::import_installer(file, bytes, self.tx.clone());
+                }
+                StoreEvent::Cancelled(file) => {
+                    self.downloads.retain(|d| d.installer.file != file);
+                    self.status = format!("Cancelled {file}");
                 }
                 StoreEvent::Installed(voices) => {
                     self.unpacking = None;
@@ -366,11 +382,13 @@ impl App {
             ctx.request_repaint();
         }
         // one download at a time, one unpack at a time
-        let busy = self.unpacking.is_some() || self.downloads.iter().any(|d| matches!(d.state, DownloadState::Running { .. } | DownloadState::Unpacking));
+        let busy = self.unpacking.is_some()
+            || self.downloads.iter().any(|d| matches!(d.state, DownloadState::Running { .. } | DownloadState::Cancelling | DownloadState::Unpacking));
         if !busy {
             if let Some(d) = self.downloads.iter_mut().find(|d| matches!(d.state, DownloadState::Queued)) {
                 d.state = DownloadState::Running { done: 0, total: Some(d.installer.size) };
-                store::download(d.installer, catalog::effective_mirror(&self.mirror_url), self.tx.clone());
+                d.cancel = store::Cancel::default();
+                store::download(d.installer, catalog::effective_mirror(&self.mirror_url), self.tx.clone(), d.cancel.clone());
             }
         }
         if self.unpacking.is_some() || self.loading.is_some() || !self.downloads.is_empty() || self.player.is_playing() {
@@ -866,6 +884,7 @@ impl App {
             });
             let mut remove = None;
             let mut retry = None;
+            let mut stop = None;
             egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 egui::Grid::new("downloads").num_columns(4).spacing([18.0, 6.0]).show(ui, |ui| {
@@ -885,6 +904,12 @@ impl App {
                                         .text(format!("{} of {}", catalog::size_label(*done), catalog::size_label(total))),
                                 );
                             }
+                            DownloadState::Cancelling => {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.label(RichText::new("Cancelling…").color(MUTED));
+                                });
+                            }
                             DownloadState::Unpacking => {
                                 ui.horizontal(|ui| {
                                     ui.spinner();
@@ -899,6 +924,11 @@ impl App {
                             DownloadState::Queued => {
                                 if ui.button("Cancel").clicked() {
                                     remove = Some(i);
+                                }
+                            }
+                            DownloadState::Running { .. } => {
+                                if ui.button("Cancel").on_hover_text("Stop this download; nothing of it is kept").clicked() {
+                                    stop = Some(i);
                                 }
                             }
                             DownloadState::Failed(_) => {
@@ -917,6 +947,10 @@ impl App {
             });
             if let Some(i) = retry {
                 self.downloads[i].state = DownloadState::Queued;
+            }
+            if let Some(i) = stop {
+                self.downloads[i].cancel.cancel();
+                self.downloads[i].state = DownloadState::Cancelling;
             }
             if let Some(i) = remove {
                 self.downloads.remove(i);
@@ -997,6 +1031,7 @@ impl App {
             self.downloads.push(Download {
                 installer: inst,
                 state: DownloadState::Queued,
+                cancel: store::Cancel::default(),
             });
         }
     }

@@ -123,7 +123,8 @@ class VoiceStore(context: Context) {
                     return listOf(voice.getString("name"))
                 }
             } catch (e: Exception) {
-                if (e is InterruptedException) throw e
+                // a cancelled download stops here, without falling back
+                if (e is InterruptedException || e is java.io.InterruptedIOException || Thread.currentThread().isInterrupted) throw e
                 android.util.Log.w(TAG, "mirror failed for ${installer.file}, falling back to archive.org", e)
             }
         }
@@ -160,7 +161,11 @@ class VoiceStore(context: Context) {
         return getJSONObject("languages").optJSONObject(folder)?.getJSONArray("files")?.objects() ?: emptyList()
     }
 
-    /** Fetch every mirror file not stored yet, each checked against its sha256. */
+    /**
+     * Fetch every mirror file not stored yet, each checked against its
+     * sha256. If any fails or the download is cancelled, the files this call
+     * stored are removed again.
+     */
     private fun fetch(mirror: String, files: List<JSONObject>, progress: Progress) {
         val wanted = files.filter { f ->
             val target = File(root, f.getString("path"))
@@ -168,25 +173,37 @@ class VoiceStore(context: Context) {
         }
         val total = wanted.sumOf { it.getLong("size") }
         var before = 0L
-        for (f in wanted) {
-            val path = f.getString("path")
-            require(!path.split('/').contains("..") && !path.startsWith("/")) { "$path: outside the store" }
-            val target = File(root, path)
-            target.parentFile?.mkdirs()
-            val part = File(target.path + ".part")
-            val digest = MessageDigest.getInstance("SHA-256")
-            get("$mirror/v1/" + path.split('/').joinToString("/") { Uri.encode(it) }).use { conn ->
-                conn.inputStream.use { input ->
-                    part.outputStream().use { out -> copy(input, out, total, { d, t -> progress(before + d, t) }, digest) }
+        val stored = mutableListOf<File>()
+        try {
+            for (f in wanted) {
+                val path = f.getString("path")
+                require(!path.split('/').contains("..") && !path.startsWith("/")) { "$path: outside the store" }
+                val target = File(root, path)
+                target.parentFile?.mkdirs()
+                val part = File(target.path + ".part")
+                val digest = MessageDigest.getInstance("SHA-256")
+                try {
+                    get("$mirror/v1/" + path.split('/').joinToString("/") { Uri.encode(it) }).use { conn ->
+                        conn.inputStream.use { input ->
+                            part.outputStream().use { out -> copy(input, out, total, { d, t -> progress(before + d, t) }, digest) }
+                        }
+                    }
+                } catch (e: Exception) {
+                    part.delete()
+                    throw e
                 }
+                val hex = digest.digest().joinToString("") { "%02x".format(it) }
+                if (!hex.equals(f.getString("sha256"), ignoreCase = true)) {
+                    part.delete()
+                    throw IllegalStateException("$path: checksum mismatch — nothing was installed")
+                }
+                if (!part.renameTo(target)) throw IllegalStateException("$path: could not be stored")
+                stored += target
+                before += f.getLong("size")
             }
-            val hex = digest.digest().joinToString("") { "%02x".format(it) }
-            if (!hex.equals(f.getString("sha256"), ignoreCase = true)) {
-                part.delete()
-                throw IllegalStateException("$path: checksum mismatch — nothing was installed")
-            }
-            if (!part.renameTo(target)) throw IllegalStateException("$path: could not be stored")
-            before += f.getLong("size")
+        } catch (e: Exception) {
+            stored.forEach { it.delete() }
+            throw e
         }
     }
 
