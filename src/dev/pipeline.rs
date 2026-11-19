@@ -320,14 +320,22 @@ pub fn compare(refs: &[Reference], voice: &quoquendo::Voice, out_dir: Option<&st
         );
         // SIG: the original's own pieces through our decoder and joins
         let replay = to_i16(&synth::render(&orig_plan, db, settings)?);
-        // the decoder alone: the original's requests, in order, through ours
-        // (its own recordings only; Gilded databases have other decoders)
-        if let (Some(bank), Some(first)) = (db.audio.as_ref(), r.decodes.first()) {
-            let mine: Vec<_> = r.decodes.iter().filter(|d| d.0 == first.0).collect();
-            let same = mine.iter().filter(|(_, pos, theirs)| bank.read(*pos, theirs.len()) == *theirs).count();
-            tot.dec_requests += mine.len();
+        // the decoder alone: the original's requests, in order, through ours.
+        // It decodes one request per half-phone it plays (§6), so request k
+        // reads the database of the plan's half k (Gilded ones included)
+        if !r.decodes.is_empty() {
+            let banks: Vec<Option<&quoquendo::codec::AudioBank>> =
+                orig_plan.iter().flat_map(|p| &p.pieces).flat_map(|piece| (0..piece.halves).map(move |_| db.bank(piece.unit))).collect();
+            let mut same = 0;
+            for (k, (_, pos, theirs)) in r.decodes.iter().enumerate() {
+                let bank = banks.get(k).copied().flatten().or(db.audio.as_ref());
+                if bank.is_some_and(|b| b.read(*pos, theirs.len()) == *theirs) {
+                    same += 1;
+                }
+            }
+            tot.dec_requests += r.decodes.len();
             tot.dec_same += same;
-            let _ = writeln!(rep, "  DEC  {same} of {} decoder requests bit-identical", mine.len());
+            let _ = writeln!(rep, "  DEC  {same} of {} decoder requests bit-identical", r.decodes.len());
         }
         let (snr, close) = audio_match(&r.audio, &replay);
         tot.replay_snr.push(snr);

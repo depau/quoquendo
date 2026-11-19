@@ -1048,9 +1048,17 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
     let gain = settings.volume / 32768.0;
     let resampled = rate != crate::codec::OUTPUT_RATE;
     if settings.join == JoinStyle::Original {
-        let mut out = join_like_original(plan, db, rate);
+        let (mut out, lens) = join_like_original(plan, db, rate);
         if resampled {
-            out = crate::codec::resample(&out, rate, crate::codec::OUTPUT_RATE);
+            // the engine resamples one phone (two half units) at a time
+            let mut rs = crate::codec::StreamResampler::new(rate, crate::codec::OUTPUT_RATE);
+            let (mut res, mut at) = (Vec::new(), 0);
+            for pair in lens.chunks(2) {
+                let n: usize = pair.iter().sum();
+                res.extend(rs.push(&out[at..at + n]));
+                at += n;
+            }
+            out = res;
         }
         let out = out.into_iter().map(|v| v as f32 * gain).collect();
         return Ok(Speech {
@@ -1139,18 +1147,21 @@ pub fn unit_margin(rate: u32) -> usize {
 /// run are copied (algorithm 0); the last half of a run is joined to the next
 /// unit (algorithm 1, `sig::join`): pitch-synchronously between two voiced
 /// halves, else cross-faded. Each unit then plays its own samples.
-fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> Vec<i16> {
+/// Returns the samples and each unit's length in them.
+fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i16>, Vec<usize>) {
     use crate::sig::{join, pitch_marks, JoinUnit, Voicing};
     let m = unit_margin(rate);
     let mut out = Vec::new();
+    let mut lens = Vec::new();
     // the unit before, waiting for its join; whether it ends a run
     let mut prev: Option<(JoinUnit, bool)> = None;
-    let mut push = |mut u: JoinUnit, ends_run: bool, out: &mut Vec<i16>| {
+    let mut push = |mut u: JoinUnit, ends_run: bool, out: &mut Vec<i16>, lens: &mut Vec<usize>| {
         if let Some((mut p, p_ends)) = prev.take() {
             if p_ends {
                 join(&mut p, &mut u);
             }
             out.extend_from_slice(&p.buf[p.pre..p.pre + p.len]);
+            lens.push(p.len);
         }
         prev = Some((u, ends_run));
     };
@@ -1211,8 +1222,9 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> Vec<i16
     }
     if let Some((p, _)) = prev {
         out.extend_from_slice(&p.buf[p.pre..p.pre + p.len]);
+        lens.push(p.len);
     }
-    out
+    (out, lens)
 }
 
 /// A 16-bit mono PCM WAV of the rendered speech.

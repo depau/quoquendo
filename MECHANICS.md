@@ -880,14 +880,21 @@ when a speed/pitch change asks for it.
   rules (`g2p::italian`, `it-position.tsv`, `it-quality.tsv`) remain as
   the front end of Italian voices whose tree lacks LTTS7Italian.dll.
 - The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
-  hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk at a
-  time; 0x10028c00 asks for `floor(pending·32/44)`, minus 16 when above 16,
-  and 0x1001c370 (Smith's `resample` with its 4096-sample input buffer,
-  `Xoff`/`Time` kept between calls, readData 0x1001c030, SrcUD 0x1001be70)
-  carries the rest over. Our joins at 44 kHz are the original's (the same
-  code as at 32 kHz), so the whole-file gap of the CodecMsx voices (63–93%
-  identical) is this streaming alone; `oracle/loqref.c LOQ_TRACE_RESAMPLE`
-  (=2 with samples) logs the chunks to port it against. Not done.
+  hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk per
+  wanted phone, both its half units as the joins left them (a pause too:
+  `LOQ_TRACE_RESAMPLE` on Marcello, every chunk = the two halves' lengths);
+  0x10028c00 asks for `floor(pending·32/44)`, minus 16 when above 16, and
+  keeps the input not consumed; 0x1001c370 (Smith's `resample`, 4096-sample
+  input buffer refilled from Xoff = 55 each call, `Time` set on the first
+  call only, readData 0x1001c030, SrcUD 0x1001be70) carries the rest over.
+  `codec::StreamResampler` is a first port (render feeds it phone by phone):
+  the first chunks of Marcello's first sentence come out identical, then a
+  few samples at a chunk end differ and the stream drifts (+8 samples over
+  the sentence). Unknown still: how many outputs one pass may produce (the
+  value 0x1001c370 truncates on entry, our guess `(4096 − 2·Xoff)·factor`),
+  what the end-of-utterance call (0x10028eb4, flag 1) adds, and LpScl (the
+  caller truncates `factor·14746`, 0x1001c930). Whole files 63–93%
+  identical, as before.
 - Two joins of 1 082 traced (Roberto, Bernard) differ in the next unit's
   tail margin only: the joined buffer is shorter than `b.pre + b.len +
   b.post` and the engine copies the rest out of its scratch memory

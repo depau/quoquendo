@@ -329,6 +329,127 @@ pub fn resample(input: &[i16], from: u32, to: u32) -> Vec<i16> {
         .collect()
 }
 
+/// The output resampler as the engine streams it (VoiceResamplerRun
+/// 0x10028ee0): SIG hands it one phone at a time (both half-phones as they
+/// came out of the joins, a pause as one); each call asks 0x10028c00 for
+/// `floor(pending·to/from)` samples, 16 fewer when above 16, and keeps the
+/// input not consumed for the next. 0x1001c370 is Julius O. Smith's
+/// `resample` loop with its state kept between calls: the 4096-sample input
+/// buffer `X` (refilled from `Xoff` = 55 on every call by readData
+/// 0x1001c030, so what lies past the new data is whatever the buffer held),
+/// the time `Time` (set to `Xoff << 15` on the first call only), at most
+/// `floor((4096 − 2·Xoff)·factor) − 2·Xoff·factor` outputs per pass (SrcUD
+/// 0x1001be70, the same filter as [`resample`]).
+pub struct StreamResampler {
+    from: u32,
+    to: u32,
+    x: Vec<i16>,
+    time: u32,
+    first: bool,
+    pending: Vec<i16>,
+}
+
+impl StreamResampler {
+    const IBUF: usize = 4096;
+
+    pub fn new(from: u32, to: u32) -> StreamResampler {
+        StreamResampler {
+            from,
+            to,
+            x: vec![0; 2 * Self::IBUF],
+            time: 0,
+            first: true,
+            pending: Vec::new(),
+        }
+    }
+
+    /// One chunk in, what the engine hands on for it out.
+    pub fn push(&mut self, chunk: &[i16]) -> Vec<i16> {
+        if self.from.abs_diff(self.to) <= 100 {
+            return chunk.to_vec();
+        }
+        self.pending.extend_from_slice(chunk);
+        let factor = self.to as f64 / self.from as f64;
+        let mut nx = (self.pending.len() as f64 * factor).floor() as usize;
+        if nx > 16 {
+            nx -= 16;
+        }
+        let (out, consumed) = self.run(nx);
+        if consumed < self.pending.len() {
+            self.pending.drain(..consumed);
+        } else {
+            self.pending.clear();
+        }
+        out
+    }
+
+    /// 0x1001c370 for `ny` outputs from `pending`: the outputs and how many
+    /// input samples the time moved over.
+    fn run(&mut self, ny: usize) -> (Vec<i16>, usize) {
+        let factor = self.to as f64 / self.from as f64;
+        let lp_scl = if factor < 1.0 { (14746.0 * factor + 0.5) as i32 } else { 14746 };
+        let dtb = (1.0 / factor * 32768.0 + 0.5) as u32;
+        let dhb = ((NPC).min(factor * NPC) * 128.0 + 0.5) as u32;
+        // Xoff: (Nmult + 1)/2 · max(1, 1/factor) + 10, rounded (Nmult 65)
+        let xoff = (66.0 * 0.5 * (1.0 / factor).max(1.0) + 10.0).round() as usize;
+        let max_pass = ((Self::IBUF - 2 * xoff) as f64 * factor) as i64;
+        let edge = (2 * xoff) as f64 * factor;
+        if self.first {
+            self.time = (xoff as u32) << 15;
+            self.first = false;
+        }
+        let mut nx = Self::IBUF - 2 * xoff;
+        let mut xread = xoff;
+        let mut read_pos = 0usize;
+        let mut last = 0i64;
+        let (mut out, mut total_creep) = (Vec::with_capacity(ny), 0usize);
+        while out.len() < ny {
+            if last == 0 {
+                // readData 0x1001c030
+                let n = (Self::IBUF - xread).min(self.pending.len() - read_pos);
+                self.x[xread..xread + n].copy_from_slice(&self.pending[read_pos..read_pos + n]);
+                read_pos += n;
+                if read_pos >= self.pending.len() {
+                    last = xread as i64 - 1 + n as i64;
+                    if last != 0 && last - (xoff as i64) < nx as i64 {
+                        nx = (last - xoff as i64).max(0) as usize;
+                        if nx == 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+            let remaining = (ny - out.len()) as i64;
+            let nout = if (remaining as f64) <= max_pass as f64 - edge { remaining } else { max_pass - edge.round() as i64 };
+            let start = self.time;
+            let x = &self.x;
+            let xs = |i: isize| *x.get(i as usize).unwrap_or(&0) as i32;
+            for _ in 0..nout.max(0) {
+                let at = (self.time >> 15) as isize;
+                let ph = self.time & 0x7fff;
+                let v = filter_ud(&xs, at + 1, self.time.wrapping_neg() & 0x7fff, 1, dhb) + filter_ud(&xs, at, ph, -1, dhb);
+                out.push((((v >> 2) * lp_scl + 0x1000) >> 13).clamp(-32768, 32767) as i16);
+                self.time = self.time.wrapping_add(dtb);
+            }
+            let creep = ((self.time >> 15) - (start >> 15)) as usize;
+            self.time -= (creep as u32) << 15;
+            if last != 0 {
+                last -= (creep + xoff) as i64;
+                if last == 0 {
+                    last = 1;
+                }
+            }
+            // keep the history: X[i] = X[i + creep] for Xoff − creep + 4096 samples
+            let keep = (xoff + Self::IBUF).saturating_sub(creep).min(self.x.len() - creep);
+            self.x.copy_within(creep..creep + keep, 0);
+            total_creep += creep;
+            xread = Self::IBUF - creep;
+        }
+        out.truncate(ny);
+        (out, total_creep)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
