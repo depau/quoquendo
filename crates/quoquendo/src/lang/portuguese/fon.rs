@@ -282,7 +282,8 @@ impl Portuguese {
             }
             0xe8 | 0xe9 => {
                 if v == 0 && i == 1 && last == 2 && w[0] == b't' && w[2] == b'm' {
-                    push(&[AR_, J]);
+                    // 0x1000c890: tém
+                    push(&[0x10010481, J]);
                     return 2;
                 } else if (c1 == b'm' || c1 == b'n') && at_end(-1) {
                     push(&[if v != 0 { 0x10010741 } else { 0x10010481 }, J]);

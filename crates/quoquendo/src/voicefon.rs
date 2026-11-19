@@ -27,6 +27,7 @@ use crate::phoneset::{engine_features, phone_table, PhoneDef};
 mod afroditi;
 mod alan;
 mod allison;
+mod annika;
 mod bernard;
 mod dave;
 mod elizabeth;
@@ -34,10 +35,13 @@ mod french;
 mod german;
 mod grace;
 mod kate;
+mod portuguese;
 mod simon;
 mod spanish;
 mod steven;
 mod susan;
+mod sven;
+mod willem;
 
 /// The phone list's element kinds (0x1002d060, 0x1002c873).
 pub const KIND_PHONE: u8 = 0x69;
@@ -89,6 +93,14 @@ const PORTS: &[Port] = &[
     grace::GRACE,
     alan::ALAN,
     afroditi::AFRODITI,
+    portuguese::AMALIA,
+    portuguese::EUSEBIO,
+    portuguese::GABRIELA,
+    portuguese::FERNANDA,
+    portuguese::FELIPE,
+    annika::ANNIKA,
+    sven::SVEN,
+    willem::WILLEM,
 ];
 
 /// The engine's default `FonVidMetaFonema` (0x1002d100, and the voices'

@@ -1,5 +1,5 @@
 //! Portuguese, ported from the original's language module
-//! `LTTS7Portuguese.dll` (MECHANICS.md §4f). The module's exports
+//! `LTTS7Portuguese.dll` (MECHANICS.md §4g). The module's exports
 //! `PortuguesePt` (0x10009dd0) and `PortugueseBr` (0x10009d60) hand
 //! LoqTTS7.dll a name → function table each (0x1001fb98, 0x1001fac0: 26
 //! pairs; the `.lde`'s `Library` names the export). They differ in
@@ -15,8 +15,6 @@ use super::common::{self, at, field::*, Endings, Pe, Phone, Word};
 
 mod fon;
 mod numeri;
-#[cfg(test)]
-mod trace;
 
 /// The function tables, by variant: (table, its ELQGetPhonemes phone
 /// table).
@@ -232,8 +230,6 @@ pub struct Portuguese {
     /// DESC`
     abbreviations: Vec<(Vec<u8>, Vec<u8>)>,
     abbreviation_table: std::sync::OnceLock<Vec<common::Abbreviation>>,
-    /// the `.lde`'s lexicons (`Portuguese.lex`) as the engine's text filters
-    filters: Vec<common::TextFilter>,
 }
 
 /// `ELQstricmp`'s folding (LTTS7Util.dll 0x100285e0): ASCII capitals only.
@@ -291,7 +287,7 @@ impl Portuguese {
             lex.sort_by(|a, b| stricmp(a[0].as_deref().unwrap_or(b""), b[0].as_deref().unwrap_or(b"")));
             abbreviations.sort_by(|a, b| stricmp(&b.0, &a.0));
         }
-        let mut pt = Portuguese {
+        Some(Portuguese {
             pe,
             variant,
             chars,
@@ -299,10 +295,7 @@ impl Portuguese {
             lex,
             abbreviations,
             abbreviation_table: Default::default(),
-            filters: Vec::new(),
-        };
-        pt.filters = files.lexicons.iter().filter_map(|f| common::TextFilter::parse(&pt, f)).collect();
-        Some(pt)
+        })
     }
 
     fn flags(&self, c: u8) -> u32 {
@@ -1385,9 +1378,6 @@ impl common::Les for Portuguese {
     }
     fn abbreviazioni(&self) -> &[common::Abbreviation] {
         self.abbreviation_table.get_or_init(|| common::abbreviation_table(self, &self.abbreviations))
-    }
-    fn text_filters(&self) -> &[common::TextFilter] {
-        &self.filters
     }
 }
 
