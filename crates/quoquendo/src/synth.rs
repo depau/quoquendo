@@ -142,6 +142,10 @@ pub fn from_tokens(tokens: &[Token]) -> Vec<TargetPhrase> {
                         full_stop: reason != "phrase break",
                         mood,
                     });
+                } else if let Some(p) = out.last_mut() {
+                    // a pause right after a pause (a sentence opening with
+                    // `,`: `Mo., 14.02.` → @500 #120): one silence
+                    p.pause_ms += *ms;
                 }
             }
             Token::Pause { .. } => {}
@@ -1335,7 +1339,7 @@ mod tests {
 
     #[test]
     fn phrases_split_at_punctuation_only() {
-        let ph = from_tokens(&analyse("um dois, três?", &crate::g2p::Frontend::rules(Language::Portuguese)));
+        let ph = from_tokens(&analyse("een twee, drie?", &crate::g2p::Frontend::rules(Language::Dutch)));
         assert_eq!(ph.len(), 2);
         assert!(!ph[0].full_stop && ph[1].mood == Some('I'), "comma keeps the tune open, ? makes a question");
     }

@@ -135,8 +135,6 @@ pub struct Spanish {
     /// DESC`
     abbreviations: Vec<(Vec<u8>, Vec<u8>)>,
     abbreviation_table: std::sync::OnceLock<Vec<common::Abbreviation>>,
-    /// the `.lde`'s lexicons (`Spanish.lex`) as the engine's text filters
-    filters: Vec<common::TextFilter>,
 }
 
 struct Sets {
@@ -221,7 +219,7 @@ impl Spanish {
             nasals: pe.cstr(NASALS).to_vec(),
             acute: pe.cstr(ACUTE).to_vec(),
         };
-        let mut es = Spanish {
+        Some(Spanish {
             pe,
             variant,
             chars,
@@ -230,10 +228,7 @@ impl Spanish {
             sets,
             abbreviations,
             abbreviation_table: Default::default(),
-            filters: Vec::new(),
-        };
-        es.filters = files.lexicons.iter().filter_map(|f| common::TextFilter::parse(&es, f)).collect();
-        Some(es)
+        })
     }
 
     fn flags(&self, c: u8) -> u32 {
@@ -1910,9 +1905,6 @@ impl common::Les for Spanish {
     }
     fn abbreviazioni(&self) -> &[common::Abbreviation] {
         self.abbreviation_table.get_or_init(|| common::abbreviation_table(self, &self.abbreviations))
-    }
-    fn text_filters(&self) -> &[common::TextFilter] {
-        &self.filters
     }
 }
 

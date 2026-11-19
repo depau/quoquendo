@@ -1463,6 +1463,54 @@
    "group": "voice stage",
    "value": "0x800014 (Hk)",
    "source": "LTTS7Katrin.dll/LTTS7Stefan.dll FonVidAllofonoVoce 0x100011e0; kept words 0x1000af20–0x1000af8c"
+  },
+  {
+   "name": "Text filters: where they run",
+   "group": "text-filters",
+   "value": "LesRun 0x10035b20 -> 0x100356e0: RegExp files (ctx +0x164/+0x168) then Lexicon files (+0x170/+0x174), each last-first, via ELQTextFilterApply (Util 0x1003a470, LoqTTS7 pointer 0x100b7690); then Compact, ELQNormalizeIPATags, 0x100352e0, Detokenize, sentence loop 0x10034110; .lde names X / X[0], X[1].. (0x1002fb00)",
+   "source": "LoqTTS7.dll; lang/mod.rs Filtered, lib.rs"
+  },
+  {
+   "name": "Text filters: Util character classes",
+   "group": "text-filters",
+   "value": "digit 0x10058ab0 (0xe9), space 0x10058c84 (0x19), punct 0x10058cb8 (0x1dc), cntrl 0x10059070 (0x61), lower/upper pairs 0x10059ee0 (0x369)",
+   "source": "LTTS7Util.dll lang/textfilter.rs"
+  },
+  {
+   "name": "Text filters: raw word list",
+   "group": "text-filters",
+   "value": "AddText 0x1001bdb0, emit 0x1001b3f0, entry type 0x1001b340, flags 0x1001b220, Detokenize 0x1001d0e0 (paragraph mark DAT_10072474), Compact 0x1001d7c0, FindTextPosition, Copy",
+   "source": "LTTS7Util.dll lang/textfilter.rs"
+  },
+  {
+   "name": "Text filters: regexps and lexicons",
+   "group": "text-filters",
+   "value": "regexp section 0x1003bce0, ELQRxcFindReplace 0x1001f7e0, regmatch 0x1001f300, regrepeat 0x1001f290 (jump table 0x1001f2dc, ANYOF/ANYBUT via wcsspn); lexicon matcher 0x10039660, sorted lookup 0x10039f40, comparator 0x10038950, rule-line parser 0x10039230",
+   "source": "LTTS7Util.dll lang/textfilter.rs"
+  },
+  {
+   "name": "Control tag table",
+   "group": "text-filters",
+   "value": "0x10081820: {flag, id, name, kind, format} x58; spell id 7, s 6, number 11, pause 5; values read by LoqTTS7 0x10030670 (=yes/=spelling 1, =acronym 0, =dictation 2, =phonetic 3, =byexample 4, =alphabravo 5, =no)",
+   "source": "LTTS7Util.dll, LoqTTS7.dll; lang/common.rs spell_tags"
+  },
+  {
+   "name": "Pause lengths",
+   "group": "fon-common",
+   "value": "0x1002a200: boundary 8/0x0a/0x0e/0x14 50 ms, 0x0b 120, 0x0c 10, 0x0d 100, 0x10 250, 0x17 0, else 500; \\pause=N via 0x1002a160; phrase loop 0x1002c850 pauses after punctuation only for 0x0b, 0x0f-0x13 (0x14 before any phone)",
+   "source": "LoqTTS7.dll lang/common.rs pause_ms, fon_chunk"
+  },
+  {
+   "name": "Abbreviation lookup condition",
+   "group": "fon-common",
+   "value": "0x10034753: token not a tag, not from an expansion; a following tag does not block it",
+   "source": "LoqTTS7.dll lang/common.rs sentences"
+  },
+  {
+   "name": "Italian spelled-letter stress",
+   "group": "fon-italian",
+   "value": "0x1000b8ce: a first spelled letter (sub 0x83) whose name is 2 bytes is unstressed unless every record is spelled",
+   "source": "LTTS7Italian.dll lang/italian.rs gradi"
   }
  ]
 }

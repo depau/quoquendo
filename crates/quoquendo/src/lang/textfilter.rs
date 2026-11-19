@@ -1710,7 +1710,7 @@ impl TextFilters {
         let add = AddText {
             cl: &self.cl,
             pattern: false,
-            tags: false,
+            tags: true,
         };
         let mut list = add.run(&chars, true);
         for f in self.regexps.iter().rev().chain(self.lexicons.iter().rev()) {

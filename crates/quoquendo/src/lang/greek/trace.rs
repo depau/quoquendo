@@ -146,7 +146,7 @@ fn greek_trace() {
                             // the engine's confini between them
                             let mut c = accented.clone();
                             let mode = Les::modalita_frase(&g, &c);
-                            super::les::confini(&mut c, mode);
+                            super::super::common::confini_default(&mut c, mode);
                             fail(&mut stats, "LesConfiniProsodici (engine)", same(&c, &input), format!("mode {mode}\n  in   {}\n  orig {}\n  ours {}", show(&accented), show(&input), show(&c)));
                             for (o, a) in ours.iter_mut().zip(&analysed) {
                                 o.data = a.data.clone();

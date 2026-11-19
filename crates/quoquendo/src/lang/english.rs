@@ -210,8 +210,6 @@ pub struct English {
     chars: Vec<(u8, u32)>,
     /// the engine's abbreviation table from LesGetAbbreviazioni
     abbreviations: std::sync::OnceLock<Vec<super::common::Abbreviation>>,
-    /// the `.lde`'s `Lexicon[i]` text filters
-    filters: Vec<super::common::TextFilter>,
 }
 
 impl English {
@@ -236,9 +234,7 @@ impl English {
             .map(|i| (pe.cstr(pe.u32(entries + 8 * i)).iter().map(|&c| c as char).collect(), pe.u32(entries + 8 * i + 4)))
             .collect();
         let chars = (0..256u32).map(|c| (pe.u8(CHARS + 8 * c), pe.u32(CHARS + 8 * c + 4))).collect();
-        let mut en = English { pe, variant, lex, gpr, symbols, chars, abbreviations: Default::default(), filters: Vec::new() };
-        en.filters = files.lexicons.iter().filter_map(|f| super::common::TextFilter::parse(&en, f)).collect();
-        Some(en)
+        Some(English { pe, variant, lex, gpr, symbols, chars, abbreviations: Default::default() })
     }
 
     pub(crate) fn flags(&self, c: u8) -> u32 {
@@ -608,9 +604,6 @@ impl super::common::Les for English {
     }
     fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
         self.abbreviations.get_or_init(|| testo::abbreviazioni(self))
-    }
-    fn text_filters(&self) -> &[super::common::TextFilter] {
-        &self.filters
     }
     fn lower(&self, c: u8) -> u8 {
         self.chars[c as usize].0

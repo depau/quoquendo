@@ -37,17 +37,21 @@ pub struct ModuleFiles {
     /// the `.lde`'s `LexicalDB` and `GPR` files
     pub dbl: Option<Vec<u8>>,
     pub gpr: Option<Vec<u8>>,
-    /// the `.lde`'s `Lexicon[i]` files (the engine's text filter, applied
-    /// before tokenizing: `common::TextFilter`)
+    /// the `.lde`'s `RegExp` and `Lexicon` files, in the engine's order, and
+    /// LTTS7Util.dll: the text filters LesRun applies to the whole text
+    /// before the sentence loop (`textfilter`)
+    pub regexps: Vec<Vec<u8>>,
     pub lexicons: Vec<Vec<u8>>,
+    pub util: Option<Vec<u8>>,
     /// the voice's phone table as (symbol, engine feature word)
     pub phones: Vec<(String, u32)>,
 }
 
-/// The ported module for `lang`, when there is one and the files hold it.
+/// The ported module for `lang`, when there is one and the files hold it;
+/// with the language's text filters in front of it.
 pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
-    match lang {
-        Language::Italian => italian::Italian::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+    let module = match lang {
+        Language::Italian => italian::Italian::from_dll(files.dll.clone()).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::Spanish => spanish::Spanish::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::English => english::English::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
         Language::German => german::German::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
@@ -57,5 +61,25 @@ pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
         // Swedish (`swedish`) is not wired yet: its FON stage is unfinished
         // (MECHANICS §11), so Swedish voices keep the built-in rules
         _ => None,
+    }?;
+    let filters = files.util.as_deref().and_then(|u| textfilter::TextFilters::new(u, &files.regexps, &files.lexicons));
+    Some(match filters {
+        Some(filters) => Arc::new(Filtered { module, filters }),
+        // a tree without LTTS7Util.dll (installed before it was kept): the
+        // text goes to the module unfiltered
+        None => module,
+    })
+}
+
+/// A module behind its language's text filters: LesRun (LoqTTS7.dll
+/// 0x10035b20) rewrites the whole text, then the sentence loop runs.
+struct Filtered {
+    module: Arc<dyn Module>,
+    filters: textfilter::TextFilters,
+}
+
+impl Module for Filtered {
+    fn analyse(&self, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<Token> {
+        self.module.analyse(&self.filters.apply(text), voice)
     }
 }

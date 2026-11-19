@@ -124,6 +124,7 @@ fn language_files(info: &quoquendo::VoiceInfo, list: &dyn Fn(&str) -> Vec<String
         .map(|d| list(d).into_iter().map(|n| format!("{d}/{n}")).collect())
         .unwrap_or_default();
     out.extend(info.language_library.clone());
+    out.extend(info.util_library.clone());
     out
 }
 

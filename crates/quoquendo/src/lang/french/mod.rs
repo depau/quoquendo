@@ -377,8 +377,8 @@ impl super::common::Les for French {
         let f = self.flags(c);
         (f & LETTER != 0, f & UPPER != 0, self.lower(c))
     }
-    fn number_words(&self, digits: &str) -> Vec<Vec<u8>> {
-        numeri::number_words(self, digits)
+    fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        numeri::leggi_numero(self, toks, i, kind, dmy)
     }
     fn analizza(&self, w: &mut [Word]) {
         self.analizza(w)

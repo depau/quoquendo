@@ -29,8 +29,6 @@ pub struct Italian {
     chars: Vec<(u8, u8, u32)>,
     /// The engine's abbreviation table from LesGetAbbreviazioni's pairs.
     abbreviation_table: std::sync::OnceLock<Vec<super::common::Abbreviation>>,
-    /// The `.lde`'s lexicons (`Italian.lex`) as the engine's text filters.
-    filters: Vec<super::common::TextFilter>,
 }
 
 /// Stress positions (1 = the last vowel, +30 = a closed e/o), searched by
@@ -51,14 +49,7 @@ impl Italian {
         let chars = (0..256u32)
             .map(|c| (pe.u8(CHARS + 8 * c), pe.u8(CHARS + 8 * c + 1), pe.u32(CHARS + 8 * c + 4)))
             .collect();
-        Some(Italian { pe, chars, abbreviation_table: Default::default(), filters: Vec::new() })
-    }
-
-    /// The module and the language pack's lexicons.
-    pub fn from_files(files: &super::ModuleFiles) -> Option<Italian> {
-        let mut it = Italian::from_dll(files.dll.clone())?;
-        it.filters = files.lexicons.iter().filter_map(|f| super::common::TextFilter::parse(&it, f)).collect();
-        Some(it)
+        Some(Italian { pe, chars, abbreviation_table: Default::default() })
     }
 
     fn flags(&self, c: u8) -> u32 {
@@ -2468,7 +2459,8 @@ impl Italian {
             let unstressed = (matches!(r.f[BOUND], 2 | 1 | 0 | 6 | 7 | 3 | 0x16) && function && !kept)
                 || apos
                 || r.f[SUB] == 0x8f
-                || (!all_spelled && r.f[SUB] == 0x83 && r.text.len() == 1);
+                // 0x1000b8ce: a two-byte first letter name (`pì` `gì`, not `ù`)
+                || (!all_spelled && r.f[SUB] == 0x83 && r.text.len() == 2);
             r.f[GRADE] = if unstressed { 3 } else { 0 };
         }
     }
@@ -3120,9 +3112,6 @@ impl super::common::Les for Italian {
     }
     fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
         self.abbreviation_table.get_or_init(|| super::common::abbreviation_table(self, &self.abbreviation_pairs()))
-    }
-    fn text_filters(&self) -> &[super::common::TextFilter] {
-        &self.filters
     }
 }
 

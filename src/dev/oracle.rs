@@ -263,11 +263,13 @@ impl Reference {
         // Greek asks with `;` (LTTS7Greek.dll's LesSetModalitaFrase
         // 0x10008920 gives it type 2, as `?`)
         let greek = self.text.chars().any(|c| ('\u{370}'..='\u{3ff}').contains(&c));
-        let mut moods = self.text.chars().filter_map(|c| match c {
+        let chars: Vec<char> = self.text.chars().collect();
+        let mut moods = chars.iter().enumerate().filter_map(|(k, &c)| match c {
             '?' | '\u{37e}' => Some(Some('I')),
             ';' if greek => Some(Some('I')),
             '!' => Some(Some('E')),
-            '.' => Some(None),
+            // a dot inside a number or an abbreviation ends no sentence
+            '.' if chars.get(k + 1).is_none_or(|n| n.is_whitespace()) => Some(None),
             _ => None,
         });
         let mut out = Vec::new();
@@ -284,6 +286,11 @@ impl Reference {
                         full_stop,
                         mood,
                     });
+                } else if let Some(p) = out.last_mut() {
+                    // a phrase of only a pause (a sentence opening with
+                    // `,`: `Mo., 14.02.` → @500 #120): its silence follows
+                    // the one before
+                    p.pause_ms += *ms;
                 }
                 continue;
             }
@@ -326,10 +333,15 @@ impl Reference {
         let mut b = 0usize;
         for &(dbi, unit, n) in &self.pieces {
             while b < breaks.len() && breaks[b].0 <= h {
-                let cur = out.last_mut().unwrap();
-                cur.pause_ms += breaks[b].1;
-                if !cur.pieces.is_empty() {
-                    out.push(Phrase::default());
+                let m = out.len();
+                if out[m - 1].pieces.is_empty() && m > 1 {
+                    // a pause right after a pause: one silence
+                    out[m - 2].pause_ms += breaks[b].1;
+                } else {
+                    out[m - 1].pause_ms += breaks[b].1;
+                    if !out[m - 1].pieces.is_empty() {
+                        out.push(Phrase::default());
+                    }
                 }
                 b += 1;
             }

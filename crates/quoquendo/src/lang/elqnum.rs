@@ -534,7 +534,7 @@ pub fn extract_date(order: &[u8], s: &[u8], date: &mut Date) -> bool {
     let mut pos = 0usize;
     let ch = |pos: usize| s.get(pos.wrapping_sub(1)).copied().unwrap_or(0);
     let o = order.to_ascii_lowercase();
-    let mut tok = |buf: &mut Vec<u8>, pos: &mut usize| strtok(buf, b"-/.", pos).map(|t| atol(&t) as u32);
+    let tok = |buf: &mut Vec<u8>, pos: &mut usize| strtok(buf, b"-/.", pos).map(|t| atol(&t) as u32);
     #[derive(Clone, Copy)]
     enum P {
         D,

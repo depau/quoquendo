@@ -135,12 +135,15 @@ pub struct VoiceFiles {
     /// the `LexicalDB` and `GPR` files its language's `.lde` names
     pub dbl: Option<Vec<u8>>,
     pub gpr: Option<Vec<u8>>,
-    /// the `.lde`'s `Lexicon[i]` files in index order (`Italian.lex`:
-    /// the engine's text filter, `CA FE`-encrypted XML)
+    /// the `.lde`'s `RegExp` and `Lexicon` files in the engine's order
+    /// (`French.rex`, `Italian.lex`: its text filters, `lang::textfilter`)
+    pub regexps: Vec<Vec<u8>>,
     pub lexicons: Vec<Vec<u8>>,
     /// the language module its `.lde` names (`LTTS7Italian.dll`), read as
     /// data by the ported module (`lang`)
     pub language_library: Option<Vec<u8>>,
+    /// `LTTS7Util.dll`: the text filters' character tables are read from it
+    pub util_library: Option<Vec<u8>>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
     /// the voice's other `VocalDBName[i]` databases, in its `.vcf` order:
@@ -168,6 +171,8 @@ pub struct VoiceInfo {
     pub language: Option<String>,
     /// the language module named by that `.lde` (`bin/LTTS7English.dll`), when present
     pub language_library: Option<String>,
+    /// `bin/LTTS7Util.dll`, when present (with a language)
+    pub util_library: Option<String>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
     /// why the voice can't speak yet (`no Catalan module`)
@@ -241,6 +246,8 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
         .and_then(|i| loquendo::parse_ini(&ldes[i].1).get("Library")?.split(',').next().map(|s| s.trim().to_string()))
         .and_then(|lib| find(&bins_dir, &format!("{lib}.dll")))
         .map(|n| format!("bin/{n}"));
+    // the text filters' character tables (`lang::textfilter`)
+    let util_library = lde.and(find(&bins_dir, "LTTS7Util.dll")).map(|n| format!("bin/{n}"));
     let language_missing = lde.is_none().then(|| descriptor.mother_tongue.clone());
     let unsupported = match &language_missing {
         Some(t) if catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(t)) => Some(format!("no {t} module")),
@@ -253,6 +260,7 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
         library,
         language,
         language_library,
+        util_library,
         language_missing,
         unsupported,
     })
@@ -295,16 +303,24 @@ impl VoiceFiles {
             .filter_map(|n| Some((n.clone(), read(&format!("{dir}/{n}"))?)))
             .max_by_key(|(_, d)| d.len())
             .ok_or("the voice has no recordings")?;
-        let (dbl, gpr, lexicons) = match (&info.language, info.language_dir()) {
+        let (dbl, gpr, regexps, lexicons) = match (&info.language, info.language_dir()) {
             (Some(lde), Some(folder)) => {
                 let lde = read(lde).map(|b| ini(&b)).unwrap_or_default();
                 let file = |key: &str| lde.get(key).and_then(|f| read(&format!("{folder}/{f}")));
-                let lexicons = (0..16).map_while(|i| lde.get(&format!("Lexicon[{i}]"))).filter_map(|f| read(&format!("{folder}/{f}"))).collect();
+                // LoqTTS7.dll 0x1002fb00: `X` (else `X[0]`), then `X[1]`, `X[2]`…
+                // until one is missing
+                let listed = |key: &str| -> Vec<Vec<u8>> {
+                    let name = |i: usize| match i {
+                        0 => lde.get(key).or_else(|| lde.get(&format!("{key}[0]"))),
+                        i => lde.get(&format!("{key}[{i}]")),
+                    };
+                    (0..).map_while(name).filter_map(|f| read(&format!("{folder}/{f}"))).collect()
+                };
                 // French names its database `LexicalDB[0]` (LTTS7French.dll's
                 // loader 0x100069a0 reads that key)
-                (file("LexicalDB").or_else(|| file("LexicalDB[0]")), file("GPR"), lexicons)
+                (file("LexicalDB").or_else(|| file("LexicalDB[0]")), file("GPR"), listed("RegExp"), listed("Lexicon"))
             }
-            _ => (None, None, Vec::new()),
+            _ => (None, None, Vec::new(), Vec::new()),
         };
         // every other VocalDBName[i]: <name>.sde and the biggest <name>.*.bin
         let mut extra = Vec::new();
@@ -330,8 +346,10 @@ impl VoiceFiles {
             bin_name,
             library: info.library.as_deref().and_then(read),
             language_library: info.language_library.as_deref().and_then(read),
+            util_library: info.util_library.as_deref().and_then(read),
             dbl,
             gpr,
+            regexps,
             lexicons,
             language_missing: info.language_missing,
             extra,
@@ -385,7 +403,9 @@ impl Voice {
                 mother_tongue: descriptor.mother_tongue.clone(),
                 dbl: files.dbl,
                 gpr: files.gpr,
+                regexps: files.regexps,
                 lexicons: files.lexicons,
+                util: files.util_library,
                 phones: db.tables.as_ref().map(|t| t.phone_features()).unwrap_or_default(),
             }),
             None => frontend,

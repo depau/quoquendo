@@ -41,7 +41,7 @@ impl Language {
     /// The languages whose module is ported (`crate::lang`): they have no
     /// built-in rules, only the original's module from the language pack.
     pub fn is_ported(self) -> bool {
-        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek)
+        matches!(self, Language::Italian | Language::English | Language::Spanish | Language::French | Language::German | Language::Greek | Language::Portuguese)
     }
 
     pub fn from_voice(mother_tongue: &str, aliases: &str) -> Language {
@@ -213,10 +213,6 @@ fn starts(w: &[char], i: usize, pat: &str) -> bool {
 
 fn plain(w: &[char], i: usize) -> Option<char> {
     w.get(i).map(|c| strip_accent(*c))
-}
-
-fn is_vowel_char(c: char) -> bool {
-    matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y')
 }
 
 /// Transliterate scripts we have no rules for into Latin letters, so
@@ -427,9 +423,9 @@ fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
 }
 
 /// A word's phones by the built-in rules, for the languages without a
-/// ported module (Portuguese…). The ported languages (Italian, English,
-/// Spanish, French, German, Greek) have no rules: without their module
-/// they read nothing, and the voice reports its language data missing.
+/// ported module (Dutch, Swedish…). The ported languages (Italian, English,
+/// Spanish, French, German, Greek, Portuguese) have no rules: without their
+/// module they read nothing, and the voice reports its language data missing.
 pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
     // the dictionary first: the original engine's own pronunciation
@@ -453,9 +449,8 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
         _ => raw.clone(),
     };
     let mut out = match lang {
-        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek => unreachable!(),
+        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese => unreachable!(),
         Language::Catalan => catalan(&w),
-        Language::Portuguese => portuguese(&w),
         Language::Dutch => dutch(&w),
         Language::Swedish | Language::Danish | Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
@@ -528,85 +523,6 @@ fn catalan(w: &[char]) -> Vec<String> {
                     out.push(s);
                 }
                 _ => {}
-            }
-        }
-        i += used.max(1);
-    }
-    out
-}
-
-// --- Portuguese -------------------------------------------------------------
-
-fn portuguese(w: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
-    let n = w.len();
-    while i < n {
-        let c = w[i];
-        let mut used = 1;
-        if starts(w, i, "ch") {
-            push_all(&mut out, &["$"]);
-            used = 2;
-        } else if starts(w, i, "lh") {
-            push_all(&mut out, &["Gl"]);
-            used = 2;
-        } else if starts(w, i, "nh") {
-            push_all(&mut out, &["Gn"]);
-            used = 2;
-        } else if starts(w, i, "qu") {
-            push_all(&mut out, &["k"]);
-            used = 2;
-        } else if starts(w, i, "gu") {
-            push_all(&mut out, &["g"]);
-            used = 2;
-        } else if starts(w, i, "rr") {
-            push_all(&mut out, &["R"]);
-            used = 2;
-        } else {
-            match strip_accent(c) {
-                'ã' => push_all(&mut out, &["a"]),
-                'c' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["s"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["k"]);
-                    }
-                }
-                'g' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["Zg"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["g"]);
-                    }
-                }
-                'j' => push_all(&mut out, &["Zg"]),
-                'r' => push_all(&mut out, &["R"]),
-                's' => {
-                    let prev_vowel = out.last().map(|s| is_vowel(s)).unwrap_or(false);
-                    let next_vowel = plain(w, i + 1).map(is_vowel_char).unwrap_or(false);
-                    push_all(&mut out, &[if prev_vowel && next_vowel { "z" } else { "s" }]);
-                }
-                'x' => push_all(&mut out, &["$"]),
-                'z' => push_all(&mut out, &["z"]),
-                'h' => {}
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                'i' => push_all(&mut out, &["i"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["u"]),
-                'b' | 'd' | 'f' | 'l' | 'm' | 'n' | 'p' | 't' | 'v' => {
-                    let s = strip_accent(c).to_string();
-                    out.push(s);
-                }
-                _ => {}
-            }
-        }
-        // Portuguese marked nasality: ã õ
-        if matches!(c, 'ã' | 'õ') {
-            if let Some(last) = out.last_mut() {
-                last.push(')');
             }
         }
         i += used.max(1);
@@ -996,10 +912,10 @@ mod tests {
     #[test]
     fn ported_languages_have_no_rules() {
         // their phones come only from the original's module
-        for l in [Language::Italian, Language::English, Language::Spanish, Language::French, Language::German] {
+        for l in [Language::Italian, Language::English, Language::Spanish, Language::French, Language::German, Language::Portuguese] {
             assert!(syms("casa", l).is_empty(), "{l:?}");
         }
-        assert!(!syms("casa", Language::Portuguese).is_empty());
+        assert!(!syms("casa", Language::Dutch).is_empty());
     }
 
     #[test]
@@ -1019,7 +935,7 @@ mod tests {
 
     #[test]
     fn words_and_pauses() {
-        let t = analyse("O meu nome é Roberto.", &Frontend::rules(Language::Portuguese));
+        let t = analyse("O meu nome é Roberto.", &Frontend::rules(Language::Dutch));
         let words: Vec<&str> = t
             .iter()
             .filter_map(|x| match x {

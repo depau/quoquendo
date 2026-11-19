@@ -501,6 +501,45 @@ ordinal, month word 0x51–0x5c, year `neunzehn hundert neunzig` /
 `einhundert`, `eine Milliòn`/`Milliònen`, `eine Milliàrde`/`Milliàrden`,
 `ein und zwanzig` (0x10005b20), a trailing ` # ` dropped.
 
+**French numbers** (`lang/french/numeri.rs`). `LesIniNumeri` 0x10006480
+installs slot 0 word by id 0x10001db0 (0x53 `{id, char*}` pairs at
+0x1001d020, `""` 0x1001c3f2), 1 phone number 0x10001d30 (area-code length
+0x10001cb0: `ELQSearchString` flag 2 over 0xf7 codes at 0x1001cba0), 2
+cardinal 0x10005730, 3 digit 0x100056f0 (`zéro`/`un`, else 0x10004970:
+words of 1–20 and the tens), 4 by-digits 0x10001d80, 5 currency name
+0x10004760 (8 × `{code, unit, units, cent, cents}` at 0x1001cf80), 6
+decimals 0x100062c0 (always flag 0), 7 date 0x10001de0 (two-digit years
+from 80, from 0 after `/`), 9 the reader 0x10005db0 (slot 8 empty). The
+reader is German's in shape: kind 5/6 → mode 4 with +0x48 5/6; mode 0xc
+when a currency sign is next to the number or the next token is exactly
+(case-sensitive) `euro dollars dollar eur usd USD JPY jpy gbp GBP yen EUR`
+(0x1001c428 0x1001c458 0x1001c460 0x1001d704 0x1001d6fc 0x1001d700
+0x1001d6f8 0x1001d6f4 0x1001d6d8 0x1001d6dc 0x1001c40c 0x1001d708) or
+`livre` 0x1001d6ec with `sterling` 0x1001d6e0 three tokens on. The order
+0x10005050 (mode 1→6, 2→8, 4→2, 7→1, 9→4, 10→7, 11→5, 12→3): date
+0x10002ca0 (slot 7, or a VoiceXML date in mode 8 with order `b`), time
+0x10002e00 (an hour 1–24 before `h` 0x1001d6c8: `:` and the minutes after
+it joined to the text when a number below 60 not followed by `h` comes
+next — two tokens used — else one; or `ELQNumIsTime`), ordinal 0x10003120
+(mode 4, or before `ème éme eme è e`, used, +0x48 5), money 0x10003330
+(a currency sign or name after the number: `€` 0x1001c430, `$` 0x1001c468,
+`¥` 0x1001c410, `£` 0x1001c444; the next token becomes `n`, for `livre
+sterling` and `GBP` the one after it), real 0x10003870, fraction
+0x10003b20 (0x10001320), phone 0x10003c40 (no `:/-+` 0x1001d70c, over six
+digits, an area code), integer 0x10004050, code 0x10003e80. The renderer
+0x10005130: kind 0 `ELQNumConvertRealNumber`, 1 slot 1, 2/3/10/9 a sign
+(`moins`/`plus` + space) and the integer, decimals after ` virgule ` by
+slot 6; 4 0x10001610 (1–20 from a table, `premièr` + `e` unless a suffix
+was read, else the cardinal + `ième` 0x1001d3bc), 7 0x10004430 (` heure `
+0x1001d720 / ` heures ` 0x1001d714, ` minutes `, ` secondes `), 8
+0x10001e50 (day cardinal, month word 0x51–0x5c, year), 0xb 0x10001000 (14
+fractions, `1/2` read `midi`), 0xc 0x10001fa0 (units, the currency name,
+two-digit cents as a bare cardinal or `et` + digit + cent name; `une` for
+£1). The cardinal: hundreds 0x10004b90 (`cent`, `deux cents`, `trois
+cent un`), two digits 0x10004e00 (`vingt et un`, `soixante et onze`,
+`quatre vingt un`, `quatre vingt dixneuf`), `mille`, `un million` /
+`millions`, `un milliard` / `milliards`, a trailing ` # ` dropped.
+
 Pauses are the original's defaults: `ShortPauseLength` 50 ms (`-`),
 `MediumPauseLength` 120 ms (`,` `;` `:`), `LongPauseLength` 500 ms (`.` `!` `?`
 newline) — its transcription confirms `#50` and `@500`.
@@ -1002,6 +1041,58 @@ identical. Only reading types 0, 5 and 6 reach the module untagged
 lines): 98.0% of sounds; the rest is Greek.lex (§11).
 
 
+## 4h. The text filters, pauses and tags (LTTS7Util.dll, LoqTTS7.dll; `lang/textfilter.rs`, `lang/common.rs`)
+
+**Where.** LesRun 0x10035b20 calls 0x100356e0, which applies the
+language's RegExp files (ctx +0x164/+0x168) last-first, then its Lexicon
+files (+0x170/+0x174) last-first, through Util's `ELQTextFilterApply`
+(0x1003a470, reached through LoqTTS7's pointer 0x100b7690); then Compact,
+`ELQNormalizeIPATags`, 0x100352e0, Detokenize (`list,&out,0,1,0,0`) and
+the sentence loop 0x10034110. The `.lde` file names are loaded as
+0x1002fb00 does: `X`, else `X[0]`, then `X[1]`, …. `lang/mod.rs` wraps
+every module in `Filtered`, so the rewritten text is what the module's
+LES sees; without `bin/LTTS7Util.dll` (kept by `pack.rs` with a language)
+the text goes unfiltered.
+
+**Util, ported.** Character classes read from the DLL: digit 0x10058ab0
+(0xe9 entries), space 0x10058c84 (0x19), punctuation 0x10058cb8 (0x1dc),
+control 0x10059070 (0x61), lower/upper pairs 0x10059ee0 (0x369). Raw word
+list: AddText 0x1001bdb0 (classes 2 number, 3 word, 4 space, 5 punct, 6
+tag, 0xc/0xd pattern, 0xe end; tags attach to the next word), entry
+emit 0x1001b3f0, entry type/flags 0x1001b340/0x1001b220, Detokenize
+0x1001d0e0 (`¶` DAT_10072474 after a paragraph, ` \{$` after a sentence
+end), Compact 0x1001d7c0. Regexps: a wide Spencer engine
+(ELQRxcFindReplace 0x1001f7e0, regmatch 0x1001f300, regrepeat 0x1001f290
+whose ANYOF/ANYBUT both use `wcsspn`, jump table 0x1001f2dc; `\<` `\>`
+`\{` `\}` ops 12–15), applied per section by 0x1003bce0. Lexicons: the
+matcher 0x10039660 over a sorted table (lookup 0x10039f40, comparator
+0x10038950); rule lines parsed by the state machine 0x10039230. Tag
+names: the table at 0x10081820 (`{flag, id, name, kind, format}`, 58
+entries; `spell` is id 7, `s` 6, `number` 11).
+
+**Pauses** (LoqTTS7 0x1002a200): boundaries 8, 0x0a, 0x0e, 0x14 → 50 ms;
+0x0b → 120; 0x0c → 10; 0x0d → 100; 0x10 (`:` `;`) → 250; 0x17 → 0;
+anything else 500; a `\pause=N` tag (0x1002a160) sets it. The phrase loop
+(0x1002c850) pauses after a punctuation record (grade 0x0f) only for
+boundaries 0x0b and 0x0f–0x13 (0x14 only before any phone). A sentence
+opening with punctuation (`Mo., 14.02.`) gives a pause with no phones
+before it: the original plays both (`@500 #120`); `synth::from_tokens`
+and the compare tool add it to the silence before.
+
+**Tags on a token** (0x10030670 from 0x10031410). `\spell=yes`/`=spelling`
+spell the token (mode 1; `=acronym` 0, `=dictation` 2, `=phonetic` 3,
+`=byexample` 4, `=alphabravo` 5; `=no` reads it): a word goes to
+LesElaboraParola with that mode (1 for 0), a symbol is named with mode 1,
+an abbreviation skips the initials path and every piece is spelled.
+**Abbreviations** (0x10034753) are looked up whatever tag follows the
+token (`z.B. \{$` → `zum Beispiel`).
+
+`LOQ_TRACE_TEXT=1` (oracle/loqref.c) writes `<prefix>.txt`: the raw word
+lists before/after each filter and every `T` text LesRun hands the
+sentence loop (call 0x10035cf8 → 0x10034110). `QQ_TRACE_LES=1` prints
+quoquendo's records after each LES stage in the same `W` format as
+`LOQ_TRACE_LES`.
+
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
 **What the original does** (LoqTTS7.dll): units are half-phones; the event
@@ -1364,11 +1455,19 @@ when a speed/pitch change asks for it.
 - Swedish (`lang/swedish/`): LES, morphology and FonAllofonoLingua are
   partly written; FonTrasParola isn't, so the module gives no phones and
   is not wired.
-- The engine's text filters (`lang/textfilter.rs`: LTTS7Util's
-  `ELQTextFilterApply` with the `.lde` RegExp and Lexicon files) are partly
-  ported and not yet run: the `bench-*-text.txt` units, roman numerals and
-  abbreviations that only the `.rex`/`.lex` rewrite (French `km`, `n°`,
-  `XIXe`; German `3-5`, `3. Oktober`) still differ.
+- The engine's text filters (§4h) run for every language. Left: Util's
+  tag parser (ELQTagParser) and its `&…;` entities are not ported, so
+  input that already holds `\}`, `\{(`, `\t`-like tags or `&amp;` can be
+  rewritten differently (stress tests only; every `T` line of the five
+  `bench-*-text.txt` is identical). Left on those benches after the
+  filters (module FON, phones): English `\{spell=yes US` (the original
+  spells `US`; the `spell` tag is read by `common::spell_tags` but the
+  English path still reads `us`), German `Ludwig XIV.`/`Friedrich II.`
+  after `\{number=ordinalM` (the original reads the roman ordinals),
+  French `45 67` (below). The English `#50` in "Seventy students sent…"
+  (`oracle/bench-en-voice.txt`) is not found yet: the original's
+  LesConfiniProsodici gives seventy 0x03, students 0x05, sent 0x05
+  (`/tmp/qq-tl/s7.les`), no pause boundary.
 - Italian (§4b): every LES/FON function of LTTS7Italian.dll the engine
   calls is ported; bench-it and the 20 000 held-out words are 100%
   identical. 0x10001290 (participles) is checked on 91 sentences with
@@ -1410,6 +1509,12 @@ when a speed/pitch change asks for it.
   the text filters' `\{number=ordinalM}` before `3.`/`1. Mai`, the `Uhr`
   dropped after a time, `030 1234567` joined into one kind-10 number and
   `3-5` read `bis`.
+- French numbers (§4): slot 9 matches the original on every traced call
+  (282, `numeri::tests::french_replay_slot9` over `/tmp/qq-num-fr/*.les`).
+  On `oracle/bench-fr-text.txt` one line differs, on the engine's side: a
+  number followed by another number (`45 67`) gets the `t` of `quarante`
+  before `cinq` in the original (`le 45 67.`: `Aa) tt s`), ours `Aa) n s`
+  as for a lone `45`; the readings themselves are identical.
 - Spanish all-capital acronyms (`ABS`, `CEE`, `PNV`, `UGT`): the original
   spells them letter by letter (`` `a-BH `e-`e s e ``); our tokenizer reads
   them as words. These are the 6–7 held-out words of 20 000 left (99.97%

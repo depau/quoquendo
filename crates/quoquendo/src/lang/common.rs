@@ -400,6 +400,13 @@ pub trait Les {
     /// `FonTrasParola`: one word's phone codes; the engine hands it the
     /// sentence's records and the word's index.
     fn tras_parola(&self, w: &[Word], i: usize) -> Vec<u32>;
+    /// What the phrase loop actually calls: `tras_parola` with the whole
+    /// sentence too (FON ctx+0x2c, ctx+0x20 its count) and the chunk's
+    /// first record index in it (chunk +0x18), for modules that read past
+    /// the chunk. Default: `tras_parola(chunk, i)`.
+    fn tras_parola_in(&self, _sentence: &[Word], _first: usize, w: &[Word], i: usize) -> Vec<u32> {
+        self.tras_parola(w, i)
+    }
     /// `FonTrasConfini`: called for every word of a chunk (its first
     /// included, then `phones` is empty) and for the closing punctuation's
     /// pause code, before `next` (that word's codes) is appended: may
@@ -515,11 +522,6 @@ pub trait Les {
     fn abbreviazioni(&self) -> &[Abbreviation] {
         &[]
     }
-    /// The language's text filters (its `.lde`'s `Lexicon[i]`), applied
-    /// to the text before the tokenizer. Default: none.
-    fn text_filters(&self) -> &[TextFilter] {
-        &[]
-    }
     /// `LesIniNumeri` slot 9 (+0x24), the only number reader the engine
     /// calls itself (0x1003eb80): the reading of the number token `i`
     /// (space-separated words; a `#` piece marks the record before with
@@ -536,12 +538,38 @@ pub trait Les {
     }
 }
 
-/// The pauses the engine gives each kind of break (its ShortPauseLength
-/// for the pauses LesConfiniProsodici adds, MediumPauseLength after a
-/// comma, LongPauseLength at the end of a sentence).
-const ADDED_PAUSE_MS: u32 = crate::g2p::SHORT_PAUSE_MS;
-const COMMA_PAUSE_MS: u32 = crate::g2p::MEDIUM_PAUSE_MS;
-const END_PAUSE_MS: u32 = crate::g2p::LONG_PAUSE_MS;
+/// A pause's length by its record's boundary (LoqTTS7.dll 0x1002a200,
+/// called for every pause entry at 0x1002a352/0x1002a4d2): 8, 0x0a, 0x0e,
+/// 0x14 ShortPauseLength (default 50 ms), 0x0b MediumPauseLength (120),
+/// 0x0c 10, 0x0d 100, 0x10 (`:` `;`) half LongPauseLength (250), 0x17
+/// none, anything else LongPauseLength (500). A `\pause=N` tag on the
+/// record (0x1002a160) gives N instead.
+fn pause_ms(r: &Word) -> u32 {
+    if let Some(n) = r.tag.as_deref().and_then(pause_tag) {
+        return n;
+    }
+    match r.f[BOUND] {
+        8 | 0x0a | 0x0e | 0x14 => crate::g2p::SHORT_PAUSE_MS,
+        0x0b => crate::g2p::MEDIUM_PAUSE_MS,
+        0x0c => 10,
+        0x0d => 100,
+        0x10 => crate::g2p::LONG_PAUSE_MS / 2,
+        0x17 => 0,
+        _ => crate::g2p::LONG_PAUSE_MS,
+    }
+}
+
+/// The value of a `pause` tag (`\pause=N`, `\{pause=N}`) among a record's
+/// tags.
+fn pause_tag(t: &[u8]) -> Option<u32> {
+    let s = String::from_utf8_lossy(t);
+    s.split('\\').find_map(|tag| {
+        let tag = tag.trim_start_matches('{');
+        let v = tag.strip_prefix("pause=")?;
+        let n: String = v.chars().take_while(|c| c.is_ascii_digit()).collect();
+        Some(n.parse::<u32>().unwrap_or(0) & 0xffff)
+    })
+}
 
 /// A word record as the engine makes it (0x100310f0): no boundary or grade
 /// yet (0x15, 0x0e), `+0xc` 0xffff, 0 when the text ends with an
@@ -597,9 +625,29 @@ pub fn to_8bit_cp(c: char, cp: u32) -> Option<u8> {
         0x03b0, 0x03b1, 0x03b2, 0x03b3, 0x03b4, 0x03b5, 0x03b6, 0x03b7, 0x03b8, 0x03b9, 0x03ba, 0x03bb, 0x03bc, 0x03bd, 0x03be, 0x03bf, //
         0x03c0, 0x03c1, 0x03c2, 0x03c3, 0x03c4, 0x03c5, 0x03c6, 0x03c7, 0x03c8, 0x03c9, 0x03ca, 0x03cb, 0x03cc, 0x03cd, 0x03ce, 0,
     ];
+    const CYRILLIC: [u32; 64] = [
+        0x0402, 0x0403, 0x201a, 0x0453, 0x201e, 0x2026, 0x2020, 0x2021, 0x20ac, 0x2030, 0x0409, 0x2039, 0x040a, 0x040c, 0x040b, 0x040f, //
+        0x0452, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0, 0x2122, 0x0459, 0x203a, 0x045a, 0x045c, 0x045b, 0x045f, //
+        0x00a0, 0x040e, 0x045e, 0x0408, 0x00a4, 0x0490, 0x00a6, 0x00a7, 0x0401, 0x00a9, 0x0404, 0x00ab, 0x00ac, 0x00ad, 0x00ae, 0x0407, //
+        0x00b0, 0x00b1, 0x0406, 0x0456, 0x0491, 0x00b5, 0x00b6, 0x00b7, 0x0451, 0x2116, 0x0454, 0x00bb, 0x0458, 0x0405, 0x0455, 0x0457,
+    ];
+    const CENTRAL: [u32; 128] = [
+        0x20ac, 0, 0x201a, 0, 0x201e, 0x2026, 0x2020, 0x2021, 0, 0x2030, 0x0160, 0x2039, 0x015a, 0x0164, 0x017d, 0x0179, //
+        0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0, 0x2122, 0x0161, 0x203a, 0x015b, 0x0165, 0x017e, 0x017a, //
+        0x00a0, 0x02c7, 0x02d8, 0x0141, 0x00a4, 0x0104, 0x00a6, 0x00a7, 0x00a8, 0x00a9, 0x015e, 0x00ab, 0x00ac, 0x00ad, 0x00ae, 0x017b, //
+        0x00b0, 0x00b1, 0x02db, 0x0142, 0x00b4, 0x00b5, 0x00b6, 0x00b7, 0x00b8, 0x0105, 0x015f, 0x00bb, 0x013d, 0x02dd, 0x013e, 0x017c, //
+        0x0154, 0x00c1, 0x00c2, 0x0102, 0x00c4, 0x0139, 0x0106, 0x00c7, 0x010c, 0x00c9, 0x0118, 0x00cb, 0x011a, 0x00cd, 0x00ce, 0x010e, //
+        0x0110, 0x0143, 0x0147, 0x00d3, 0x00d4, 0x0150, 0x00d6, 0x00d7, 0x0158, 0x016e, 0x00da, 0x0170, 0x00dc, 0x00dd, 0x0162, 0x00df, //
+        0x0155, 0x00e1, 0x00e2, 0x0103, 0x00e4, 0x013a, 0x0107, 0x00e7, 0x010d, 0x00e9, 0x0119, 0x00eb, 0x011b, 0x00ed, 0x00ee, 0x010f, //
+        0x0111, 0x0144, 0x0148, 0x00f3, 0x00f4, 0x0151, 0x00f6, 0x00f7, 0x0159, 0x016f, 0x00fa, 0x0171, 0x00fc, 0x00fd, 0x0163, 0x02d9,
+    ];
     match (cp, u) {
         (_, 0..=0x7f) => Some(u as u8),
         (1253, _) => GREEK.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+        (1250, _) => CENTRAL.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+        // Windows-1251: 0xc0–0xff are А–я
+        (1251, 0x0410..=0x044f) => Some((u - 0x0410 + 0xc0) as u8),
+        (1251, _) => CYRILLIC.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
         // Windows' conversion keeps C1 controls as their own byte
         (_, 0x80..=0xff) => Some(u as u8),
         _ => HIGH.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
@@ -1242,6 +1290,38 @@ fn number_tag(toks: &[Tok], i: usize) -> (u32, Vec<u8>) {
     (kind, dmy)
 }
 
+/// The `spell` control tags (Util's tag table 0x10081820: id 7) a token's
+/// record carries, as 0x10030670 reads them for 0x10031410: `(spell,
+/// spelling mode, no)`. `=yes`/`=spelling` 1, `=acronym` 0, `=dictation`
+/// 2, `=phonetic` 3, `=byexample` 4, `=alphabravo` 5 spell; `=no` asks
+/// for the word read. The tags are the ones just before the token.
+fn spell_tags(toks: &[Tok], i: usize) -> (bool, u8, bool) {
+    let mut k = i;
+    while k > 0 && toks[k - 1].kind == tok::TAG {
+        k -= 1;
+    }
+    let (mut spell, mut mode, mut no) = (false, 0u8, false);
+    for t in &toks[k..i] {
+        let body = t.text.strip_prefix(b"\\").unwrap_or(&t.text);
+        let body = body.strip_prefix(b"{").unwrap_or(body);
+        let Some(value) = body.strip_prefix(b"spell") else { continue };
+        let m = match value {
+            b"=yes" | b"=spelling" => Some(1),
+            b"=acronym" => Some(0),
+            b"=dictation" => Some(2),
+            b"=phonetic" => Some(3),
+            b"=byexample" => Some(4),
+            b"=alphabravo" => Some(5),
+            _ => None,
+        };
+        (spell, no) = (m.is_some(), value == b"=no");
+        if let Some(m) = m {
+            mode = m;
+        }
+    }
+    (spell, mode, no)
+}
+
 /// The records for one token (0x10031410, the paths plain text takes:
 /// no SSML say-as, the engine's default settings). `skip` takes how many
 /// following tokens are used up (a number reader's, `°C`).
@@ -1249,6 +1329,7 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
     let t = toks[i].text.clone();
     let expanded = toks[i].expanded;
     let next_real = |toks: &[Tok]| toks[i + 1..].iter().find(|tk| tk.kind != tok::TAG).cloned();
+    let (spell, spell_mode, spell_no) = spell_tags(toks, i);
     match toks[i].kind {
         tok::NUMBER => {
             // a lone short token makes the reading's last word 0x7b (0x10031380)
@@ -1296,7 +1377,7 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
             }
         }
         tok::SYMBOL => {
-            if t.len() >= 3 {
+            if t.len() >= 3 && !spell {
                 if out.last().is_some_and(|r| r.f[CLASS] != b'2') {
                     out.push(record(t, b'2', b'|', 9));
                 }
@@ -1312,6 +1393,9 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
             }
             if at(&t, 0) == b'\\' {
                 mode = 2;
+            }
+            if spell {
+                mode = 1; // case 2: the mode is the spell flag itself
             }
             if t == b"-" {
                 out.push(record(t, 0x37, 9, 200));
@@ -1329,15 +1413,22 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
             let mut w = t;
             l.normalizza_accento(&mut w);
             toks[i].text = w.clone();
-            match l.elabora_parola_at(toks, i, idx, 0, 0) {
+            // case 3: `\spell=…` makes LesElaboraParola spell (its mode,
+            // 1 for `=acronym`); `\spell=no` passes it the read flag
+            let (flag, mode) = match (spell, spell_no) {
+                (_, true) => (1, 0),
+                (true, _) => (0, spell_mode.max(1)),
+                _ => (0, 0),
+            };
+            match l.elabora_parola_at(toks, i, idx, flag, mode) {
                 Some((r, used)) => {
                     out.extend(r);
                     *skip = used;
                 }
-                None => out.extend(elabora_parola(l, &w, expanded, 0, 0)),
+                None => out.extend(elabora_parola(l, &w, expanded, flag, mode)),
             }
         }
-        tok::ABBR if initials(l, &t) => {
+        tok::ABBR if !spell && initials(l, &t) => {
             let next = next_real(toks).map(|n| n.text).unwrap_or_default();
             if let Some(e) = (!next.is_empty()).then(|| l.espandi_abbreviazione(&t, &next)).flatten() {
                 let mut r = record(e, 0x29, 200, 200);
@@ -1366,15 +1457,17 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
                 if piece.kind == tok::TAG {
                     continue;
                 }
-                let readable = piece.kind != tok::SYMBOL && (!matches!(piece.kind, tok::WORD | tok::ABBR) || l.pronunciabile(&piece.text));
+                // case 4 under `\spell`: every piece spelled, mode 1
+                let readable = !spell && piece.kind != tok::SYMBOL && (!matches!(piece.kind, tok::WORD | tok::ABBR) || l.pronunciabile(&piece.text));
+                let mode = spell as u8;
                 if readable {
                     let mut w = piece.text;
                     l.normalizza_accento(&mut w);
                     out.push(record(w, 0x17, 200, 200));
                 } else if piece.kind == tok::SYMBOL {
-                    out.extend(spelled(l, &piece.text, 0, 0x17, 200, 200));
+                    out.extend(spelled(l, &piece.text, mode, 0x17, 200, 200));
                 } else {
-                    out.extend(spelled(l, &piece.text, 0, 0x15, 0x83, 0x84));
+                    out.extend(spelled(l, &piece.text, mode, 0x15, 0x83, 0x84));
                 }
             }
         }
@@ -1386,16 +1479,14 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
 }
 
 /// LoqTTS7.dll's TOP and LES text handling (0x10034110 per sentence,
-/// 0x10031410 per token): the language's text filters, the lexer, the
+/// 0x10031410 per token) on the text LesRun leaves (the language's text
+/// filters applied: `textfilter`, around the module): the lexer, the
 /// abbreviation table, then each token's records; a sentence ends at
 /// punctuation that `ends_sentence`, and text ending without one gets a
 /// closing `.` (0x100303b0: grade 0x0f, tag `\{pause=0}`).
 pub fn sentences<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Sentence> {
     let cp = l.code_page();
-    let mut t: Vec<u8> = text.chars().filter_map(|c| to_8bit_cp(c, cp)).collect();
-    for f in l.text_filters() {
-        t = f.apply(l, &t);
-    }
+    let t: Vec<u8> = text.chars().filter_map(|c| to_8bit_cp(c, cp)).collect();
     let mut toks = lex_all(l, &t, false, false);
     // a currency code before its amount goes after it (0x10034110)
     for i in 1..toks.len() {
@@ -1415,8 +1506,10 @@ pub fn sentences<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Sentence> {
             i += 1;
             continue;
         }
-        let next_is_tag = toks.get(i + 1).is_some_and(|n| n.kind == tok::TAG);
-        if toks[i].kind != tok::TAG && !toks[i].expanded && !next_is_tag {
+        // 0x10034753: the token itself must not be a tag nor come from an
+        // expansion (a `\{$` the text filters left after `z.B.` blocks
+        // nothing: the original expands it)
+        if toks[i].kind != tok::TAG && !toks[i].expanded {
             if let Some((n, a)) = match_abbreviation(l, l.abbreviazioni(), &toks, i) {
                 let mut new = lex_all(l, &a.expansion, false, true);
                 for tk in new.iter_mut() {
@@ -1447,422 +1540,6 @@ pub fn sentences<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Sentence> {
     out
 }
 
-// --- The language's text filters: `.lex` lexicons ----------------------------
-
-/// One placeholder-or-token of a text filter entry's key.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Key {
-    Text(Vec<u8>),
-    /// `%n`: a number token
-    Number,
-    /// `%w`: a word token
-    Word,
-}
-
-#[derive(Clone, Debug)]
-struct Section {
-    insensitive: bool,
-    entries: Vec<(Vec<Key>, Vec<u8>)>,
-}
-
-/// A `.lex` lexicon, the text filter LTTS7Util.dll's `ELQTextFilter*`
-/// applies to the text before the tokenizer: `CA FE` then each byte XOR
-/// the byte before it in the file (the first 0x34; `ELQCryptBufferDecrypt`
-/// 0x10004ba0), UTF-8 XML. Its `<regexp>` entries rewrite the text with
-/// regular expressions; each `<section>` (`case="insensitive"` or not)
-/// lists `"key" = "value"` replacements of token runs, `%n` standing for a
-/// number, `%w` for a word, `%1`… in the value for what they matched.
-#[derive(Clone, Debug, Default)]
-pub struct TextFilter {
-    regexps: Vec<(Vec<ReNode>, Vec<u8>)>,
-    sections: Vec<Section>,
-}
-
-/// Decrypt an encrypted lexicon or database file (`CA FE` header).
-pub fn decrypt(b: &[u8]) -> Vec<u8> {
-    if !b.starts_with(&[0xca, 0xfe]) {
-        return b.to_vec();
-    }
-    let mut prev = 0x34u8;
-    b[2..]
-        .iter()
-        .map(|&c| {
-            let p = c ^ prev;
-            prev = c;
-            p
-        })
-        .collect()
-}
-
-/// The quoted strings of an entry line: `"key" = "value"`.
-fn quoted(line: &str) -> Option<(String, String)> {
-    let mut parts = Vec::new();
-    let mut cur: Option<String> = None;
-    let mut chars = line.chars();
-    while let Some(c) = chars.next() {
-        match (&mut cur, c) {
-            (None, '"') => cur = Some(String::new()),
-            (Some(s), '\\') => {
-                s.push('\\');
-                if let Some(n) = chars.next() {
-                    s.push(n);
-                }
-            }
-            (Some(_), '"') => parts.push(cur.take().unwrap()),
-            (Some(s), c) => s.push(c),
-            (None, _) => {}
-        }
-    }
-    (parts.len() == 2).then(|| (parts[0].clone(), parts[1].clone()))
-}
-
-fn bytes8(s: &str) -> Vec<u8> {
-    s.chars().filter_map(to_8bit).collect()
-}
-
-/// Lower case for the insensitive sections: ASCII and Latin-1 letters.
-fn lower1(c: u8) -> u8 {
-    match c {
-        b'A'..=b'Z' => c + 32,
-        0xc0..=0xde if c != 0xd7 => c + 32,
-        _ => c,
-    }
-}
-
-impl TextFilter {
-    /// Read a `.lex` file; keys are split into tokens by `l`'s lexer.
-    pub fn parse<L: Les + ?Sized>(l: &L, file: &[u8]) -> Option<TextFilter> {
-        let plain = decrypt(file);
-        let text = String::from_utf8_lossy(&plain);
-        let text = text.trim_start_matches('\u{feff}');
-        if !text.contains("<loqlexicon") {
-            return None;
-        }
-        let mut f = TextFilter::default();
-        let mut in_regexp = false;
-        let mut section: Option<Section> = None;
-        let mut comment = false;
-        for line in text.lines() {
-            let line = line.trim();
-            if comment {
-                comment = !line.contains("-->");
-                continue;
-            }
-            if line.starts_with("<!--") {
-                comment = !line.contains("-->");
-                continue;
-            }
-            if line.starts_with("<regexp") {
-                in_regexp = true;
-            } else if line.starts_with("</regexp") {
-                in_regexp = false;
-            } else if line.starts_with("<section") {
-                section = Some(Section {
-                    insensitive: line.contains("case=\"insensitive\""),
-                    entries: Vec::new(),
-                });
-            } else if line.starts_with("</section") {
-                f.sections.extend(section.take());
-            } else if let Some((k, v)) = quoted(line) {
-                if in_regexp {
-                    if let Some(re) = re_parse(&bytes8(&k)) {
-                        f.regexps.push((re, bytes8(&v)));
-                    }
-                } else if let Some(s) = section.as_mut() {
-                    let key = Self::key(l, &bytes8(&k), s.insensitive);
-                    if !key.is_empty() {
-                        s.entries.push((key, bytes8(&v)));
-                    }
-                }
-            }
-        }
-        Some(f)
-    }
-
-    fn key<L: Les + ?Sized>(l: &L, k: &[u8], insensitive: bool) -> Vec<Key> {
-        let mut out = Vec::new();
-        let mut lit = Vec::new();
-        let flush = |lit: &mut Vec<u8>, out: &mut Vec<Key>| {
-            for tk in lex_all(l, lit, false, false) {
-                out.push(Key::Text(if insensitive { tk.text.iter().map(|&c| lower1(c)).collect() } else { tk.text }));
-            }
-            lit.clear();
-        };
-        let mut i = 0;
-        while i < k.len() {
-            if k[i] == b'%' && matches!(at(k, i + 1), b'n' | b'w') {
-                flush(&mut lit, &mut out);
-                out.push(if k[i + 1] == b'n' { Key::Number } else { Key::Word });
-                i += 2;
-            } else {
-                lit.push(k[i]);
-                i += 1;
-            }
-        }
-        flush(&mut lit, &mut out);
-        out
-    }
-
-    /// The text with every regexp, then every section, applied.
-    pub fn apply<L: Les + ?Sized>(&self, l: &L, t: &[u8]) -> Vec<u8> {
-        let mut t = t.to_vec();
-        for (re, with) in &self.regexps {
-            t = re_replace(re, with, &t);
-        }
-        for s in &self.sections {
-            t = Self::section(l, s, &t);
-        }
-        t
-    }
-
-    fn section<L: Les + ?Sized>(l: &L, s: &Section, t: &[u8]) -> Vec<u8> {
-        let toks = lex_spans(l, t, false, false);
-        let mut out = Vec::new();
-        let mut done = 0usize;
-        let mut j = 0;
-        'tokens: while j < toks.len() {
-            for (key, value) in &s.entries {
-                if j + key.len() > toks.len() {
-                    continue;
-                }
-                let mut caps: Vec<&[u8]> = Vec::new();
-                let ok = key.iter().zip(&toks[j..]).all(|(k, (tk, _, _))| match k {
-                    Key::Text(want) => {
-                        if s.insensitive {
-                            tk.text.len() == want.len() && tk.text.iter().zip(want).all(|(&a, &b)| lower1(a) == b)
-                        } else {
-                            tk.text == *want
-                        }
-                    }
-                    Key::Number => {
-                        caps.push(&tk.text);
-                        tk.kind == tok::NUMBER
-                    }
-                    Key::Word => {
-                        caps.push(&tk.text);
-                        tk.kind == tok::WORD
-                    }
-                });
-                if !ok {
-                    continue;
-                }
-                let (start, end) = (toks[j].1, toks[j + key.len() - 1].2);
-                out.extend_from_slice(&t[done..start]);
-                let mut k = 0;
-                while k < value.len() {
-                    if value[k] == b'%' && at(value, k + 1).is_ascii_digit() && at(value, k + 1) != b'0' {
-                        out.extend_from_slice(caps.get((value[k + 1] - b'1') as usize).copied().unwrap_or(b""));
-                        k += 2;
-                    } else {
-                        out.push(value[k]);
-                        k += 1;
-                    }
-                }
-                done = end;
-                j += key.len();
-                continue 'tokens;
-            }
-            j += 1;
-        }
-        out.extend_from_slice(&t[done..]);
-        out
-    }
-}
-
-/// A regular expression of a `<regexp>` entry: literals, `.`, classes
-/// `[…]` (ranges, `^`), groups `(…)`, `\` escapes, `^` `$`, and `* + ?`
-/// after an atom.
-#[derive(Clone, Debug)]
-enum ReAtom {
-    Lit(u8),
-    Any,
-    Set(Vec<(u8, u8)>, bool),
-    Group(Vec<ReNode>, usize),
-    Bol,
-    Eol,
-}
-
-#[derive(Clone, Debug)]
-struct ReNode {
-    atom: ReAtom,
-    min: usize,
-    max: usize,
-}
-
-fn re_parse(p: &[u8]) -> Option<Vec<ReNode>> {
-    let mut groups = 0;
-    let mut i = 0;
-    let nodes = re_seq(p, &mut i, &mut groups)?;
-    (i == p.len()).then_some(nodes)
-}
-
-fn re_seq(p: &[u8], i: &mut usize, groups: &mut usize) -> Option<Vec<ReNode>> {
-    let mut out: Vec<ReNode> = Vec::new();
-    while *i < p.len() && p[*i] != b')' {
-        let c = p[*i];
-        *i += 1;
-        let atom = match c {
-            b'(' => {
-                *groups += 1;
-                let g = *groups;
-                let inner = re_seq(p, i, groups)?;
-                if at(p, *i) != b')' {
-                    return None;
-                }
-                *i += 1;
-                ReAtom::Group(inner, g)
-            }
-            b'[' => {
-                let neg = at(p, *i) == b'^';
-                if neg {
-                    *i += 1;
-                }
-                let mut set = Vec::new();
-                let mut first = true;
-                while *i < p.len() && (p[*i] != b']' || first) {
-                    first = false;
-                    let mut a = p[*i];
-                    *i += 1;
-                    if a == b'\\' && *i < p.len() {
-                        a = p[*i];
-                        *i += 1;
-                    }
-                    if at(p, *i) == b'-' && *i + 1 < p.len() && p[*i + 1] != b']' {
-                        let b = p[*i + 1];
-                        *i += 2;
-                        set.push((a, b));
-                    } else {
-                        set.push((a, a));
-                    }
-                }
-                if at(p, *i) != b']' {
-                    return None;
-                }
-                *i += 1;
-                ReAtom::Set(set, neg)
-            }
-            b'\\' => {
-                let e = at(p, *i);
-                *i += 1;
-                ReAtom::Lit(e)
-            }
-            b'.' => ReAtom::Any,
-            b'^' => ReAtom::Bol,
-            b'$' => ReAtom::Eol,
-            c => ReAtom::Lit(c),
-        };
-        let (min, max) = match at(p, *i) {
-            b'*' => (0, usize::MAX),
-            b'+' => (1, usize::MAX),
-            b'?' => (0, 1),
-            _ => (1, 1),
-        };
-        if (min, max) != (1, 1) {
-            *i += 1;
-        }
-        out.push(ReNode { atom, min, max });
-    }
-    Some(out)
-}
-
-impl ReAtom {
-    fn one(&self, c: u8) -> bool {
-        match self {
-            ReAtom::Lit(l) => *l == c,
-            ReAtom::Any => c != b'\n',
-            ReAtom::Set(s, neg) => s.iter().any(|&(a, b)| a <= c && c <= b) != *neg,
-            _ => false,
-        }
-    }
-}
-
-type Caps = Vec<Option<(usize, usize)>>;
-
-/// Every way `nodes` match `t` from `pos`, greedy first: (end, captures).
-fn re_match(nodes: &[ReNode], t: &[u8], pos: usize, caps: &Caps, out: &mut Vec<(usize, Caps)>) {
-    let Some((n, rest)) = nodes.split_first() else {
-        out.push((pos, caps.clone()));
-        return;
-    };
-    match &n.atom {
-        ReAtom::Group(inner, g) => {
-            let mut ends = Vec::new();
-            re_match(inner, t, pos, caps, &mut ends);
-            for (e, mut c) in ends {
-                c[*g] = Some((pos, e));
-                re_match(rest, t, e, &c, out);
-            }
-        }
-        ReAtom::Bol => {
-            if pos == 0 {
-                re_match(rest, t, pos, caps, out)
-            }
-        }
-        ReAtom::Eol => {
-            if pos == t.len() {
-                re_match(rest, t, pos, caps, out)
-            }
-        }
-        a => {
-            let mut k = 0;
-            while k < n.max && pos + k < t.len() && a.one(t[pos + k]) {
-                k += 1;
-            }
-            if k < n.min {
-                return;
-            }
-            for c in (n.min..=k).rev() {
-                re_match(rest, t, pos + c, caps, out);
-            }
-        }
-    }
-}
-
-/// Replace every leftmost match of `re` in `t` with `with` (`\1`… its groups).
-fn re_replace(re: &[ReNode], with: &[u8], t: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut pos = 0;
-    while pos <= t.len() {
-        let mut found = None;
-        let mut s = pos;
-        while s <= t.len() {
-            let mut ends = Vec::new();
-            re_match(re, t, s, &vec![None; 10], &mut ends);
-            if let Some(m) = ends.into_iter().next() {
-                found = Some((s, m));
-                break;
-            }
-            s += 1;
-        }
-        let Some((s, (e, caps))) = found else { break };
-        out.extend_from_slice(&t[pos..s]);
-        let mut k = 0;
-        while k < with.len() {
-            if with[k] == b'\\' && at(with, k + 1).is_ascii_digit() {
-                if let Some(Some((a, b))) = caps.get((with[k + 1] - b'0') as usize) {
-                    out.extend_from_slice(&t[*a..*b]);
-                }
-                k += 2;
-            } else {
-                out.push(with[k]);
-                k += 1;
-            }
-        }
-        if e == s {
-            if s < t.len() {
-                out.push(t[s]);
-            }
-            pos = s + 1;
-        } else {
-            pos = e;
-        }
-    }
-    if pos < t.len() {
-        out.extend_from_slice(&t[pos..]);
-    }
-    out
-}
-
 /// The FON stage on text: the module's LES functions on every sentence,
 /// then FonTrasParola word by word and FonTrasConfini at every word
 /// boundary, as LoqTTS7.dll's phrase loop (0x1002c300, phones added by
@@ -1874,14 +1551,33 @@ fn re_replace(re: &[ReNode], with: &[u8], t: &[u8]) -> Vec<u8> {
 /// in its phone table).
 pub fn analyse<L: Les + ?Sized>(l: &L, text: &str, voice: Option<&crate::voicefon::VoiceFon>) -> Vec<Token> {
     let mut tokens = Vec::new();
+    // QQ_TRACE_LES=1: each stage's records on stderr, as oracle/lestrace.h
+    // prints the original's (`W <i> <f[0xc..0x18] hex> s4="text"`)
+    let trace = std::env::var_os("QQ_TRACE_LES").is_some();
+    let dump = |stage: &str, w: &[Word]| {
+        if trace {
+            eprintln!("< {stage}");
+            for (i, r) in w.iter().enumerate() {
+                let hex: String = r.f[0xc..0x18].iter().map(|b| format!("{b:02x}")).collect();
+                let text: String = r.text.iter().map(|&c| if (0x20..0x7f).contains(&c) { (c as char).to_string() } else { format!("\\x{c:02x}") }).collect();
+                eprintln!("  W {i} {hex} s4=\"{text}\"");
+            }
+        }
+    };
     for mut s in sentences(l, text) {
         let w = &mut s.words;
+        dump("records", w);
         l.gestisci_maiuscole(w);
+        dump("LesGestisciMaiuscole", w);
         l.analizza(w);
+        dump("LesAnalizza", w);
         l.accenta(w);
+        dump("LesAccenta", w);
         s.mode = l.modalita_frase(w);
         l.confini(w, s.mode);
+        dump(&format!("LesConfiniProsodici mode {}", s.mode), w);
         l.gradi(w);
+        dump("LesGradiAccentuali", w);
         let mut a = 0usize;
         while a < w.len() {
             // FON works on chunks of records up to a punctuation record or
@@ -1922,6 +1618,87 @@ pub fn modalita_frase(w: &[Word]) -> i32 {
     }
 }
 
+/// LoqTTS7.dll's own `LesConfiniProsodici` (0x100409c0), for modules
+/// without one: a word's boundary 0x15 becomes 3 (0x16 for class `7`); a
+/// punctuation record's boundary, and that of the word before it
+/// (skipping boundaries 0x16, not when it is punctuation), is the
+/// sentence end's by type (`.` 0x0f, `?` 0x11, `?` with an interrogative
+/// 0x12, `:` 0x10, `!` 0x13, other 0x16) or 0x0b at `,` `-` `.` and at `(`
+/// `)` between words; words of boundary 3 or 5 (and the new 3s) with
+/// subclass `y`/0x84 get 7, `z`/0x83 6, `{` 8.
+pub fn confini_default(w: &mut [Word], mode: i32) {
+    let n = w.len().min(200);
+    for i in 0..n {
+        let b = w[i].f[BOUND];
+        if b == 0x15 {
+            let c = w[i].f[CLASS];
+            if c == b'7' {
+                w[i].f[BOUND] = 0x16;
+                continue;
+            }
+            if c != b'2' {
+                w[i].f[BOUND] = 3;
+            } else {
+                let mut j = i;
+                if i != 0 {
+                    j = i - 1;
+                    while j != 0 && w[j].f[BOUND] == 0x16 {
+                        j -= 1;
+                    }
+                }
+                if w[j].f[CLASS] == b'2' {
+                    j = i;
+                }
+                let set = |w: &mut [Word], v: u8| {
+                    w[j].f[BOUND] = v;
+                    w[i].f[BOUND] = v;
+                };
+                if w[i].f[SUB] == b'|' {
+                    match mode {
+                        0 => set(w, 0x0f),
+                        2 => set(w, 0x11),
+                        3 => set(w, 0x12),
+                        5 => set(w, 0x10),
+                        6 => set(w, 0x13),
+                        _ => w[i].f[BOUND] = 0x16,
+                    }
+                } else {
+                    let t = &w[i].text;
+                    let mut k = 0;
+                    while at(t, k + 1) != 0 && !b",)(-.".contains(&at(t, k)) {
+                        k += 1;
+                    }
+                    let mut c = at(t, k);
+                    if c == b'.' {
+                        c = b',';
+                    }
+                    match c {
+                        b'(' | b')' => {
+                            let cls = |k: usize| w.get(k).map_or(0, |r| r.f[CLASS]);
+                            if i == 0 || cls(i - 1) == b'2' || cls(i + 1) == b'2' {
+                                w[i].f[BOUND] = 0x16;
+                            } else {
+                                set(w, 0x0b);
+                            }
+                        }
+                        b',' | b'-' => set(w, 0x0b),
+                        _ => w[i].f[BOUND] = 0x16,
+                    }
+                }
+                continue;
+            }
+        } else if b != 3 && b != 5 {
+            continue;
+        }
+        match w[i].f[SUB] {
+            b'y' | 0x84 => w[i].f[BOUND] = 7,
+            b'z' | 0x83 => w[i].f[BOUND] = 6,
+            b'{' => w[i].f[BOUND] = 8,
+            _ => {}
+        }
+    }
+}
+
 /// One FON chunk: FonTrasParola and FonTrasConfini word by word, then
 /// FonAllofonoLingua over the chunk's phone list, the voice's stage, then
 /// its tokens.
@@ -1936,10 +1713,18 @@ fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode
     for i in 0..w.len() {
         let r = &w[i];
         let punct = r.f[CLASS] == b'2';
+        // 0x1002c850: a punctuation record (grade 0x0f) pauses only at a
+        // boundary of a phrase or sentence end (0x0b, 0x0f–0x14; 0x14 only
+        // before any phone); a quote's 0x16 adds nothing, and 0x1002d060
+        // (FonTrasConfini) is not called for it
+        let b = r.f[BOUND];
+        if punct && r.f[GRADE] == 0x0f && !(matches!(b, 0x0b | 0x0f..=0x13) || (b == 0x14 && phones.is_empty())) {
+            continue;
+        }
         let mut new = if punct {
             vec![if r.f[SUB] == b'|' { 0x17 } else { 0x13 }]
         } else {
-            l.tras_parola(w, i)
+            l.tras_parola_in(sentence, a, w, i)
         };
         let mut j = i.saturating_sub(1);
         while j > 0 && w[j].f[BOUND] == 0x16 {
@@ -1962,7 +1747,13 @@ fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode
             kind: if k + 1 == n && r.f[BOUND] != 0 { 0x77 } else { 0x69 },
         }));
         if matches!(r.f[BOUND], 0x0a | 0x08 | 0x0e | 0x0c | 0x0d) {
-            phones.push(pause(i, 0x13));
+            // the short pause goes through 0x1002d060 too (LoqTTS7
+            // 0x1002c873): FonTrasConfini sees it
+            let mut pause_code = vec![0x13];
+            l.tras_confini_in(sentence, a, i, prev_bound, &mut phones, &mut pause_code);
+            if let Some(&c) = pause_code.first() {
+                phones.push(pause(i, c));
+            }
         }
     }
     // the closing sentinel, then FonAllofonoLingua (the engine skips the
@@ -1994,19 +1785,16 @@ fn emit(w: &[Word], phones: &[Phone], mode: i32, symbol: &dyn Fn(u32) -> String,
         let r = &w[o];
         if p.kind == 0x70 {
             flush_word(tokens, &mut text, &mut syms);
-            let (ms, reason) = if r.f[CLASS] != b'2' {
-                (ADDED_PAUSE_MS, "phrase break")
-            } else if r.f[SUB] == b'|' {
-                let reason = match mode {
+            let reason = if r.f[CLASS] == b'2' && r.f[SUB] == b'|' {
+                match mode {
                     2 | 3 => "question",
                     6 => "exclamation",
                     _ => "sentence break",
-                };
-                (END_PAUSE_MS, reason)
+                }
             } else {
-                (COMMA_PAUSE_MS, "phrase break")
+                "phrase break"
             };
-            tokens.push(Token::Pause { ms, reason: reason.into() });
+            tokens.push(Token::Pause { ms: pause_ms(r), reason: reason.into() });
             next_rec = next_rec.max(o + 1);
             continue;
         }

@@ -148,6 +148,10 @@ fn select(files: Vec<(String, Vec<u8>)>) -> Result<Unpacked, String> {
             if let Some(k) = library.and_then(|lib| find(&format!("bin/{lib}.dll"))) {
                 keep[k] = true;
             }
+            // the text filters read their character tables from LTTS7Util.dll
+            if let Some(k) = find("bin/LTTS7Util.dll") {
+                keep[k] = true;
+            }
         }
         voices.push(name.clone());
     }

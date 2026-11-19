@@ -102,8 +102,7 @@ fn load(variant: &str) -> English {
         mother_tongue: mt.into(),
         dbl: Some(read(format!("{root}/data/languages/English/{mt}.dbl"))),
         gpr: Some(read(format!("{root}/data/languages/English/{mt}.gpr"))),
-        lexicons: Vec::new(),
-        phones: Vec::new(),
+        ..Default::default()
     };
     English::from_files(&files).expect("LTTS7English.dll")
 }

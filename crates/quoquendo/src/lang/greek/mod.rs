@@ -72,7 +72,6 @@ pub struct Greek {
     /// (abbreviation, expansion)
     abbreviations: Vec<(Vec<u8>, Vec<u8>)>,
     abbreviation_table: std::sync::OnceLock<Vec<super::common::Abbreviation>>,
-    filters: Vec<super::common::TextFilter>,
 }
 
 impl Greek {
@@ -93,16 +92,13 @@ impl Greek {
             Some(d) => read_dictionary(d)?,
             None => (Vec::new(), Vec::new()),
         };
-        let mut g = Greek {
+        Some(Greek {
             pe,
             chars,
             dict,
             abbreviations,
             abbreviation_table: Default::default(),
-            filters: Vec::new(),
-        };
-        g.filters = files.lexicons.iter().filter_map(|l| super::common::TextFilter::parse(&g, l)).collect();
-        Some(g)
+        })
     }
 
     pub(crate) fn flags(&self, c: u8) -> u32 {
@@ -331,7 +327,7 @@ impl super::common::Les for Greek {
         les::modalita_frase(w)
     }
     fn confini(&self, w: &mut [Word], mode: i32) {
-        les::confini(w, mode)
+        super::common::confini_default(w, mode)
     }
     fn gradi(&self, w: &mut [Word]) {
         self.gradi(w)
@@ -362,9 +358,6 @@ impl super::common::Les for Greek {
     }
     fn abbreviazioni(&self) -> &[super::common::Abbreviation] {
         self.abbreviation_table.get_or_init(|| super::common::abbreviation_table(self, &self.abbreviations))
-    }
-    fn text_filters(&self) -> &[super::common::TextFilter] {
-        &self.filters
     }
     fn tras_parola(&self, w: &[Word], i: usize) -> Vec<u32> {
         self.tras_parola(w, i)
