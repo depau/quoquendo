@@ -258,6 +258,34 @@ static int hook_codec(const char *bin, const char *name, unsigned slot, unsigned
     return 1;
 }
 
+/* LOQ_TRACE_TEXT=1: the engine's text rewriting (LesRun, 0x10035b20) to
+ * <prefix>.txt. Every ELQTextFilterApply call (LTTS7Util.dll, through
+ * LoqTTS7.dll's pointer at 0x100b7690: filter, flag, ?, token list,
+ * pattern array, language) logs the raw word list before (`<`) and after
+ * (`>`) with LTTS7Util's own ELQRawWordListDump (word, separator, CRC,
+ * offset, length, tag, type, end flags), and the text LesRun hands the
+ * sentence loop (0x10035cf8 -> 0x10034110, the text in ECX) on a `T` line. */
+FILE *txtlog;
+typedef int (__cdecl *fn_tfa)(void *, int, void *, void *, void *, void *);
+typedef void (__cdecl *fn_rwdump)(void *, void *, void *, int, unsigned, char);
+static fn_tfa real_tfa;
+static fn_rwdump rwdump;
+static void __cdecl txt_line(const char *s, void *f) { fputs(s, (FILE *)f); }
+static int __cdecl hook_tfa(void *filter, int flag, void *a3, void *list, void *pm, void *lang) {
+    fprintf(txtlog, "< filter %p flag %d\n", filter, flag);
+    rwdump(list, (void *)txt_line, txtlog, 0, 0, 0);
+    int rc = real_tfa(filter, flag, a3, list, pm, lang);
+    fprintf(txtlog, "> rc %d\n", rc);
+    rwdump(list, (void *)txt_line, txtlog, 0, 0, 0);
+    fflush(txtlog);
+    return rc;
+}
+void *real_text;
+void __cdecl log_text(const char *s) { fprintf(txtlog, "T %s\n", s ? s : "(null)"); fflush(txtlog); }
+void hook_text(void);
+__asm__(".globl _hook_text\n_hook_text:\n"
+        " pushal\n pushl %ecx\n call _log_text\n addl $4, %esp\n popal\n jmp *_real_text\n");
+
 typedef int (__cdecl *fn_add)(void *, void **, const char *, int, int, int, void *);
 static fn_add real_add;
 static const char *dump_prefix;
@@ -400,6 +428,34 @@ int main(int argc, char **argv) {
         if (hook_language(argv[1], getenv("LOQ_LES_DLL") ? getenv("LOQ_LES_DLL") : "LTTS7Italian.dll",
                           getenv("LOQ_LES_TABLE") ? strtoul(getenv("LOQ_LES_TABLE"), 0, 16) : 0x10031ff8,
                           getenv("LOQ_LES_N") ? atoi(getenv("LOQ_LES_N")) : 19) < 0) return 2;
+    }
+    if (getenv("LOQ_TRACE_TEXT")) {
+        snprintf(path, sizeof path, "%s.txt", argv[4]);
+        txtlog = fopen(path, "wb");
+        snprintf(path, sizeof path, "%s\\LTTS7Util.dll", argv[1]);
+        HMODULE util = LoadLibraryA(path);
+        rwdump = util ? (fn_rwdump)GetProcAddress(util, "ELQRawWordListDump") : NULL;
+        fn_tfa *slot = (fn_tfa *)((char *)dll + (0x100b7690 - 0x10000000));
+        if (!rwdump || !*slot) { fprintf(stderr, "ELQTextFilterApply/ELQRawWordListDump not found\n"); return 2; }
+        DWORD old;
+        VirtualProtect(slot, 4, PAGE_READWRITE, &old);
+        real_tfa = *slot;
+        *slot = hook_tfa;
+        real_text = redirect(dll, 0x10035cf8, (void *)hook_text);
+        /* name the Util functions LesRun calls through LoqTTS7.dll's pointers */
+        unsigned char *ub = (unsigned char *)util;
+        IMAGE_EXPORT_DIRECTORY *ed = (IMAGE_EXPORT_DIRECTORY *)(ub + ((IMAGE_NT_HEADERS *)(ub + ((IMAGE_DOS_HEADER *)ub)->e_lfanew))
+                                         ->OptionalHeader.DataDirectory[0].VirtualAddress);
+        unsigned slots[] = {0x100b75fc, 0x100b7600, 0x100b7604, 0x100b7608, 0x100b760c, 0x100b770c, 0x100b7590, 0x100b758c};
+        for (unsigned s = 0; s < sizeof slots / sizeof *slots; s++) {
+            void *fn = *(void **)((char *)dll + (slots[s] - 0x10000000));
+            const char *nm = "?";
+            for (DWORD k = 0; k < ed->NumberOfNames; k++) {
+                WORD o = ((WORD *)(ub + ed->AddressOfNameOrdinals))[k];
+                if (ub + ((DWORD *)(ub + ed->AddressOfFunctions))[o] == fn) nm = (const char *)ub + ((DWORD *)(ub + ed->AddressOfNames))[k];
+            }
+            fprintf(txtlog, "# %08x %s\n", slots[s], nm);
+        }
     }
     CHECK(ttsLoadPersona(reader, argv[2], NULL, NULL));
     CHECK(ttsSetTextEncoding(reader, 65001));

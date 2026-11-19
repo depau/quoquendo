@@ -260,8 +260,12 @@ impl Reference {
             .into_iter()
             .flat_map(|p| p.phones)
             .collect();
+        // Greek asks with `;` (LTTS7Greek.dll's LesSetModalitaFrase
+        // 0x10008920 gives it type 2, as `?`)
+        let greek = self.text.chars().any(|c| ('\u{370}'..='\u{3ff}').contains(&c));
         let mut moods = self.text.chars().filter_map(|c| match c {
-            '?' => Some(Some('I')),
+            '?' | '\u{37e}' => Some(Some('I')),
+            ';' if greek => Some(Some('I')),
             '!' => Some(Some('E')),
             '.' => Some(None),
             _ => None,

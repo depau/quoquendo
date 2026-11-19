@@ -407,6 +407,18 @@ pub trait Les {
     /// boundary of the word before (skipping boundaries 0x16; 0x15 for the
     /// chunk's first). Default: none.
     fn tras_confini(&self, _prev_bound: u8, _phones: &mut [u32], _next: &mut Vec<u32>) {}
+    /// FonTrasConfini as 0x1002d060 calls it: `sentence[first + i]` the
+    /// incoming word (chunk index i), `phones` the engine's list so far
+    /// (may be shortened, extended with `{word: i, code, kind: 0x69}`, or
+    /// recoded) before `next` is appended. Default: `tras_confini` on the
+    /// codes.
+    fn tras_confini_in(&self, _sentence: &[Word], _first: usize, _i: usize, prev_bound: u8, phones: &mut Vec<Phone>, next: &mut Vec<u32>) {
+        let mut codes: Vec<u32> = phones.iter().map(|p| p.code).collect();
+        self.tras_confini(prev_bound, &mut codes, next);
+        for (p, c) in phones.iter_mut().zip(codes) {
+            p.code = c;
+        }
+    }
     /// The voice's symbol for a phone code.
     fn symbol(&self, code: u32) -> Option<&str>;
     /// `FonAllofonoLingua` (FON +0x24): once a chunk's phone list is
@@ -517,6 +529,11 @@ pub trait Les {
     fn leggi_numero(&self, _toks: &mut [Tok], _i: usize, _kind: u32, _dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
         None
     }
+    /// The module's `ELQGetLanguageNativeEncoding`: the code page the
+    /// engine converts its UTF-8 input to (LES +0x150, default 1252).
+    fn code_page(&self) -> u32 {
+        1252
+    }
 }
 
 /// The pauses the engine gives each kind of break (its ShortPauseLength
@@ -558,13 +575,33 @@ pub struct Sentence {
 /// A character in the engine's 8-bit text: Windows-1252, as the engine
 /// converts its UTF-8 input.
 pub fn to_8bit(c: char) -> Option<u8> {
+    to_8bit_cp(c, 1252)
+}
+
+/// A character in the engine's 8-bit text in code page `cp`: the language
+/// module's `ELQGetLanguageNativeEncoding` (1252 unless it says otherwise;
+/// Greek 1253), into which LoqTTS7.dll converts its UTF-8 input.
+pub fn to_8bit_cp(c: char, cp: u32) -> Option<u8> {
     let u = c as u32;
     const HIGH: [u32; 32] = [
         0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d,
         0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178,
     ];
-    match u {
-        0..=0x7f | 0xa0..=0xff => Some(u as u8),
+    const GREEK: [u32; 128] = [
+        0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0, 0x2030, 0, 0x2039, 0, 0, 0, 0, //
+        0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0, 0x2122, 0, 0x203a, 0, 0, 0, 0, //
+        0x00a0, 0x0385, 0x0386, 0x00a3, 0x00a4, 0x00a5, 0x00a6, 0x00a7, 0x00a8, 0x00a9, 0, 0x00ab, 0x00ac, 0x00ad, 0x00ae, 0x2015, //
+        0x00b0, 0x00b1, 0x00b2, 0x00b3, 0x0384, 0x00b5, 0x00b6, 0x00b7, 0x0388, 0x0389, 0x038a, 0x00bb, 0x038c, 0x00bd, 0x038e, 0x038f, //
+        0x0390, 0x0391, 0x0392, 0x0393, 0x0394, 0x0395, 0x0396, 0x0397, 0x0398, 0x0399, 0x039a, 0x039b, 0x039c, 0x039d, 0x039e, 0x039f, //
+        0x03a0, 0x03a1, 0, 0x03a3, 0x03a4, 0x03a5, 0x03a6, 0x03a7, 0x03a8, 0x03a9, 0x03aa, 0x03ab, 0x03ac, 0x03ad, 0x03ae, 0x03af, //
+        0x03b0, 0x03b1, 0x03b2, 0x03b3, 0x03b4, 0x03b5, 0x03b6, 0x03b7, 0x03b8, 0x03b9, 0x03ba, 0x03bb, 0x03bc, 0x03bd, 0x03be, 0x03bf, //
+        0x03c0, 0x03c1, 0x03c2, 0x03c3, 0x03c4, 0x03c5, 0x03c6, 0x03c7, 0x03c8, 0x03c9, 0x03ca, 0x03cb, 0x03cc, 0x03cd, 0x03ce, 0,
+    ];
+    match (cp, u) {
+        (_, 0..=0x7f) => Some(u as u8),
+        (1253, _) => GREEK.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
+        // Windows' conversion keeps C1 controls as their own byte
+        (_, 0x80..=0xff) => Some(u as u8),
         _ => HIGH.iter().position(|&h| h == u && h != 0).map(|k| 0x80 + k as u8),
     }
 }
@@ -1354,7 +1391,8 @@ fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize,
 /// punctuation that `ends_sentence`, and text ending without one gets a
 /// closing `.` (0x100303b0: grade 0x0f, tag `\{pause=0}`).
 pub fn sentences<L: Les + ?Sized>(l: &L, text: &str) -> Vec<Sentence> {
-    let mut t: Vec<u8> = text.chars().filter_map(to_8bit).collect();
+    let cp = l.code_page();
+    let mut t: Vec<u8> = text.chars().filter_map(|c| to_8bit_cp(c, cp)).collect();
     for f in l.text_filters() {
         t = f.apply(l, &t);
     }
@@ -1908,11 +1946,7 @@ fn fon_chunk<L: Les + ?Sized>(l: &L, sentence: &[Word], a: usize, b: usize, mode
             j -= 1;
         }
         let prev_bound = if i == 0 { 0x15 } else { w[j].f[BOUND] };
-        let mut codes: Vec<u32> = phones.iter().map(|p| p.code).collect();
-        l.tras_confini(prev_bound, &mut codes, &mut new);
-        for (p, c) in phones.iter_mut().zip(codes) {
-            p.code = c;
-        }
+        l.tras_confini_in(sentence, a, i, prev_bound, &mut phones, &mut new);
         if punct {
             if let Some(&c) = new.first() {
                 phones.push(pause(i, c));

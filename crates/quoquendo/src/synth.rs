@@ -1211,6 +1211,7 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i1
                 voiced: voicing == Voicing::Voiced,
             };
             push(unit, ends_run, &mut out, &mut lens);
+            units += 1;
         }
         // a pause is two half-phone units of zeros (no lead-in, a 4× tail);
         // the first is joined to the second, the second to nothing: the
@@ -1227,10 +1228,9 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i1
                     voiced: false,
                 };
                 push(unit, ends_run, &mut out, &mut lens);
-            }
-            units += 1;
-        }
                 units += 1;
+            }
+        }
         ends.push(units);
     }
     if let Some((p, _)) = prev {
