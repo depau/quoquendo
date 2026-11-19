@@ -835,6 +835,108 @@
     "min_letters_after": 20
    },
    "source": "LTTS7Italian.dll 0x1000b970, LesConfiniProsodici 0x1000c080 sets boundary 0x0a"
+  },
+  {
+   "name": "English function tables",
+   "group": "fon-english",
+   "value": {"EnglishUs": "0x100290d0 (30 pairs)", "EnglishGb": "0x100291c0 (29)", "EnglishAu": "0x100292a8 (29)"},
+   "source": "LTTS7English.dll export English 0x100019f0 (first englishus/gb/au token of the descriptor's Language)"
+  },
+  {
+   "name": "English phone symbol tables",
+   "group": "fon-english",
+   "value": {"EnglishUs": "0x10043180 (81)", "EnglishGb": "0x10042ec0 (84)", "EnglishAu": "0x10042940 (85)"},
+   "source": "ELQGetPhonemes 0x10017a80 / 0x10017290 / 0x10011fb0; read by 0x1000bf00 (symbols at most 5 characters, 0x1000bf90)"
+  },
+  {
+   "name": "English lexicon columns",
+   "group": "fon-english",
+   "value": ["grafemica", "fonetica", "gradoaccentuale", "grammaticale", "gennum", "tempomodo"],
+   "source": "LTTS7English.dll 0x10027cd0, SELECT ... FROM lessico built by 0x10001460; searched by LTTS7Util ELQDBTableFind 0x10005df0 (ELQstricmp 0x100285e0)"
+  },
+  {
+   "name": "English stress grades",
+   "group": "fon-english",
+   "value": {"ACC": 0, "ACD": 2, "DEA": 3, "unset": 14},
+   "source": "LTTS7English.dll 0x100100f0 (strings 0x1002b830, 0x1002b834, 0x1002b838)"
+  },
+  {
+   "name": "English unknown-word ending table",
+   "group": "fon-english",
+   "value": {"address": "0x10040410", "entries": 624, "classes": {"1": "0x33", "2": "0x2a", "3": "0x29", "5": "0x2d", "else": "0xee"}},
+   "source": "LTTS7English.dll 0x1000f240 via 0x1000f1b0 / 0x1000eff0"
+  },
+  {
+   "name": "English prosodic split",
+   "group": "fon-english",
+   "value": {"min_words_each_side": 2, "min_letters_before": 15, "min_letters_after": 18},
+   "source": "LTTS7English.dll 0x1000dce0 (> 0xe and > 0x11 letters), LesConfiniProsodici 0x1000eb20 sets boundary 0x0a"
+  },
+  {
+   "name": "English FonAllofonoLingua",
+   "group": "fon-english",
+   "value": {"EnglishUs": "0x100182a0", "EnglishGb/Au": "0x100122c0", "linking r": "0x18c2", "glides": {"j": "0x10ce", "w": "0x401ece"}},
+   "source": "LTTS7English.dll function tables; FON ctx+0x20 = sentence record count, chunk+4 = chunk record count, chunk+0x18 = first record"
+  },
+  {
+   "name": "English abbreviations",
+   "group": "fon-english",
+   "value": {"address": "0x100288e0", "entries": 252},
+   "source": "LesGetAbbreviazioni 0x10001120 (+0 abbreviation, +4 expansion), LesGetNumeroAbbreviazioni 0x10001110 returns 0xfc"
+  },
+  {
+   "name": "Spanish function tables",
+   "group": "fon-spanish",
+   "value": {"castilian": "0x100298b8", "superspanish": "0x10029720", "americanspanish": "0x100297e8", "mexican": "0x10029988", "chilean": "0x10029a58", "argentine": "0x10029b28", "pairs": 26},
+   "source": "LTTS7Spanish.dll export Spanish 0x1000d060 (Language names matched with ELQstricmp)"
+  },
+  {
+   "name": "Spanish variant phone tables",
+   "group": "fon-spanish",
+   "value": {"castilian (0)": "0x100292a0", "mexican (1)": "0x100292b0", "argentine (2)": "0x10029298", "chilean (3)": "0x100292a8", "american (4)": "0x10029290", "super (5)": "0x10029288"},
+   "source": "ELQGetPhonemes 0x1000c810..0x1000c860; FonTrasParola 0x1000d510 picks them by **(ctx+0x44)"
+  },
+  {
+   "name": "Spanish character classes",
+   "group": "fon-spanish",
+   "value": {"address": "0x10028198", "stride": 8, "flags": {"letter": "0x01", "vowel": "0x10", "upper": "0x20", "accented": "0x80"}},
+   "source": "ELQGetGraphemes 0x1000c800"
+  },
+  {
+   "name": "Spanish stress endings",
+   "group": "fon-spanish",
+   "value": {"address": "0x100221b0", "entries": "0x28c", "stride": 12},
+   "source": "LesAccenta 0x10001600 -> 0x10001210 -> 0x100011c0 -> 0x100010c0 (same code as LTTS7Italian.dll)"
+  },
+  {
+   "name": "Spanish FonTrasParola letter sets",
+   "group": "fon-spanish",
+   "value": {"consonants": "0x1002a264", "vowels": "0x1002a27c", "voiced": "0x1002a238", "voiceless": "0x1002a22c", "nasals": "0x1002a1fc", "acute": "0x1002a290"},
+   "source": "FonTrasParola 0x1000d510 strchr operands"
+  },
+  {
+   "name": "Spanish LesAnalizza ending lists",
+   "group": "fon-spanish",
+   "value": {"infinitive clitics": ["0x100277e8", 29], "gerunds": ["0x10027860", 32], "verb": ["0x10027688", 88], "noun": ["0x100278e0", 42], "adjective": ["0x10027988", 61]},
+   "source": "0x1000b4d0 ELQSearchString(word, table, 8, count)"
+  },
+  {
+   "name": "Spanish LesConfiniProsodici tables",
+   "group": "fon-spanish",
+   "value": {"locutions": {"5": ["0x10025ffc", 3], "4": ["0x10026008", 17], "3": ["0x10026050", 49], "2": ["0x10026118", 61]}, "interjections": {"3": ["0x10025fd0", 1], "2": ["0x10025fd4", 1], "1": ["0x10025fd8", 9]}, "modal forms": {"code": "0x1000911b", "count": 347}, "pause limits": {"words": 5, "letters": 24}},
+   "source": "0x10008eb0, 0x10008cd0, 0x10009100, 0x10008b40"
+  },
+  {
+   "name": "Spanish letter names",
+   "group": "fon-spanish",
+   "value": {"index": "0x10003a5c", "jumps": "0x10003934", "american b/v/w index": "0x10003be8", "american jumps": "0x10003bd8"},
+   "source": "LesGetSymbolName 0x10003b60 -> 0x10003690; 0x10003c20 -> 0x10003ba0"
+  },
+  {
+   "name": "Spanish number words",
+   "group": "fon-spanish",
+   "value": {"address": "0x10024f80", "entries": 87},
+   "source": "LesIniNumeri slot 0 0x10003470 ({id, word})"
   }
  ]
 }

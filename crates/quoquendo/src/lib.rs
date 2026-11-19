@@ -137,6 +137,9 @@ pub struct VoiceFiles {
     /// the `LexicalDB` and `GPR` files its language's `.lde` names
     pub dbl: Option<Vec<u8>>,
     pub gpr: Option<Vec<u8>>,
+    /// the `.lde`'s `Lexicon[i]` files in index order (`Italian.lex`:
+    /// the engine's text filter, `CA FE`-encrypted XML)
+    pub lexicons: Vec<Vec<u8>>,
     /// the language module its `.lde` names (`LTTS7Italian.dll`), read as
     /// data by the ported module (`lang`)
     pub language_library: Option<Vec<u8>>,
@@ -294,13 +297,14 @@ impl VoiceFiles {
             .filter_map(|n| Some((n.clone(), read(&format!("{dir}/{n}"))?)))
             .max_by_key(|(_, d)| d.len())
             .ok_or("the voice has no recordings")?;
-        let (dbl, gpr) = match (&info.language, info.language_dir()) {
+        let (dbl, gpr, lexicons) = match (&info.language, info.language_dir()) {
             (Some(lde), Some(folder)) => {
                 let lde = read(lde).map(|b| ini(&b)).unwrap_or_default();
                 let file = |key: &str| lde.get(key).and_then(|f| read(&format!("{folder}/{f}")));
-                (file("LexicalDB"), file("GPR"))
+                let lexicons = (0..16).map_while(|i| lde.get(&format!("Lexicon[{i}]"))).filter_map(|f| read(&format!("{folder}/{f}"))).collect();
+                (file("LexicalDB"), file("GPR"), lexicons)
             }
-            _ => (None, None),
+            _ => (None, None, Vec::new()),
         };
         // every other VocalDBName[i]: <name>.sde and the biggest <name>.*.bin
         let mut extra = Vec::new();
@@ -328,6 +332,7 @@ impl VoiceFiles {
             language_library: info.language_library.as_deref().and_then(read),
             dbl,
             gpr,
+            lexicons,
             language_missing: info.language_missing,
             extra,
         })
@@ -382,6 +387,7 @@ impl Voice {
                 mother_tongue: descriptor.mother_tongue.clone(),
                 dbl: files.dbl,
                 gpr: files.gpr,
+                lexicons: files.lexicons,
                 phones: db.tables.as_ref().map(|t| t.phone_features()).unwrap_or_default(),
             }),
             None => frontend,

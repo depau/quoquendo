@@ -4,7 +4,12 @@
 //! runs.
 
 pub mod common;
+pub mod elqnum;
+pub mod english;
+pub mod french;
+pub mod german;
 pub mod italian;
+pub mod spanish;
 
 use crate::g2p::{Language, Token};
 use std::sync::Arc;
@@ -16,6 +21,7 @@ pub trait Module: Send + Sync {
 }
 
 /// What a language module is built from.
+#[derive(Default)]
 pub struct ModuleFiles {
     /// `LTTS7<Language>.dll`, the `.lde`'s `Library`
     pub dll: Vec<u8>,
@@ -25,6 +31,9 @@ pub struct ModuleFiles {
     /// the `.lde`'s `LexicalDB` and `GPR` files
     pub dbl: Option<Vec<u8>>,
     pub gpr: Option<Vec<u8>>,
+    /// the `.lde`'s `Lexicon[i]` files (the engine's text filter, applied
+    /// before tokenizing: `common::TextFilter`)
+    pub lexicons: Vec<Vec<u8>>,
     /// the voice's phone table as (symbol, engine feature word)
     pub phones: Vec<(String, u32)>,
 }
@@ -33,6 +42,9 @@ pub struct ModuleFiles {
 pub fn load(lang: Language, files: &ModuleFiles) -> Option<Arc<dyn Module>> {
     match lang {
         Language::Italian => italian::Italian::from_dll(files.dll.clone()).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::Spanish => spanish::Spanish::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::English => english::English::from_files(files).map(|m| Arc::new(m) as Arc<dyn Module>),
+        Language::German => german::German::new(files.dll.clone(), files.dbl.as_deref()).map(|m| Arc::new(m) as Arc<dyn Module>),
         _ => None,
     }
 }

@@ -6,7 +6,7 @@
 //! dictionary) are read from the module's own bytes at the addresses its
 //! code uses, never copied.
 
-use super::common::{among, at, field::*, Pe, Word};
+use super::common::{among, at, exceptions, field::*, Endings, Pe, Word};
 
 /// The function table's address and the names it must hold there.
 const FUNCTIONS: u32 = 0x10031ff8;
@@ -25,16 +25,6 @@ pub struct Italian {
     pe: Pe,
     /// (lower, upper, flags) per character, from `CHARS`
     chars: Vec<(u8, u8, u32)>,
-}
-
-/// An ending table: sorted reversed endings, 12 bytes each `{ ending,
-/// exception list, code }`; the code's bits 0–5 are the default answer,
-/// 6–11 the answer when an exception matches without its own, 12–15 the
-/// ending's length.
-#[derive(Clone, Copy)]
-struct Endings {
-    at: u32,
-    count: u32,
 }
 
 /// Stress positions (1 = the last vowel, +30 = a closed e/o), searched by
@@ -93,134 +83,15 @@ impl Italian {
         self.pe.cstr(va)
     }
 
-    /// Search an ending table for the longest ending of `rev` (a reversed
-    /// word): 0x100010c0, then 0x100011c0 / 0x1000c4d0 check its first
-    /// letter. The exception list's address (0 for none) and the code;
-    /// without a matching ending the code is 0x1041.
-    fn ending(&self, t: Endings, rev: &[u8]) -> (u32, u16) {
-        let key = |i: i32| self.s(self.pe.u32(t.at + 12 * i as u32));
-        let code = |i: i32| self.pe.u16(t.at + 12 * i as u32 + 8);
-        let (mut lo, mut hi) = (0i32, t.count as i32 - 1);
-        let mut found = None;
-        while lo <= hi {
-            let mid = (lo + hi) / 2;
-            match rev.cmp(key(mid)) {
-                std::cmp::Ordering::Less => hi = mid - 1,
-                std::cmp::Ordering::Greater => lo = mid + 1,
-                std::cmp::Ordering::Equal => {
-                    found = Some(mid);
-                    break;
-                }
-            }
-        }
-        let idx = match found {
-            Some(i) => i,
-            None if hi >= 0 => {
-                let mut i = hi;
-                let k0 = key(i);
-                let mut k = 0usize;
-                if at(rev, 0) == at(k0, 0) {
-                    loop {
-                        k += 1;
-                        if at(rev, k) != at(k0, k) {
-                            break;
-                        }
-                    }
-                }
-                if at(k0, k) != 0 && k != 0 {
-                    loop {
-                        i -= 1;
-                        while i > 0 && k < (code(i) >> 12) as usize {
-                            i -= 1;
-                        }
-                        k = ((code(i) >> 12) as usize).saturating_sub(1);
-                        if i <= 0 || at(key(i), k) == at(rev, k) {
-                            break;
-                        }
-                    }
-                }
-                i.max(0)
-            }
-            None => 0,
-        };
-        if at(rev, 0) != at(key(idx), 0) {
-            return (0, 0x1041);
-        }
-        (self.pe.u32(t.at + 12 * idx as u32 + 4), code(idx))
-    }
-
-    /// An exception list against a reversed word (0x10001000): entries of
-    /// reversed letters matched from the ending's length on, `$` for the
-    /// word's start, then an optional number; the first match gives its
-    /// number, or the code's second answer; no match, its first.
-    fn exceptions(&self, list: &[u8], rev: &[u8], code: u16) -> u16 {
-        let start = (code >> 12) as usize;
-        let first = at(rev, start);
-        let mut e = 0usize;
-        let mut dl = at(list, 0);
-        if dl == 0 {
-            return code & 0x3f;
-        }
-        loop {
-            let mut s = start;
-            if first == dl {
-                loop {
-                    s += 1;
-                    e += 1;
-                    if at(rev, s) != at(list, e) {
-                        break;
-                    }
-                }
-            }
-            dl = at(list, e);
-            let matched = match dl {
-                b' ' => true,
-                b'$' => {
-                    if at(rev, s) == 0 {
-                        e += 1;
-                        true
-                    } else {
-                        false
-                    }
-                }
-                b'0'..=b'9' => true,
-                _ => false,
-            };
-            if matched {
-                let d = at(list, e);
-                if !d.is_ascii_digit() {
-                    return (code >> 6) & 0x3f;
-                }
-                let d2 = at(list, e + 1);
-                return if d2.is_ascii_digit() { (d - b'0') as u16 * 10 + (d2 - b'0') as u16 } else { (d - b'0') as u16 };
-            }
-            loop {
-                let c = at(list, e);
-                e += 1;
-                if c == b' ' || c == 0 {
-                    break;
-                }
-            }
-            dl = at(list, e);
-            if dl == 0 {
-                return code & 0x3f;
-            }
-        }
-    }
-
     /// An ending table's answer for a reversed word (0x10001210 for
     /// `STRESS`, 0x1000c520 for `FORMS`).
     fn lookup(&self, t: Endings, rev: &[u8]) -> u16 {
-        let (list, code) = self.ending(t, rev);
-        if list == 0 {
-            return code & 0x3f;
-        }
-        self.exceptions(self.s(list), rev, code)
+        super::common::lookup(&self.pe, t, rev)
     }
 
     /// The exception list at `va` against a reversed word.
     fn list(&self, va: u32, rev: &[u8], code: u16) -> u16 {
-        self.exceptions(self.s(va), rev, code)
+        exceptions(self.s(va), rev, code)
     }
 }
 
@@ -2213,11 +2084,13 @@ impl super::common::Les for Italian {
     fn gradi(&self, w: &mut [Word]) {
         Italian::gradi(self, w)
     }
-    fn tras_parola(&self, word: &[u8], grade: u8) -> Vec<u32> {
-        Italian::tras_parola(self, word, grade)
+    fn tras_parola(&self, w: &[Word], i: usize) -> Vec<u32> {
+        Italian::tras_parola(self, &w[i].text, w[i].f[super::common::field::GRADE])
     }
-    fn tras_confini(&self, prev_bound: u8, phones: &mut [u32], first: u32) {
-        Italian::tras_confini(self, prev_bound, phones, first)
+    fn tras_confini(&self, prev_bound: u8, phones: &mut [u32], next: &mut Vec<u32>) {
+        if let Some(&first) = next.first() {
+            Italian::tras_confini(self, prev_bound, phones, first)
+        }
     }
     fn symbol(&self, code: u32) -> Option<&str> {
         Italian::symbol(self, code)

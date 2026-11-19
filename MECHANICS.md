@@ -491,8 +491,8 @@ every word start. Ported:
 | FonTrasParola | 0x1000f210 → 0x1000db80, 0x1000dd10 (zz), 0x1000e5c0 (s), 0x1000ebf0 / 0x1000ef50 (i) | letters → phone codes | characters 0x10030ed8 (8 bytes each); codes 0x1006bf4c, 0x1006bee4, 0x1006be7c; whole-word exceptions 0x1006c138 (0x1ea74 bytes, `word=phones`, `ELQSearchCompactString` LTTS7Util.dll 0x100289f0); word lists at 0x1008abac…0x1008bf4c; symbols 0x100318c0 |
 | FonTrasConfini | 0x1000f0e0 | across words without a pause: s → z before a voiced consonant, n → m/M/N | — |
 
-Checked stage by stage against the original's own calls: `/tmp`-built
-loqref with every slot of the table at 0x10031ff8 swapped for a logging
+Checked stage by stage against the original's own calls: `oracle/loqref.c`
+`LOQ_TRACE_LES=1` (§8), every slot of the table at 0x10031ff8 swapped for a logging
 thunk (records before and after each function, FonTrasParola's input and
 output codes). On the 20 000 held-out words (`oracle/words/it.txt`, every
 4th alphabetic word of LibreOffice `it_IT/it_IT.dic`) and the benchmark,
@@ -513,6 +513,107 @@ sentence, `}` inside). Not ported yet (§11): the engine's spelling of
 unpronounceable words (`LesPronunciabile`: `CD` → `T$ i-dd i`), its
 number/date/time/currency readers, abbreviations, `Italian.lex`, and
 0x10001290 (stress of class `-` participles in sentences).
+
+## 4c. English FON, ported from LTTS7English.dll (`lang/english.rs`)
+
+One DLL serves three variants. Its export `English` (0x100019f0) takes the
+first token of the descriptor's `Language` list that is `englishus`,
+`englishgb` or `englishau`, and hands the engine that variant's
+name → function table: EnglishUs **0x100290d0** (30 pairs), EnglishGb
+0x100291c0 and EnglishAu 0x100292a8 (29 pairs each). There is no
+LesAccenta. The module reads the language pack's `<MotherTongue>.dbl`
+(`SELECT grafemica, fonetica, gradoaccentuale, grammaticale, gennum,
+tempomodo FROM lessico`, 0x10001460) and runs its `.gpr` through
+LTTS7GPR.dll `ELQGPRRun` (0x100016f0 → 0x10001fc0; the first rule with
+context wins, 0x10001220, `gpr.rs`). The database lookup is LTTS7Util
+`ELQDBTableFind` (0x10005df0): a binary search with ASCII-only case
+folding (`ELQstricmp` 0x100285e0) over the rows in table order, widened to
+every equal row. A record's `+0x14` is an `ELQList` of those rows
+(`english::Rows`: adding a row makes it current only in an empty list;
+deleting the head makes the new head current, 0x10008115).
+
+| function | address (US / GB / AU) | what it does |
+|---|---|---|
+| LesGestisciMaiuscole | 0x1000c420 | lower case through the character table 0x10027d00 (8 bytes per character: lower case, flags 0x10 vowel, 0x20 upper) |
+| LesAnalizza | 0x10011f90 = 0x100119c0 + 0x100103c0 | the rows and the class from `grammaticale` (0x1000f390), SUB from `tempomodo` (0x10010000), INFO from `gennum` (0x1000feb0), GRADE from `gradoaccentuale` (0x100100f0: ACC 0, ACD 2, DEA 3); `'s` looked up on the stem; homographs get `DB_…` classes 0xe8–0xed; words missing from the database get a class from the ending table 0x10040410 (0x270 entries, the same search as Italian); then context rules (`english/disambigua.rs`) |
+| LesConfiniProsodici | 0x1000eb20 | a group state machine (0x1000e3c0) over classes and the fixed phrases at 0x1002b4d8/0x1002b528/0x1002b4f4, 0x1002b57c…, 0x1002b58c… (`ELQSearchString` 0x10028ca0); boundaries 5/3/1/9/0x16, 0x0b at `,` `-` `(`, by sentence type at the end; 10 (a pause) when both halves are long (0x1000dce0: ≥ 2 words and > 14 / 17 letters) and no `because…`/`after…` word (0x1002b458, 0x1002b488) precedes |
+| LesGradiAccentuali | 0x1000da10 | rows that disagree on the grade: US 0x1000ce10, GB/AU 0x1000c830 (`english/omografi.rs`) pick one and delete the others (0x1000c4a0); otherwise the first row's grade, 0, punctuation 0x0f |
+| FonTrasParola | 0x10018140 / 0x100178f0 / 0x10012170 | the first row with `fonetica` (symbols at most 5 characters, 0x1000bf90, through the variant's table 0x10043180 / 0x10042ec0 / 0x10042940), else the `.gpr`; `'s` added (0x10017a90 / 0x100174e0 / 0x10012000); a stress placed when there is none (0x10017fe0 / 0x10017790: after an s+stop cluster, a stop + r/l…, or the first vowel letter's stressed vowel 0x10017d00) or all but the first removed (0x10017b70 / 0x100172a0) |
+| FonAllofonoLingua | 0x100182a0 / 0x100122c0 (GB and AU) | phone-list rewriting per phone (`english/allofono_us.rs`, `allofono_gb.rs`): glides between words, unreleased and flapped stops, syllabic n/l/r, dark l, weak forms, linking r (GB/AU). It reads the whole sentence: FON ctx+0x20 is the sentence's record count, the chunk descriptor's +4 its record count and +0x18 its first record |
+
+Checked call by call against the original (oracle/loqref.c with
+LOQ_TRACE_LES, LOQ_LES_DLL=LTTS7English.dll, LOQ_LES_TABLE per variant;
+the test `lang::english::trace::english_trace` replays each stage on the
+original's own input). On 20 000 held-out words per variant
+(`oracle/words/en.txt`, `en-gb.txt`, `en-au.txt`: every 2nd/4th/2nd
+alphabetic word of LibreOffice `en/en_US.dic`, `en_GB.dic`, `en_AU.dic`)
+and on the benchmarks, every stage gives the original's records and codes
+for **every** call, all three variants.
+
+Not ported yet (§11): the text hooks the engine's tokenizer calls
+(LesPronunciabile 0x10002e90, LesGetSymbolName 0x100021e0 / 0x100021a0,
+LesNormalizzaAccento 0x1000c3b0, LesElaboraParola 0x1000a600,
+abbreviations 0x100288e0, 0xfc pairs) and the number readers
+(LesIniNumeri 0x1000beb0, slot 9 0x1000b540, with LTTS7Util `ELQNum*` in
+`lang/elqnum.rs`). The **voice library's own phone stage** comes after
+FON (LoqTTS7 0x1002c300 calls the voice's function at +0x18 per phone,
+after the voice-phone mapping 0x1002da60 / 0x1003fdc0). It is
+`FonVidIngloba`, `FonVidAnalisi2Sintesi`, `FonVidMetaFonema`,
+`FonVidAllofonoAnalisi` and `FonVidAllofonoVoce` in LTTS7Allison.dll,
+LTTS7Dave.dll, LTTS7Kate.dll, LTTS7Grace.dll, LTTS7Alan.dll… (Jorge,
+Katrin and Bernard have all but `FonVidIngloba`; Roberto and Marcello have
+none). It changes the phones that are said: Allison says `s d` for the
+module's `s t`, `HTh u` for `th u`, and drops the `Hw`/`Hj` glides. The
+module's transcription (`ttsPhoneticTranscription`, `.fon`) equals the
+port; the phones in the events (`--compare` FON) do not until that stage
+is ported.
+
+## 4d. Spanish FON, ported from LTTS7Spanish.dll (`lang/spanish.rs`)
+
+The export `Spanish` (0x1000d060) walks the descriptor's `Language`
+names and hands the engine one of six function tables: castilian
+0x100298b8, superspanish 0x10029720 (25 slots, no FonAllofonoLingua),
+americanspanish 0x100297e8, mexican 0x10029988, chilean 0x10029a58,
+argentine 0x10029b28 (26 pairs each). They differ only in
+ELQGetPhonemes (phone tables 0x100292a0 / 0x10029288 / 0x10029290 /
+0x100292b0 / 0x100292a8 / 0x10029298, `{entries, u16 count}`),
+LesGetSymbolName, FonGetSamples and LesGetDefaultCurrency; the FON code
+reads the variant number from the engine (`**(ctx+0x44)`: 0 castilian, 1
+mexican, 2 argentine, 3 chilean, 4 american, 5 super). `MotherTongue`
+SpanishEs/Mx/Ar/Cl/Am selects it. Slots: GetVersion 0x1000cfb0,
+ELQGetGraphemes 0x1000c800 (characters 0x10028198, 8 bytes: lower, upper,
+flags 0x01 letter, 0x10 vowel, 0x20 upper, 0x80 accented), FonTrasParola
+0x1000d510, LesAccenta 0x10001600, LesPronunciabile 0x10003d70,
+LesIniNumeri 0x10007ec0, LesAnalizza 0x1000c7d0, LesGetSymbolName
+0x10003b60 (Spain) / 0x10003c20, LesGradiAccentuali 0x100081e0,
+LesConfiniProsodici 0x1000a7f0, FonTrasConfini 0x100102d0,
+FonAllofonoLingua 0x10010820, LesNormalizzaAccento 0x100017d0,
+ELQLanguageLoadReadOnlyData 0x1000c990 (the queries below),
+LesGetAbbreviazioni 0x1000ce90 / LesGetNumeroAbbreviazioni 0x1000ce40.
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesAnalizza | 0x1000c250, 0x1000c4a0, 0x1000ac20 | each word's rows of the lexical database (`SELECT grafemica, fonetica, gradoaccentuale, grammaticale, specgramm, gennum, tempomodo FROM lessico`, `ELQDBTableFind`: ASCII-folded binary search, all equal rows, the record's +0x14 list); class from `grammaticale` (0x1000bb00), subclass from `tempomodo`/`specgramm`, gender/number from `gennum`; unknown words by ending (0x1000b4d0: infinitives, gerunds, verb, noun, adjective endings); nouns' gender by ending; `uno`/`-cientos` agree with the next noun | ending lists 0x100277e8 (0x1d), 0x10027860 (0x20), 0x10027688 (0x58), 0x100278e0 (0x2a), 0x10027988 (0x3d), `ELQSearchString` mode 8 |
+| LesAccenta | 0x10001600 → 0x100014c0, 0x100013a0, 0x10001280 | words without a written accent get an acute on the stressed vowel: one vowel itself, else the ending table (the code Italian's port shares, `common::lookup`); `-mente` on its stem and `ménte`; graves become acutes | stress endings 0x100221b0 (0x28c × 12) |
+| LesConfiniProsodici | 0x1000a7f0 → 0x1000a010, 0x10008b40, 0x1000a660, 0x100083e0, 0x10009100 | group kinds per word (a state machine over classes), boundaries 5/3/1/0x16, a pause (10) between two groups both longer than 5 words and 24 letters where allowed (not after `que`, before a relative, after a modal verb before a verb), 0x0b at commas, the sentence end by type | locutions 0x10025ffc/0x10026008/0x10026050/0x10026118, interjections 0x10025fd0/0x10025fd4/0x10025fd8; 0x15b modal verb forms from the immediates at 0x1000911b |
+| LesGradiAccentuali | 0x100081e0 | punctuation 0x0f; short (≤ 5 letters) function words at boundaries 0 1 2 3 5 6 7 0x16, apostrophes and 0x8f forms unstressed (3), else 0; the word's rows of the other `gradoaccentuale` (DEA = 3) dropped (the list walk stops once its head is deleted) | — |
+| FonTrasParola | 0x1000d510 → 0x1000d450, 0x1000d380 | a row with `fonetica` gives the word's phones (symbols split at space/`-`, ≤ 5 characters); else letters in context, per variant (c/z `Th` in Spain, `s` elsewhere; ll `Gl`/`Zg`/`Y`; y `J`/`Zg`; x, h, intervocalic h dropped but in Mexico; an unstressed word loses its first accent) | sets 0x1002a264, 0x1002a27c, 0x1002a238, 0x1002a22c, 0x1002a1fc, 0x1002a290 |
+| FonTrasConfini | 0x100102d0 | the incoming word's doubled consonant dropped; across words i/u glides, voicing assimilation, n→m, Chilean/Argentine s voicing; the next word's d/g soften, a lone `y` is `j` | — |
+| FonAllofonoLingua | 0x10010820 | per phone of the chunk: z→s, n/l before palatals, r: at a word start and after s n l, b→BH/p, seseo (Th→s, Mexico and America), ll→Y in Mexico, `tt Th` → `Ts` inside a word (but `etcétera`, deleting the entry) | — |
+| LesNormalizzaAccento, LesPronunciabile, LesGetSymbolName | 0x100017d0, 0x10003c90, 0x10003690 / 0x10003ba0 | apostrophe accents; pronounceable when it has a vowel; letter names read from the switch tables (index bytes 0x10003a5c, jumps 0x10003934; outside Spain b v w first, 0x10003be8 / 0x10003bd8) | — |
+
+Checked call by call against the original (LES tracer with all 26 slots
+and FonAllofonoLingua's phone window): on the 20 000 held-out words of
+LibreOffice `es_ES.dic` (Jorge) and `es_MX.dic` (Carlos) LesAnalizza,
+LesAccenta, LesConfiniProsodici, LesGradiAccentuali and FonTrasParola give
+the original's records and codes for **every** call. Whole
+transcriptions (`QQ_NO_LEXICON=1`): held-out words 99.97% (Spain) and
+99.96% (America) identical, the rest all-capital acronyms the engine
+spells (§11); bench `oracle/bench-es.txt` 100% for Jorge, Carmen and
+Leonor (99.8% before); `bench-es-am.txt` 90.0–91.2% (81.4–83% before),
+every difference a number: the numbers are read by the module's
+LesIniNumeri slot 9 (0x10007490) and its slots 0–6 through LTTS7Util's
+ELQNum*, not ported yet (§11).
 
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
@@ -918,3 +1019,17 @@ when a speed/pitch change asks for it.
   (`LoqCatalan6.1.dll`, `Catalan6.1.phd`/`.lex`) and Mandarin
   (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from; none for
   Galician or Valencian was found.
+- Spanish numbers (§4d): the engine reads a number token with the module's
+  LesIniNumeri slot 9 (0x10007490, `Les::leggi_numero`), which calls back
+  its slots 0–6 (word by id 0x10003470, phone numbers 0x10002980, cardinal
+  0x10006e10, digit 0x10006dd0, by-digits 0x100029d0, currency
+  0x10005f10, decimals 0x10007d00) through LTTS7Util's ELQNum*
+  (`lang/elqnum.rs`, `NumSlots`). Not ported: `Spanish::number` reads the
+  digits one by one with the slot-0 words, so `bench-es-am.txt`'s two
+  number sentences (2475, 15 de marzo de 2024) are its only differences
+  (Carlos 91.2%); `oracle/bench-es-text.txt` is not written yet.
+- Spanish all-capital acronyms (`ABS`, `CEE`, `PNV`, `UGT`): the original
+  spells them letter by letter (`` `a-BH `e-`e s e ``); our tokenizer reads
+  them as words. These are the 6–7 held-out words of 20 000 left (99.97%
+  Spain, 99.96% America); the module's own LesPronunciabile and
+  LesGetSymbolName are ported, the engine's acronym decision is not.
