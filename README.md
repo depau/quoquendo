@@ -96,11 +96,10 @@ tool only, not needed to use quoquendo), on the benchmark sentences in
 | Jorge, Carmen, Leonor, Carlos, Diego, … | Spanish | 100% | 100% | 100% |
 | Katrin, Stefan | German | 100% | 100% | 100% |
 | Afroditi | Greek | 100% | 100% | 100% |
-| Amalia, Eusebio, Felipe, Fernanda, Gabriela | Portuguese | 87–89% | 100% | — |
+| Amalia, Eusebio, Felipe, Fernanda, Gabriela | Portuguese | 100% | 100% | 100% |
 
 The pronunciation of these languages is ported from the original's own
-language modules and each voice's own phone rules (MECHANICS.md §4b–§4f;
-Portuguese is not finished);
+language modules and each voice's own phone rules (MECHANICS.md §4b–§4g);
 the original's choice of pieces, its decoder, its joins and, for voices
 recorded at 44.1 kHz (Marcello, Florence, Alan, Grace, Ximena…), its
 resampling to 32 kHz are reproduced exactly (§2c, §2d, §5, §6).
