@@ -1200,7 +1200,7 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i1
                 marks,
                 voiced: voicing == Voicing::Voiced,
             };
-            push(unit, ends_run, &mut out);
+            push(unit, ends_run, &mut out, &mut lens);
         }
         // a pause is two half-phone units of zeros (no lead-in, a 4× tail);
         // the first is joined to the second, the second to nothing: the
@@ -1216,7 +1216,7 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i1
                     marks: vec![0, half],
                     voiced: false,
                 };
-                push(unit, ends_run, &mut out);
+                push(unit, ends_run, &mut out, &mut lens);
             }
         }
     }
