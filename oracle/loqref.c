@@ -143,13 +143,64 @@ static fn_res real_res;
 static int __cdecl hook_res(int *state, unsigned *rates, unsigned char *chunk, void *out) {
     unsigned n = chunk ? *(unsigned *)(chunk + 4) : 0;
     fprintf(reslog, "R %u", n);
-    if (chunk && n && getenv("LOQ_TRACE_RESAMPLE")[0] == '2') {
+    if (chunk && n && getenv("LOQ_TRACE_RESAMPLE")[0] >= '2') {
         short *s = **(short ***)(chunk + 0x248);
         for (unsigned i = 0; i < n && s; i++) fprintf(reslog, " %d", s[i]);
     }
     fprintf(reslog, "\n");
     return real_res(state, rates, chunk, out);
 }
+/* LOQ_TRACE_RESAMPLE=3 also logs every call of the resampler proper
+ * (0x1001c930 -> 0x1001c370 at 0x1001c9e2: resampler object in ESI, cdecl
+ * int *inCount, nOut, short *in, short *out, Imp, ImpD, LpScl, Nmult, Nwing)
+ * with its state before and after: Time (+0x18), the 5120-sample input
+ * history X (**(+0x10)), and what it returned:
+ *   C <inCount> <nOut> <Time> <first +0x2c> <LpScl> <Nmult> <Nwing> <factor>
+ *   I <inCount samples>      X <5120 samples>
+ *   O <outputs> <consumed> <Time>
+ *   Y <outputs samples>      X <5120 samples>
+ * and the end-of-utterance flush (0x10015be5 -> 0x10028e40, ECX = &state):
+ *   F <pending +0x18> */
+void *real_src, *real_flush;
+unsigned char *src_obj;
+unsigned src_ret, flush_state;
+int *src_in;
+short *src_out;
+static void dump_x(void) {
+    short *x = **(short ***)(src_obj + 0x10);
+    fprintf(reslog, "X");
+    for (int i = 0; i < 5120; i++) fprintf(reslog, " %d", x[i]);
+    fprintf(reslog, "\n");
+}
+void __cdecl src_pre(int *in_count, unsigned n_out, short *in, short *out, void *imp, void *impd, unsigned lp, unsigned nmult, unsigned nwing) {
+    (void)imp; (void)impd;
+    src_in = in_count;
+    src_out = out;
+    fprintf(reslog, "C %d %u %u %u %u %u %u %.17g\nI", *in_count, n_out, *(unsigned *)(src_obj + 0x18), src_obj[0x2c], lp & 0xffff,
+            nmult & 0xffff, nwing & 0xffff, *(double *)(src_obj + 0x20));
+    for (int i = 0; i < *in_count; i++) fprintf(reslog, " %d", in[i]);
+    fprintf(reslog, "\n");
+    dump_x();
+}
+void __cdecl src_post(int ret) {
+    fprintf(reslog, "O %d %d %u\nY", ret, *src_in, *(unsigned *)(src_obj + 0x18));
+    for (int i = 0; i < ret; i++) fprintf(reslog, " %d", src_out[i]);
+    fprintf(reslog, "\n");
+    dump_x();
+    fflush(reslog);
+}
+void hook_src(void);
+__asm__(".globl _hook_src\n_hook_src:\n"
+        " movl %esi, _src_obj\n popl _src_ret\n call _src_pre\n movl _src_obj, %esi\n call *_real_src\n"
+        " pushl _src_ret\n pushl %eax\n pushl %eax\n call _src_post\n addl $4, %esp\n popl %eax\n ret\n");
+void __cdecl flush_pre(void) {
+    unsigned char *st = *(unsigned char **)flush_state;
+    fprintf(reslog, "F %d\n", st ? *(int *)(st + 0x18) : -1);
+    fflush(reslog);
+}
+void hook_flush(void);
+__asm__(".globl _hook_flush\n_hook_flush:\n"
+        " movl %ecx, _flush_state\n pushl %ecx\n call _flush_pre\n popl %ecx\n jmp *_real_flush\n");
 static void *redirect(HMODULE dll, unsigned site, void *to) {
     unsigned char *at = (unsigned char *)dll + (site - 0x10000000);
     DWORD old;
@@ -331,6 +382,10 @@ int main(int argc, char **argv) {
         snprintf(path, sizeof path, "%s.res", argv[4]);
         reslog = fopen(path, "wb");
         real_res = (fn_res)redirect(dll, 0x10015c77, (void *)hook_res);
+        if (getenv("LOQ_TRACE_RESAMPLE")[0] == '3') {
+            real_src = redirect(dll, 0x1001c9e2, (void *)hook_src);
+            real_flush = redirect(dll, 0x10015be5, (void *)hook_flush);
+        }
     }
     if (getenv("LOQ_TRACE_DECODE")) {
         snprintf(path, sizeof path, "%s.dec", argv[4]);

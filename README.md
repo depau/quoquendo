@@ -98,9 +98,9 @@ tool only, not needed to use quoquendo), on the benchmark sentences in
 
 The pronunciation of these languages is ported from the original's own
 language modules and each voice's own phone rules (MECHANICS.md §4b–§4e);
-the original's choice of pieces, its decoder and its joins are reproduced
-exactly (§2d, §5, §6). Voices recorded at 44.1 kHz (Marcello, Florence,
-Alan, Grace, Ximena…) still differ in the final resampling (§11), and
+the original's choice of pieces, its decoder, its joins and, for voices
+recorded at 44.1 kHz (Marcello, Florence, Alan, Grace, Ximena…), its
+resampling to 32 kHz are reproduced exactly (§2c, §2d, §5, §6).
 Greek, Portuguese, Swedish, Danish, Dutch, Polish and Russian still use
 approximate pronunciation rules. Every voice's row, stage by stage, is in
 `oracle/out/dashboard.md` (`quoquendo --compare-all`).

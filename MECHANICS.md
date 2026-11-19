@@ -199,17 +199,14 @@ point, "large filter", interpolated coefficients:
 - the right wing's phase is `(−time) & 0x7fff` (Smith's original uses
   `(time ^ 0x7fff) + 1`).
 
-`codec::resample` does this over the whole utterance and matches the
-original's 32 kHz output, fed the original's own 44 kHz output, sample for
-sample except at phone ends: the engine runs the resampler once per phone,
-asking for `floor(pending · 32/44) − 16` samples (0x10028c00) and keeping
-the input from the next output's position on, so the ~10 samples before
-each phone end are computed with whatever stale samples the 4096-sample
-input buffer holds past the new data (the first call: zeros). Those few
-samples per phone are not reproduced yet; with them our replay of the
-original's pieces scores **81.5 dB** inside pieces at 32 kHz on
-`oracle/bench-it.txt` (mean of the per-sentence medians, which run 45–91),
-against 106.7 dB at 44 kHz.
+**As the engine streams it.** SIG hands VoiceResamplerRun one chunk per
+phone (call at 0x10015c77): both its half units as the joins left them, a
+pause too. The first chunk of an utterance makes the state (0x10028ac0;
+the module's reset 0x10015c30 drops it after each utterance): factor =
+to/from (32000/44000, 0x10028bb3) and Smith's object (0x1001c6d0): the
+input history `X` of 0x2800 bytes (5120 samples), zeroed, the factor at
++0x20, 1.0 at +0x30, "first call" at +0x2c, large filter on, linear
+interpolation instead when upsampling (+0xe, 0x1001c0e0). Every chunk:
 
 ## 2d. Decoding bit for bit
 
@@ -291,6 +288,74 @@ pinned in a test); glibc's `exp` agrees on those 80 but not on 0.47% of the
 random ones, and other platforms' libraries need not agree at all.
 Arguments beyond ±619, where the routine finishes on the x87 at 64-bit
 precision, are not ported; the decoders never pass them.
+
+- is appended to the input waiting (`ELQBufferCat`, count at +0x18) and is
+  owed `floor(n·factor)` outputs in the output queue (chunk +0xc,
+  0x1002904a; queue 0x10023e20, add 0x10023e80);
+- 0x10028c00 asks for `floor(pending·factor)` outputs (floor 0x10069b40),
+  16 fewer when above 16, from 0x1001c930 → 0x1001c370 with `LpScl` =
+  trunc(1.0·14746), `Nmult` 65, `Nwing` 8192; the input consumed leaves
+  the buffer (`ELQBufferLeftShift`), the outputs join the queue
+  (0x10023ec0), and the queue hands each phone on, first in first out,
+  once its owed samples are there (0x10024010, `ELQBufferPop`).
+
+0x1001c370, one call: at most `trunc(4096·factor)` = 2978 outputs per pass
+(0x1001c377; 4096.0 at 0x100a5c00), `LpScl` = trunc(14746·factor + 0.5) =
+10724 when factor < 1, `Xoff` = trunc((65 + 1)·0.5·max(1, 1/factor) + 10)
+= 55 (10.0 at 0x100a5b30); `Time` = `Xoff` << 15 on the first call only
+(+0x2c, cleared by 0x1001c930 at 0x1001c9ea). readData (0x1001c030)
+reads the input from its start on every call (position +0x38 reset on the
+call's first read) into `X` from `Xread` (`Xoff` at first) up to 4096, so
+past the new data `X` holds what earlier calls left there. Each pass asks
+SrcUD for what is still wanted, or `trunc(4096·factor) − trunc(2·Xoff·
+factor)` = 2898 when `trunc(4096·factor) − 2·Xoff·factor` is below that
+(0x1001c4d9); SrcUD (0x1001be70) makes exactly that many, whatever input
+there is, and reports by how many whole samples `Time` moved, 16-bit. `Time`
+goes back by that, `X` moves down by it (`X[i] = X[i + Nx]` for
+`Xoff − Nx + 4096` samples) and the next read goes to `4096 − Nx`. The
+last sample readData reports only stops a call that has no sample past
+`Xoff` (Smith's `last`, kept as the DLL keeps it). Each call's input
+therefore runs about 22 samples short of what its last ~16 outputs read:
+those are computed with whatever `X` held there.
+
+**The end of a phrase** (module method 0x10015bd0 → 0x10028e40): with input
+waiting (else nothing), `ELQBufferEnlarge` (no effect on the samples), one
+more call of 0x10028c00 with its flag set, which hands every phone still
+owed what there is (`ELQBufferPopForced` at 0x10023f20 takes at most what
+is made) and drops what is left (`ELQBufferClean`, 0x10024190); then the
+input waiting is dropped. `X` and `Time` carry on into the next phrase. So
+each phrase comes out exactly `Σ floor(nᵢ·factor)` samples long whenever
+the resampler made that many.
+
+Every floating-point step (factor, products, floors) is a double under the
+engine's precision control (53 bits) and every conversion a truncation
+(control word | 0xc00, `_ftol2`), so `codec::StreamResampler` computes them
+in `f64` with `as` conversions. `oracle/loqref.c` `LOQ_TRACE_RESAMPLE=3`
+logs every call with the state before and after (§8);
+`codec::tests::replays_the_engines_resampler` (`QQ_RESAMPLE_TRACE=<prefix>.res`)
+replays every call from the engine's state and as one stream (Marcello,
+three lines of `bench-it`: 184 calls; Florence `bench-fr`: 312; Grace
+`bench-en-au`: 437; Dmitri `bench-ru`: 465), all identical, and what the
+queue hands on equals the engine's `.wav` on every utterance.
+`synth::render` feeds it phone by phone and flushes at
+every phrase's end. Replaying the original's own pieces through our SIG,
+samples identical:
+
+| voice | before | after |
+|---|---|---|
+| Marcello (`bench-it`) | 63.4% | **100%** |
+| Alan (`bench-en-au`) | 80.2% | **100%** |
+| Grace (`bench-en-au`) | 79.4% | **100%** |
+| Dmitri (`bench-ru`) | 78.7% | **100%** |
+| Olga (`bench-ru`) | 79.1% | **100%** |
+| Willem (`bench-nl`) | 86.3% | **100%** |
+| Florence (`bench-fr`) | 93.1% | **100%** |
+| Ximena (`bench-es-am`) | 82.2% | **100%** |
+
+Where FON and CAT are the original's too (Marcello, Florence, Alan, Grace,
+Ximena), `quoquendo --say` writes the original's `.wav` byte for byte on
+every line of their benchmarks. `codec::resample` (the whole utterance at
+once) remains for smoothed joins and the inside-pieces score.
 
 ## 3. The voice index — `<Voice>.sde`
 
@@ -1030,9 +1095,9 @@ and so are all the other 32 kHz voices of the pack with a benchmark (Gilded
 databases included, §5): Afroditi, Amalia, Annika, Carlos, Carmen, Dave,
 Diego, Elizabeth, Esperanza, Eusebio, Felipe, Fernanda, Francisca, Frida,
 Gabriela, Giulia, Krzysztof, Leonor, Luca, Matteo, Paola, Simon, Soledad,
-Stefan, Steven, Susan, Sven, Zosia. The 44 kHz CodecMsx voices are not yet
-(§2c, §11): Alan 80.2%, Dmitri 78.6%, Florence 93.0%, Grace 79.4%,
-Marcello 63.3%, Olga 79.0%, Willem 86.1%, Ximena 82.1%.
+Stefan, Steven, Susan, Sven, Zosia, and the eight 44 kHz CodecMsx voices
+with a benchmark through the engine's own resampler (§2c): Alan, Dmitri,
+Florence, Grace, Marcello, Olga, Willem, Ximena.
 
 **Smoothed** (my own, `JoinStyle::Smooth`): cuts in mid-phone, slides the new
 piece up to ±5 ms to the best waveform match and cross-fades over 5 ms.
@@ -1100,6 +1165,10 @@ built), `LOQ_TRACE_CAT` (+`LOQ_TRACE_CLASSES`: every candidate's context,
 class part, factor, prosody, the labels), `LOQ_TRACE_JOIN` (every voiced
 join's units before/after and every half-phone's pitch marks),
 `LOQ_TRACE_DECODE` (every decoder request and its samples, §2d),
+`LOQ_TRACE_RESAMPLE` (every chunk SIG hands the output resampler to
+`<prefix>.res`; `=2` with its samples, `=3` also every call of 0x1001c370
+with its input, history and time before and after, and every phrase's
+flush, §2c),
 `LOQ_TRACE_LES` (`oracle/lestrace.h`: every slot of the language module's
 function table swapped for a logging thunk — each LES function's word
 records before and after, FonTrasParola's word and codes, FonTrasConfini's
@@ -1112,6 +1181,7 @@ reading and ctx+0x18, and the token buffer before (`T`) and after (`U`);
 `LOQ_NUM_ONLY=1` logs only those. `oracle/parse_les.py` turns it into JSON lines,
 §4b). quoquendo's counterparts: `QQ_TRACE_CAT=1`,
 `QQ_CHECK_MARKS=<trace.join>`, `--check-decode <trace.dec>`,
+`QQ_RESAMPLE_TRACE=<prefix>.res` (`codec::tests::replays_the_engines_resampler`),
 `QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
 
 `LOQ_LINES=1` treats every line as an utterance; `LOQ_FON_ONLY=1` writes
@@ -1170,22 +1240,11 @@ when a speed/pitch change asks for it.
   calls is ported; bench-it and the 20 000 held-out words are 100%
   identical. 0x10001290 (participles) is checked on 91 sentences with
   participles after an auxiliary (all identical), not on a held-out list.
-- The 44 kHz voices' output resampler as the engine streams it (§2c): SIG
-  hands VoiceResamplerRun (0x10028ee0, called at 0x10015c77) one chunk per
-  wanted phone, both its half units as the joins left them (a pause too:
-  `LOQ_TRACE_RESAMPLE` on Marcello, every chunk = the two halves' lengths);
-  0x10028c00 asks for `floor(pending·32/44)`, minus 16 when above 16, and
-  keeps the input not consumed; 0x1001c370 (Smith's `resample`, 4096-sample
-  input buffer refilled from Xoff = 55 each call, `Time` set on the first
-  call only, readData 0x1001c030, SrcUD 0x1001be70) carries the rest over.
-  `codec::StreamResampler` is a first port (render feeds it phone by phone):
-  the first chunks of Marcello's first sentence come out identical, then a
-  few samples at a chunk end differ and the stream drifts (+8 samples over
-  the sentence). Unknown still: how many outputs one pass may produce (the
-  value 0x1001c370 truncates on entry, our guess `(4096 − 2·Xoff)·factor`),
-  what the end-of-utterance call (0x10028eb4, flag 1) adds, and LpScl (the
-  caller truncates `factor·14746`, 0x1001c930). Whole files 63–93%
-  identical, as before.
+- The output resampler's upsampling (linear interpolation, 0x1001c0e0,
+  chosen by 0x10028b6d when the output rate is the higher) is not ported:
+  quoquendo always speaks at 32 kHz and no voice is below it. Its small
+  filter and SrcUP (0x1001c960, 0x1001bd10) are never reached from
+  VoiceResamplerRun, which asks for the large filter (0x10028bc5).
 - Two joins of 1 082 traced (Roberto, Bernard) differ in the next unit's
   tail margin only: the joined buffer is shorter than `b.pre + b.len +
   b.post` and the engine copies the rest out of its scratch memory

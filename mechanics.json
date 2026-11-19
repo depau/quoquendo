@@ -718,8 +718,8 @@
   {
    "name": "resampler gain",
    "group": "output",
-   "value": "LpScl 14746 x factor + 0.5 (10724 for 44000 -> 32000)",
-   "source": "0x1001c9a0 (14746.0 at 0x100a5cd8), 0x1001c3ad"
+   "value": "LpScl trunc(1.0 x 14746) = 14746, then trunc(14746 x factor + 0.5) when factor < 1 (10724 for 44000 -> 32000)",
+   "source": "0x1001c930 (1.0 at +0x30 by 0x1001c8c4, 14746.0 at 0x100a5cd8, 0x1001c9a0), 0x1001c38a-0x1001c3e5 (0.5 at 0x100a5b70)"
   },
   {
    "name": "resampler steps",
@@ -730,8 +730,38 @@
   {
    "name": "resampler output count",
    "group": "output",
-   "value": "floor(pending input x out/in) - 16 per call",
-   "source": "0x10028c00 (floor 0x10069b40, minus 0x10)"
+   "value": "floor(pending input x factor), minus 16 when above 16, per call; factor = to/from in doubles",
+   "source": "0x10028c00 (factor 0x10028c51, floor 0x10069b40, minus 0x10 at 0x10028c98); 0x10028ac0 (factor 0x10028bb3)"
+  },
+  {
+   "name": "resampler pass size",
+   "group": "output",
+   "value": "at most trunc(4096 x factor) = 2978 outputs; a pass asks SrcUD for what is wanted, or trunc(4096 x factor) - trunc(2 Xoff x factor) = 2898 when 4096 x factor (truncated) - 2 Xoff x factor is below that",
+   "source": "0x1001c370 (4096.0 at 0x100a5c00, _ftol2 0x10069060), 0x1001c4d9-0x1001c535"
+  },
+  {
+   "name": "resampler Xoff",
+   "group": "output",
+   "value": "trunc((Nmult + 1) x 0.5 x max(1, 1/factor) + 10) = 55 (Nmult 65)",
+   "source": "0x1001c3e9-0x1001c42d (10.0 at 0x100a5b30, Nmult 0x41 pushed at 0x1001c9af)"
+  },
+  {
+   "name": "resampler history",
+   "group": "output",
+   "value": "X of 0x2800 bytes (5120 samples) zeroed at creation; every call reads its input from the start into X[Xoff..4096]; after a pass X[i] = X[i + Nx] for Xoff - Nx + 4096 samples, Nx = whole samples Time moved (16-bit), next read at 4096 - Nx; Time = Xoff << 15 on the first call only",
+   "source": "0x1001c6d0 (0x1001c78a, memset 0x1001c807), readData 0x1001c030 (position +0x38), 0x1001c5b2-0x1001c6aa, first-call flag +0x2c cleared at 0x1001c9ea"
+  },
+  {
+   "name": "resampler output queue",
+   "group": "output",
+   "value": "each phone chunk is owed floor(n x factor) outputs and handed on first in first out once they are made",
+   "source": "chunk +0xc set at 0x1002904a; queue 0x10023e20 (add 0x10023e80, outputs 0x10023ec0, pop 0x10024010 / 0x10023f20 with ELQBufferPop slot 0x100b74a8)"
+  },
+  {
+   "name": "resampler phrase flush",
+   "group": "output",
+   "value": "at a phrase's end, with input waiting: one more call with the flag set, every phone still owed gets at most what is made (ELQBufferPopForced), the rest is dropped (ELQBufferClean), the input is dropped; X and Time carry on; a new utterance makes a new state",
+   "source": "module method 0x10015bd0 -> 0x10028e40 (call 0x10028eb4), ELQBufferPopForced slot 0x100b74ac, clear 0x10024190 (ELQBufferClean slot 0x100b7480); reset 0x10015c30"
   },
   {
    "name": "Italian module function table",

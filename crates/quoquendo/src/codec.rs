@@ -330,123 +330,213 @@ pub fn resample(input: &[i16], from: u32, to: u32) -> Vec<i16> {
 }
 
 /// The output resampler as the engine streams it (VoiceResamplerRun
-/// 0x10028ee0): SIG hands it one phone at a time (both half-phones as they
-/// came out of the joins, a pause as one); each call asks 0x10028c00 for
-/// `floor(pending·to/from)` samples, 16 fewer when above 16, and keeps the
-/// input not consumed for the next. 0x1001c370 is Julius O. Smith's
-/// `resample` loop with its state kept between calls: the 4096-sample input
-/// buffer `X` (refilled from `Xoff` = 55 on every call by readData
-/// 0x1001c030, so what lies past the new data is whatever the buffer held),
-/// the time `Time` (set to `Xoff << 15` on the first call only), at most
-/// `floor((4096 − 2·Xoff)·factor) − 2·Xoff·factor` outputs per pass (SrcUD
-/// 0x1001be70, the same filter as [`resample`]).
+/// 0x10028ee0, MECHANICS.md §2c), operation by operation. SIG hands it one
+/// phone at a time ([`StreamResampler::push`]: both half units as the joins
+/// left them, a pause too) and ends every phrase with
+/// [`StreamResampler::flush`] (0x10028e40). What it keeps:
+///
+/// - the input not consumed yet (state +0x10, its count +0x18);
+/// - Julius O. Smith's `resample` state (0x1001c6d0): the 5120-sample input
+///   history `X` (0x2800 bytes, zeroed), refilled from `Xoff` = 55 on
+///   every call so what lies past the new data is whatever it held, and the
+///   time `Time`, set to `Xoff << 15` on the first call only;
+/// - the output queue (0x10023e20): each phone is owed `floor(n·factor)`
+///   samples and gets them, first in first out, once that many are made;
+///   a flush hands every phone what is there and drops the rest.
 pub struct StreamResampler {
-    from: u32,
-    to: u32,
+    /// `to / from` (0x10028bb3), in doubles as the x87 at precision 53 computes it
+    factor: f64,
+    passthrough: bool,
+    pending: Vec<i16>,
     x: Vec<i16>,
     time: u32,
     first: bool,
-    pending: Vec<i16>,
+    made: std::collections::VecDeque<i16>,
+    owed: std::collections::VecDeque<usize>,
 }
 
 impl StreamResampler {
-    const IBUF: usize = 4096;
+    /// samples of `X` (0x1001c78a: 0x2800 bytes per channel)
+    const XSIZE: usize = 0x1400;
+    /// `IBUFFSIZE`: readData fills `X` up to here (0x1001c045)
+    const IBUF: i32 = 0x1000;
+    /// the large filter's `Nmult` (0x1001c9af)
+    const NMULT: u16 = 65;
+    /// `LpScl` for unity gain, `trunc(1.0 · 14746.0)` (+0x30 is 1.0,
+    /// 0x1001c8c4; 14746.0 at 0x100a5cd8; 0x1001c9a0)
+    const LP_SCL: u16 = 14746;
 
     pub fn new(from: u32, to: u32) -> StreamResampler {
         StreamResampler {
-            from,
-            to,
-            x: vec![0; 2 * Self::IBUF],
+            factor: to as f64 / from as f64,
+            // VoiceResamplerRun resamples when the rates differ by more than
+            // 100 Hz (0x10028efd)
+            passthrough: from.abs_diff(to) <= 100,
+            pending: Vec::new(),
+            x: vec![0; Self::XSIZE],
             time: 0,
             first: true,
-            pending: Vec::new(),
+            made: Default::default(),
+            owed: Default::default(),
         }
     }
 
-    /// One chunk in, what the engine hands on for it out.
+    /// One chunk in (0x10028ee0), what the engine hands on for it out.
     pub fn push(&mut self, chunk: &[i16]) -> Vec<i16> {
-        if self.from.abs_diff(self.to) <= 100 {
+        if self.passthrough {
             return chunk.to_vec();
         }
         self.pending.extend_from_slice(chunk);
-        let factor = self.to as f64 / self.from as f64;
-        let mut nx = (self.pending.len() as f64 * factor).floor() as usize;
-        if nx > 16 {
-            nx -= 16;
+        self.owed.push_back((chunk.len() as f64 * self.factor).floor() as usize);
+        self.run(false)
+    }
+
+    /// The end of a phrase (0x10028e40): nothing without input waiting;
+    /// else one more call with the flag set, then the input is dropped.
+    pub fn flush(&mut self) -> Vec<i16> {
+        if self.passthrough || self.pending.is_empty() {
+            return Vec::new();
         }
-        let (out, consumed) = self.run(nx);
+        let out = self.run(true);
+        self.pending.clear();
+        out
+    }
+
+    /// 0x10028c00: one call of the resampler, its outputs to the queue
+    /// (0x10023ec0), which hands on what it owes (0x10024010).
+    fn run(&mut self, last_call: bool) -> Vec<i16> {
+        let y = self.call();
+        self.made.extend(y);
+        let mut out = Vec::new();
+        while let Some(&owed) = self.owed.front() {
+            // a phone is handed on once its samples are there; at a flush
+            // with what there is (ELQBufferPopForced: at most what is made)
+            if self.made.len() < owed && !last_call {
+                break;
+            }
+            let k = owed.min(self.made.len());
+            out.extend(self.made.drain(..k));
+            self.owed.pop_front();
+        }
+        if last_call {
+            // the queue is empty: what is left over is dropped (0x10024190)
+            self.made.clear();
+        }
+        out
+    }
+
+    /// The resampler's own outputs for the input waiting: `floor(pending ·
+    /// factor)`, 16 fewer when above 16 (0x10028c93); the input consumed
+    /// leaves the buffer (0x10028cd2).
+    fn call(&mut self) -> Vec<i16> {
+        let mut n = (self.pending.len() as f64 * self.factor).floor() as u32;
+        if n > 16 {
+            n -= 16;
+        }
+        let (y, consumed) = self.resample(n);
         if consumed < self.pending.len() {
             self.pending.drain(..consumed);
         } else {
             self.pending.clear();
         }
-        out
+        y
     }
 
-    /// 0x1001c370 for `ny` outputs from `pending`: the outputs and how many
-    /// input samples the time moved over.
-    fn run(&mut self, ny: usize) -> (Vec<i16>, usize) {
-        let factor = self.to as f64 / self.from as f64;
-        let lp_scl = if factor < 1.0 { (14746.0 * factor + 0.5) as i32 } else { 14746 };
-        let dtb = (1.0 / factor * 32768.0 + 0.5) as u32;
-        let dhb = ((NPC).min(factor * NPC) * 128.0 + 0.5) as u32;
-        // Xoff: (Nmult + 1)/2 · max(1, 1/factor) + 10, rounded (Nmult 65)
-        let xoff = (66.0 * 0.5 * (1.0 / factor).max(1.0) + 10.0).round() as usize;
-        let max_pass = ((Self::IBUF - 2 * xoff) as f64 * factor) as i64;
-        let edge = (2 * xoff) as f64 * factor;
+    /// 0x1001c370 for `n_out` outputs from `pending`: the outputs and the
+    /// input consumed. Its counts are 16-bit (`UHWORD`), as in Smith's code.
+    fn resample(&mut self, n_out: u32) -> (Vec<i16>, usize) {
+        let factor = self.factor;
+        let n_out = n_out as i32;
+        // outputs one pass may hold (0x1001c377, `_ftol2`)
+        let obuf = (factor * 4096.0) as i32;
+        let lp_scl = if factor < 1.0 { ((Self::LP_SCL as f64 * factor + 0.5) as i32) as u16 } else { Self::LP_SCL };
+        // Xoff = (Nmult + 1)/2 · max(1, 1/factor) + 10, truncated (0x1001c3e9)
+        let xoff = ((((Self::NMULT + 1) as f64 * 0.5) * (1.0 / factor).max(1.0) + 10.0) as i32) as u16;
+        let mut nx = (0x800 - xoff).wrapping_mul(2);
         if self.first {
             self.time = (xoff as u32) << 15;
-            self.first = false;
         }
-        let mut nx = Self::IBUF - 2 * xoff;
-        let mut xread = xoff;
-        let mut read_pos = 0usize;
-        let mut last = 0i64;
-        let (mut out, mut total_creep) = (Vec::with_capacity(ny), 0usize);
-        while out.len() < ny {
+        let (mut last, mut ycount, mut consumed) = (0i32, 0i32, 0i32);
+        let (mut xread, mut pos) = (xoff, 0i32);
+        let mut out = vec![0i16; n_out.max(0) as usize];
+        let mut y = Vec::with_capacity(obuf.max(0) as usize);
+        loop {
             if last == 0 {
-                // readData 0x1001c030
-                let n = (Self::IBUF - xread).min(self.pending.len() - read_pos);
-                self.x[xread..xread + n].copy_from_slice(&self.pending[read_pos..read_pos + n]);
-                read_pos += n;
-                if read_pos >= self.pending.len() {
-                    last = xread as i64 - 1 + n as i64;
-                    if last != 0 && last - (xoff as i64) < nx as i64 {
-                        nx = (last - xoff as i64).max(0) as usize;
-                        if nx == 0 {
-                            break;
-                        }
+                // readData 0x1001c030: from the start of the input on the
+                // call's first read, into X from Xread up to IBUFFSIZE
+                let in_count = self.pending.len() as i32;
+                let n = (Self::IBUF - xread as i32).min(in_count - pos);
+                for i in 0..n.max(0) {
+                    self.x[xread as usize + i as usize] = self.pending[(pos + i) as usize];
+                }
+                pos += n;
+                if pos >= in_count {
+                    last = xread as i32 + (in_count - pos + n) - 1;
+                }
+                if last != 0 && last - (xoff as i32) < nx as i32 {
+                    nx = (last - xoff as i32) as u16;
+                    if nx == 0 {
+                        break;
                     }
                 }
             }
-            let remaining = (ny - out.len()) as i64;
-            let nout = if (remaining as f64) <= max_pass as f64 - edge { remaining } else { max_pass - edge.round() as i64 };
-            let start = self.time;
-            let x = &self.x;
-            let xs = |i: isize| *x.get(i as usize).unwrap_or(&0) as i32;
-            for _ in 0..nout.max(0) {
-                let at = (self.time >> 15) as isize;
-                let ph = self.time & 0x7fff;
-                let v = filter_ud(&xs, at + 1, self.time.wrapping_neg() & 0x7fff, 1, dhb) + filter_ud(&xs, at, ph, -1, dhb);
-                out.push((((v >> 2) * lp_scl + 0x1000) >> 13).clamp(-32768, 32767) as i16);
-                self.time = self.time.wrapping_add(dtb);
-            }
-            let creep = ((self.time >> 15) - (start >> 15)) as usize;
-            self.time -= (creep as u32) << 15;
+            // this pass: what is still wanted, unless more than the buffer
+            // holds past the filter's reach (0x1001c4d9)
+            let remaining = n_out - ycount;
+            let edge = (2 * xoff as i32) as f64 * factor;
+            let nout = if obuf as f64 - edge >= remaining as f64 { remaining as u16 } else { (obuf as u16).wrapping_sub(edge as i32 as u16) };
+            let mut time = self.time;
+            y.clear();
+            nx = self.src_ud(&mut time, nout, lp_scl, &mut y);
+            self.time = time.wrapping_sub((nx as u32) << 15);
             if last != 0 {
-                last -= (creep + xoff) as i64;
+                last -= ((nx as u32 + xoff as u32) & 0xffff) as i32;
                 if last == 0 {
                     last = 1;
                 }
             }
-            // keep the history: X[i] = X[i + creep] for Xoff − creep + 4096 samples
-            let keep = (xoff + Self::IBUF).saturating_sub(creep).min(self.x.len() - creep);
-            self.x.copy_within(creep..creep + keep, 0);
-            total_creep += creep;
-            xread = Self::IBUF - creep;
+            let mut produced = y.len() as i32;
+            ycount += produced;
+            if ycount > n_out {
+                produced -= ycount - n_out;
+                ycount = n_out;
+            }
+            out[(ycount - produced) as usize..ycount as usize].copy_from_slice(&y[..produced as usize]);
+            // keep the history: X[i] = X[i + Nx] for Xoff − Nx + 4096 samples
+            let keep = xoff as i32 - nx as i32 + Self::IBUF;
+            if keep > 0 {
+                self.x.copy_within(nx as usize..nx as usize + keep as usize, 0);
+            }
+            consumed += nx as i32;
+            xread = (Self::IBUF - nx as i32) as u16;
+            if ycount >= n_out {
+                break;
+            }
         }
-        out.truncate(ny);
-        (out, total_creep)
+        // the caller clears the first-call flag (0x1001c9ea)
+        self.first = false;
+        out.truncate(ycount as usize);
+        (out, consumed as usize)
+    }
+
+    /// SrcUD (0x1001be70): exactly `nout` outputs from `X` at `time`, which
+    /// it moves on; returns how far its whole-sample part moved.
+    fn src_ud(&self, time: &mut u32, nout: u16, lp_scl: u16, y: &mut Vec<i16>) -> u16 {
+        let factor = self.factor;
+        let dtb = (1.0 / factor * 32768.0 + 0.5) as i64 as u32;
+        let dh = if 256.0 >= factor * 256.0 { factor * 256.0 } else { 256.0 };
+        let dhb = ((dh * 128.0 + 0.5) as i64 as u32) & 0xffff;
+        let start = *time >> 15;
+        let x = &self.x;
+        let xs = |i: isize| *x.get(i as usize).unwrap_or(&0) as i32;
+        for _ in 0..nout {
+            let at = (*time >> 15) as isize;
+            let v = filter_ud(&xs, at + 1, time.wrapping_neg() & 0x7fff, 1, dhb).wrapping_add(filter_ud(&xs, at, *time & 0x7fff, -1, dhb));
+            let v = ((v >> 2).wrapping_mul(lp_scl as i32).wrapping_add(0x1000)) >> 13;
+            y.push(v.clamp(-32768, 32767) as i16);
+            *time = time.wrapping_add(dtb);
+        }
+        ((*time >> 15).wrapping_sub(start)) as u16
     }
 }
 
@@ -476,5 +566,107 @@ mod tests {
         assert_eq!(out.len(), 32000);
         let peak = out[1000..31000].iter().map(|v| v.abs()).max().unwrap();
         assert!((9500..=10500).contains(&peak), "{peak}");
+    }
+
+    /// `QQ_RESAMPLE_TRACE=<prefix>.res`, written by `oracle/loqref.c` with
+    /// `LOQ_TRACE_RESAMPLE=3`: every call of the engine's resampler
+    /// (0x1001c370) replayed from its logged state, the same calls as one
+    /// stream per utterance, and what the queue hands on against the
+    /// engine's `<prefix>-<n>.wav`.
+    #[test]
+    fn replays_the_engines_resampler() {
+        let Ok(path) = std::env::var("QQ_RESAMPLE_TRACE") else { return };
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // (the C line ends in the factor, a float)
+        let nums = |l: &str| -> Vec<i64> { l.split_whitespace().skip(1).filter_map(|t| t.parse().ok()).collect() };
+        let pcm = |v: &[i64]| -> Vec<i16> { v.iter().map(|&s| s as i16).collect() };
+        let wav = |n: i64| -> Option<Vec<i16>> {
+            let b = std::fs::read(format!("{}-{n}.wav", path.trim_end_matches(".res"))).ok()?;
+            Some(b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect())
+        };
+        let (mut calls, mut alone, mut streamed, mut utts, mut wavs_same) = (0, 0, 0, 0, 0);
+        let mut raw = StreamResampler::new(44000, 32000);
+        let mut queue = StreamResampler::new(44000, 32000);
+        let mut handed: Vec<i16> = Vec::new();
+        let mut want: Option<Vec<i16>> = None;
+        let mut utt: Option<i64> = None;
+        let mut finish = |utt: Option<i64>, handed: &[i16]| {
+            if let Some(theirs) = utt.and_then(wav) {
+                utts += 1;
+                if theirs == handed {
+                    wavs_same += 1;
+                } else {
+                    let k = theirs.iter().zip(handed).take_while(|(a, b)| a == b).count();
+                    eprintln!("utterance {utt:?}: {} samples, ours {}, first difference at {k}", theirs.len(), handed.len());
+                }
+            }
+        };
+        let mut i = 0;
+        while i < lines.len() {
+            let l = lines[i];
+            match l.as_bytes().first() {
+                Some(b'U') => {
+                    finish(utt, &handed);
+                    utt = Some(nums(l)[0]);
+                    raw = StreamResampler::new(44000, 32000);
+                    queue = StreamResampler::new(44000, 32000);
+                    handed.clear();
+                }
+                Some(b'R') => {
+                    let s = pcm(&nums(l)[1..]);
+                    handed.extend(queue.push(&s));
+                    raw.pending.extend_from_slice(&s);
+                    want = Some(raw.call());
+                }
+                Some(b'F') => {
+                    handed.extend(queue.flush());
+                    if !raw.pending.is_empty() {
+                        want = Some(raw.call());
+                        raw.pending.clear();
+                    }
+                }
+                Some(b'C') => {
+                    let c = nums(l);
+                    let input = pcm(&nums(lines[i + 1]));
+                    let x0 = pcm(&nums(lines[i + 2]));
+                    let o = nums(lines[i + 3]);
+                    let y = pcm(&nums(lines[i + 4]));
+                    let x1 = pcm(&nums(lines[i + 5]));
+                    calls += 1;
+                    // alone, from the state the engine had
+                    let mut r = StreamResampler::new(44000, 32000);
+                    assert_eq!(r.factor.to_bits(), (8.0f64 / 11.0).to_bits());
+                    (r.x, r.time, r.first, r.pending) = (x0, c[2] as u32, c[3] == 1, input.clone());
+                    let ours = r.call();
+                    let same = ours == y && r.time == o[2] as u32 && input.len() - r.pending.len() == o[1] as usize && r.x == x1;
+                    if same {
+                        alone += 1;
+                    } else if calls - alone <= 5 {
+                        let k = ours.iter().zip(&y).take_while(|(a, b)| a == b).count();
+                        eprintln!(
+                            "call {calls} (line {}): {} outputs, ours {} (first difference at {k}); consumed {} ours {}; time {} ours {}; X same {}",
+                            i + 1,
+                            y.len(),
+                            ours.len(),
+                            o[1],
+                            input.len() - r.pending.len(),
+                            o[2],
+                            r.time,
+                            r.x == x1
+                        );
+                    }
+                    if want.take().is_some_and(|w| w == y) {
+                        streamed += 1;
+                    }
+                    i += 5;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        finish(utt, &handed);
+        eprintln!("{calls} calls: {alone} identical from the engine's state, {streamed} in one stream; {wavs_same} of {utts} utterances identical");
+        assert_eq!((alone, streamed, wavs_same), (calls, calls, utts));
     }
 }
