@@ -438,11 +438,9 @@ learned Italian ending tables, `french.rs`, `german.rs`, `spanish.rs` and
 their connected-speech passes) are deleted. A voice of these languages
 whose tree lacks the module (no `.lde`, or a `Library` DLL that is missing
 or isn't the expected one) reports `language_missing` (`Voice::from_bytes`)
-instead of speaking with approximate rules. Greek (§4f) is ported the same
-way. Portuguese (`lang/portuguese*`) is wired but unfinished (§11).
-Swedish (`lang/swedish/`) is partly written and not wired. Swedish, Danish,
-Dutch, Polish and Russian keep the simple letter rules of `g2p.rs` and the
-dictionaries above.
+instead of speaking with approximate rules. Greek (§4f), Portuguese (§4g),
+Dutch (§4i), Swedish (§4j), Danish (§4k), Polish (§4l) and Russian (§4m)
+are ported the same way.
 
 **German, decompiled** (LTTS7German.dll; its one export `German` 0x10007f00
 hands the engine a table of named functions at 0x100294a8: LesAccenta
@@ -901,6 +899,7 @@ from the library by address):
 | Jorge, Carmen, Diego, Carlos | nothing | default; Diego 0x10001280 / Francisca 0x100012c0 say 0x1800104 as `h`; Carlos 0x100013e0, Ximena 0x10001490 map analysis ids to synthesis ones (0x10001370 / 0x10001420) | Leonor 0x100011e0 s + `r:` → 0x501014c, DH after `` `a `` dropped before a vowel/sonorant word; Esperanza `Y` → `J`; Francisca h → 0x1800104 between a vowel and f/t; Soledad 0x10001210 s / dd before the next word; Ximena 0x10001060 |
 | Bernard 0x10001230, Juliette 0x10001230, Florence 0x10001210 | | default | Bernard: a nasal vowel + consonant of a word written `-e`/`-es` before a consonant word keeps the `e` (`HEh`); Juliette: s → z before a voiced word, final dd → n after a nasal vowel, else it voices the consonant ending the word before; Florence: voicing assimilation across words after a nasal vowel (not `donc`, `quelconque`, before `million`, `mètre(s)`) |
 | Afroditi 0x10001210 | | 0x100012d0 → 0x10001260 (the default) | a word-final s (0x1952) becomes z (0x1942) before a word starting with m (0x1fc2) or n (0x19c2) (the module's own FonAllofonoLingua voices s only before other voiced consonants) |
+| Amalia, Eusebio, Gabriela, Fernanda, Felipe | Fernanda, Felipe 0x100014a0; the others 0x10001210 (nothing) | Amalia default; Eusebio default + map; Gabriela/Felipe s → id 0x28 before a voiced consonant; Felipe/Fernanda tap 0x200018d2 → id 0x33 | Fernanda/Felipe: words of the table at 0x1000b000 (0x54-byte entries to 0x100086c4 / 0x100086bc, 0x10001350) replaced, phone adjustments (§4g) |
 
 The stage runs for module-backed voices only (`g2p::Frontend::with_voice`):
 the built-in rules of the unported languages give phones the voices say
@@ -1041,6 +1040,91 @@ identical. Only reading types 0, 5 and 6 reach the module untagged
 lines): 98.0% of sounds; the rest is Greek.lex (§11).
 
 
+## 4g. Portuguese FON, ported from LTTS7Portuguese.dll (`lang/portuguese/`)
+
+The module's exports `PortuguesePt` (0x10009dd0) and `PortugueseBr`
+(0x10009d60) hand the engine a table of 26 `{name, function}` pairs each,
+**0x1001fb98** and **0x1001fac0**; the `.lde`'s `Library` names the
+export. They differ only in ELQGetPhonemes (0x10009520 / 0x10009530,
+phone tables 0x1001f8d8 / 0x1001f8e0), LesGetSymbolName (0x10003850 /
+0x10003890), FonGetSamples and LesGetDefaultCurrency; the FON code reads
+the variant from the engine (`**(ctx+0x44)`, set by 0x10007a30 from the
+`Language` names: 0 `Portuguese`, 1 `Brazilian`). Slots: GetVersion
+0x10009cb0, ELQGetGraphemes 0x10009510 (characters 0x1001ed98, 8 bytes:
+lower, upper, flags 1 letter, 4 digit, 8 consonant, 0x10 vowel, 0x20
+upper, 0x80 acute/circumflex, 0x100 punctuation), LesAccenta 0x100015a0,
+LesNormalizzaAccento 0x10002c60, FonTrasParola 0x1000c0d0, LesIniNumeri
+0x100079e0, LesAnalizza 0x1000bd10, LesPronunciabile 0x10003af0,
+LesGradiAccentuali 0x10007ca0, LesConfiniProsodici 0x10008f90,
+LesWriteCateg 0x10008780, FonTrasConfini 0x1000e8f0,
+ELQLanguageLoadReadOnlyData 0x10009640 (`SELECT grafemica, fonetica,
+gradoaccentuale, grammaticale, specgramm, gennum FROM lessico` of the
+pack's `Portuguese<Variant>.dbl`), LesGetAbbreviazioni 0x10009b80 /
+LesGetNumeroAbbreviazioni 0x10009b30. There is no FonAllofonoLingua.
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesAnalizza | 0x1000bd10 → 0x1000b520, 0x1000b700, 0x10009fd0 | each word's rows of the lexical database; class from `grammaticale` (0x1000ade0), subclass from `specgramm` (0x1000b1b0), gender/number from `gennum` (0x1000b2a0); unknown words by ending (0x1000a470, endings tested by 0x1000a410: infinitives `-ar -er -ir -ôr`, `-mente`, nouns/adjectives); feminine nouns by ending; numbers agree with a feminine noun after them | endings in 0x1000a470's code; feminine 0x100216d8 (0x2c), plural 0x10021788 (0x24), `ELQSearchString` mode 8 |
+| LesAccenta | 0x100015a0 → 0x100011c0 | words without a written accent get one on the stressed vowel (one vowel itself; else the ending table, the code Italian's port shares); graves become acutes (`à` → `å`… by LesNormalizzaAccento 0x10002c60) | stress endings 0x1001b3c0 (0x161) |
+| LesConfiniProsodici | 0x10008f90 → 0x100087d0, 0x100080e0, 0x10008d40, 0x10008450, 0x10008270 | group kinds per word, boundaries, a pause between two sides longer than one word and 0xe letters (and > 1 / > 0x13 for the second test) where 0x10008d40 allows it; locutions kept together; the sentence end by type | locutions 0x1001e1d8 (5 words, 2), 0x1001e1e0 (4, 10), 0x1001e208 (3, 0xd), 0x1001e240 (2, 0x49); placeholders 0x1001e1c8/0x1001e1cc/0x1001e1d0 (`pippo` 0x1001e1bc) |
+| LesGradiAccentuali | 0x10007ca0 | punctuation 0x0f; function-word classes unstressed (3) | — |
+| FonTrasParola | 0x1000c0d0 | a row with `fonetica` gives the phones; an unstressed word loses its accents (0x1000c040); else the variant's whole words, or the longest word start's phones and the rest letter by letter (the switch at 0x1000c4e2): open/closed e and o by word lists, x by lists (`s z ʃ ks`), nasal vowels before a closing m/n, `tém` (0x1000c890), final `-e`/`-o` reduced, Brazil's `t`/`d` before an i sound affricated, an l closing a syllable `w` in Brazil, dark in Portugal | whole words 0x100296a8 (0x13, Pt) / 0x10029740 (0x19, Br); starts 0x100299b0 (0x48a) / 0x10029808 (0x35); e lists 0x1002be98, 0x1002be00, 0x1002bf20; o lists 0x1002c008, 0x1002c028, 0x1002c07c; x lists 0x1002c100, 0x1002c118, 0x1002c250, 0x1002c2d0; gu/qu 0x1002bef4, 0x1002c090; letter sets 0x1002c3bc, 0x1002c450, 0x1002c444, 0x1002c3a0, 0x1002c348 |
+| FonTrasConfini | 0x1000e8f0 | Brazil: s between soft sounds → z, a W glide (0x401ec2) after a final u before a vowel; Portugal: the glide also after a nasal a before `u`, `vínte e` loses the `e` of vinte (deleted from the list), final HEh → J before a vowel or dropped before i after some classes, l + HEh before m → dark l, ʃ → z before a vowel and → ʒ before a voiced consonant; inside the word: HEh dropped between some consonants (not the words 0x10022b68, 0x10022b4c, 0x1002c48c), nasal vowels before a stop get the homorganic nasal | — |
+| LesGetSymbolName, LesPronunciabile | 0x10003850 / 0x10003890, 0x10003af0 | letter names read from the switch tables (Pt index bytes 0x10003220, jumps 0x100030cc; Br 0x10003750 / 0x100035fc, bias +0x80, at most 0xfe); pronounceable when it has a vowel | — |
+
+**Numbers** (`lang/portuguese/numeri.rs`): slot 9 is 0x100070c0, the
+same machine as Spanish's (§4d) with the module's own data. Slots:
+0 0x10002800 (words 0x1001d340, 0x53 `{id, word}`), 1 0x10002780
+(telephone, area codes 0x1001ce80, 0xf7, `ELQSearchString` mode 2 by
+0x10002700), 2 0x100069f0 (cardinal), 3 0x100069b0, 4 0x100027d0, 5
+0x100059e0 (currency names 0x1001d260, 11 rows), 6 0x10007810, 7
+0x10002830; no slot 8. Next-token currency words that make the type 12
+(slot 9): `euro dólar dólares eur peseta pesetas brl BRL usd USD gbp GBP
+jpy JPY esp ESP peso pesos real reais pts pta ptas EUR` (0x1001c6fc…
+0x1001dc34). The recognizers (order 0x100063a0) and the token window
+(0x10001770) are Spanish's code; they differ in the telephone recognizer
+0x10004ef0 (type 1 does not set obj+0x4c) and the currency recognizer
+0x10004290 (a currency word after the amount, `euro`/`dólar`/`iene`/
+`peseta`/`peso`/`real`/`esterlina` and their codes, becomes `n` and its
+symbol `€ $ ¥ | _ ^ £` is kept). The renderer 0x10006480 reads amounts
+through LTTS7Util's `ELQNumConvertCurrency`, ordinals by 0x10001e70
+(stems 0x1001d6c8… per place, `doismilésimo`), times by 0x10005690
+(`hours e minutes`, ` minutos e … segundos `), dates by 0x100028a0 (as
+Spanish's), fractions by 0x10001860 (14 pairs from 0x1001d6c4, `meio`,
+`treis quartos`). The cardinal 0x100069f0: `cem`/`cento e ` and
+`duzentos e …` (0x10005de0, ` e` 0x1001dc4c), `mil ` and `e ` after a
+thousand before a round hundred or a lone ten/unit (0x1001dc50), 16
+thousand `dezasseis` (0x1001dc54), `um milhão`/`milhões`, `um
+bilhão`/`bilhões`. The telephone slot starts its string where the caller
+points (`ELQNumConvertRealNumber` passes the end of its string), so the
+port reads it into its own buffer. Checked call by call
+(`portuguese::numeri::tests::portuguese_slot9_trace`, `QQ_PT_NUM_TRACE`,
+`QQ_PT_MT`): 924 calls (Portugal) and 948 (Brazil) on 410 lines of
+cardinals, decimals, ordinals, dates, times, currencies, fractions and
+telephone numbers plus `oracle/bench-pt-text.txt` and the benches: every
+reading, token count and rewritten token identical.
+
+**The voices' stage** (`voicefon/portuguese.rs`, §4e): Amalia
+(table 0x10008720), Eusebio and Gabriela have a FonVidAllofonoVoce that
+does nothing (0x10001210); Fernanda and Felipe (0x100014a0) replace the
+words of their word table (0x10001350, 0x54-byte entries from 0x1000b000
+to the end marker 0x100086c4 / 0x100086bc, the code Grace's port shares)
+and adjust phones. FonVidMetaFonema: Amalia the default, Eusebio the
+default then its Analisi2Sintesi map, Gabriela and Felipe a voiced id
+(0x28) for s before a voiced consonant, Felipe and Fernanda id 0x33 for
+the tapped r (0x200018d2).
+
+Results (`QQ_NO_LEXICON=1`), before (the built-in rules) → after:
+`oracle/bench-pt-pt.txt` Amalia 39.4% → **100%** of sounds, Eusebio →
+**100%**; `bench-pt-br.txt` Fernanda 49.3% → **100%**, Felipe and
+Gabriela **100%**; half-sounds picked 100% and output samples 100%
+identical for all five. `oracle/bench-pt-text.txt` transcriptions 30 of
+30 identical for both variants. Held-out words (FON only, every 2nd of
+LibreOffice `pt_PT.dic`, every 12th of `pt_BR.dic`, 20 000 each):
+Portugal 19 986 (99.93%), Brazil 19 999 (99.995%); the rest are
+all-capital acronyms the engine spells and Brazil's `bei` (a
+`\{spell=yes` abbreviation) (§11).
+
 ## 4h. The text filters, pauses and tags (LTTS7Util.dll, LoqTTS7.dll; `lang/textfilter.rs`, `lang/common.rs`)
 
 **Where.** LesRun 0x10035b20 calls 0x100356e0, which applies the
@@ -1092,6 +1176,451 @@ lists before/after each filter and every `T` text LesRun hands the
 sentence loop (call 0x10035cf8 → 0x10034110). `QQ_TRACE_LES=1` prints
 quoquendo's records after each LES stage in the same `W` format as
 `LOQ_TRACE_LES`.
+
+## 4i. Dutch FON, ported from LTTS7Dutch.dll (`lang/dutch/`)
+
+The export `Dutch` (0x10001790) accepts a descriptor whose `Language`
+list (split on `,;` 0x10012874) has `dutch` and hands the engine a table
+of 22 `{name, function}` pairs at **0x100122a0**: GetVersion 0x100016e0
+(7.13.2), ELQGetPhonemes 0x10001010 (table 0x10012138, `{entries, u16
+count}`, entries `{symbol, code}`), ELQGetGraphemes 0x10001000 (0x10011670:
+8 bytes per character, lower, upper, flags at +4 as Greek's),
+ELQLanguageLoadReadOnlyData 0x10001100, LesGetAbbreviazioni 0x10001620,
+LesGetDefaultCurrency 0x10004cc0, LesNormalizzaAccento 0x10004c90
+(`` ` `` `'` 0x92 0xb4 → `'`), LesPronunciabile 0x10003780, LesIniNumeri
+0x10006ef0, LesAnalizza 0x10007850, LesGetSymbolName 0x10003550,
+LesGradiAccentuali 0x100071b0, LesElaboraParola 0x100074c0, FonTrasParola
+0x10008420, FonTrasConfini 0x100089f0, FonAllofonoLingua 0x10009980. No
+LesAccenta (the engine's slot stays empty), no LesConfiniProsodici nor
+LesSetModalitaFrase (the engine's 0x100409c0, 0x100350e0), no native
+encoding (Windows-1252). The loader reads `Dutch.dbl` (3 305 rows) with
+`SELECT grafemica, fonetica FROM lessico` and the abbreviations (`…
+WHERE abbreviazione!="" ORDER BY abbreviazione COLLATE NOCASE DESC`); the
+FON channel (0x10006f40) opens LTTS7GPR.dll's converter on `Dutch.gpr`
+(43 letters, no multi-letter graphemes, 87 classes; `gpr.rs`).
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesPronunciabile | 0x100035c0 | readable with `'` or an accented letter; with the char flag not otherwise; all capitals: 2 letters never, 3 only V C V or C V C, 4 not when 3 consonants follow at most one vowel; else when it has a vowel (0x10003590); 0x3f characters looked at | — |
+| LesGetSymbolName | 0x100030b0 (character in CL, mode in AL) | the switch's targets read as code: a `test al,al; je` target names the character only in mode ≠ 0, the name is the `mov eax, imm32` string | index table 0x10003450, jumps 0x10003338 |
+| LesElaboraParola | 0x100074c0 | a readable word (or spell flag, or an expansion's) one record (0x17, 200, 200), or one per compound part (0x10007ce0, ≤ 10, parts but the last boundary 4, lower case); else each character's name (mode 1, through LesNormalizzaAccento) a record (0x15, 0x83/last 0x84, 9) | — |
+| compound splitter | 0x10007930 | the word lower-cased (≤ 63); none if the list has it whole or shorter than 6; from the left part, the first cut leaving ≥ 4 letters each side whose right part the list has (or, once one was found, the right part without `en`/`er`/`s`/`n`, 0x10007870 — a buffer only overwritten when an ending comes off); complete when the left part (or it without its ending) is in the list, else it goes on in the left part | `ELQSearchCompactString` flag 1 over 0x848d2 bytes at 0x100148c8 (`aagje`…) |
+| LesAnalizza | 0x100077d0 | records 0x17, 0x15 with sub 200, or sub `z`: `strcmp` binary search (0x10007770) in 0x11b `{word, class, sub, info}` | 0x100991a0 |
+| LesGradiAccentuali | 0x100071b0 | punctuation 0xf; unset grade (0xe): 3 for `z`/`y` after 0x82 and `z`; 2 after a compound part (boundary 4); 3 for a one-syllable (0x10007090: one vowel, `j`/`w` + vowel, or one of `ee ie oo aa uu eu ui ou` 0x100140e8) function word (0x19 0x1e 0x18 0x20 0x21 0x16 0x22 0x1f 0x2e) before boundary 0–3, 6, 7, 0x16, for sub 0x83, an elided word, and `is` (0x10013f94) before those boundaries; else 0 | — |
+| FonTrasParola | 0x10008420 | exactly one dictionary row (`ELQDBTableFind`) with a non-empty `fonetica`: its symbols (0x10007f10: split at ` `/`-`, ≤ 5 characters; 0x10007e80); `het` `van` `een` `eens` (0x10014644 0x10012894 0x1001473c 0x10014734) fixed codes, full vowel after a pause/sentence-end boundary (0x0a 0x08 0x0e 0x0c 0x0d 0x0b 0x0f–0x14), `het` first in a chunk `Ou t`; `eff`/`emm` (grade 3) `E f`/`E m`; else the word with à á ì í ò ó ù ú ý plain (0x10007da0 → 0x10001900) through `ELQGPRRun`, then stress: several stressed vowels (0x100083e0) all unstressed (0x10007fe0) and the first vowel stressed (0x100081e0, schwa → `` `E ``), none stressed the first one unless grade 2/3; grade 3 none, grade 2 none unless after a pause/sentence end | — |
+| FonTrasConfini | 0x100089f0 | the list's last phone devoiced (z Gx g Zg d v b); with ≥ 2 phones a final stop before an obstruent/nasal/affricate unreleased (`Hut Huk Hup` not before b d; `Hud Hub`), `R` after a vowel (not schwa) before a consonant or pause `HEhR`; a glide between vowels (`Hj` front, `V` back rounded, `Hy` front rounded); along the word: fricative after a voiceless obstruent (`Gx` → `x`), t k p before b d `Hut Huk`/voiced, n/m before velars/labiodentals `N`/`M`, s z n t d before `j` palatal (the j gone), l before a consonant or at the end `Lh`, schwa R C `HEhR`, x R `HRB`, `-en`/`-ens` schwa `HEh)` (n dropped), `negenen`/`zevenen` (0x10099aac 0x10099aa4), t between obstruents dropped, stops before obstruents/nasals unreleased | — |
+| FonAllofonoLingua | 0x10009980 | v/z devoiced after a voiceless obstruent in a compound's later part; a glottal stop `Hg` (element kind byte a stale local, 0xee) before a stressed vowel after `a`, schwa or another word (a word-final `R` then `HEhR`), before a vowel starting a compound part, and before a vowel after a word ending in `a`/schwa; `Aau` → `Oau`; under `\SAMPA=` (0x10099ab4) `Ah` → `Ou`, a schwa's n dropped | — |
+
+Checked call by call (`lang::dutch::trace::dutch_trace`, the `.les`
+trace of `LOQ_LES_DLL=LTTS7Dutch.dll LOQ_LES_TABLE=100122a0 LOQ_LES_N=22`):
+on the bench and on 20 000 held-out words (`oracle/words/nl.txt`, every
+7th alphabetic word of LibreOffice `nl_NL/nl_NL.dic`), LesAnalizza, the
+engine's ConfiniProsodici, LesGradiAccentuali, FonTrasParola (25 921
+calls), each chunk's list after FonTrasParola + FonTrasConfini and
+FonAllofonoLingua give the original's records and codes for **every**
+call. Whole transcriptions (`QQ_NO_LEXICON=1`): held-out words 19 998 →
+**20 000 of 20 000** once common's `\spell=yes` tags (§4h) spell the
+dictionary abbreviations expanding to `\spell=yes cda`/`kro`; bench
+`oracle/bench-nl.txt` (Willem) 37.5% → **100%** of sounds, CAT **100%**,
+output samples **100%** identical; `oracle/bench-nl-text.txt` (30
+lines of numbers, dates, money, abbreviations) **100%** of sounds (§11).
+
+**Dutch numbers** (`dutch/numeri.rs`). The German template (§4):
+`LesIniNumeri` 0x10006ef0 fills slots 0 0x10002820 (`{id, char*}` × 0x53 at
+0x10013810), 1 0x100027a0 (area codes 0x10013390 × 0xf7, `ELQSearchString`
+flag 2), 2 0x10006220 (cardinal: German's but hundreds 0x10005400 `honderd
+`/`x honderd `, thousands `duizend` + separator), 3 0x100061e0, 4
+0x100027f0, 5 0x10004fd0 (8 × `{code, unit, units, cent, cents}` at
+0x10013770; its separators go to the empty tail of the output, so both
+are always added), 6 0x10006d30, 7 0x10002850 (two-digit years from 80,
+from 0 after `/`), 9 0x10006820: mode 0xc for a currency sign next to the
+number or `euro dollars dollar eur usd USD JPY jpy gbp GBP yen EUR`
+(`livre` with `sterling` three tokens on) after it; recognizers in
+0x10005bd0's order: date 0x100037b0 (slot 7; else 0x10002e00: a day
+before a month name 0x10013aa8 and a year after it — the tokens used
+counted to them —, a year before `voor`, after `in jaar voor vanaf tot na
+uit van sinds sedert` 0x10013ba0 or a month name), time 0x10003960,
+ordinal 0x10003b00 (mode 4 only), currency 0x10003bf0 (the name after the
+number emptied and used), real 0x10004110, fraction 0x100043c0, phone
+0x100044e0, integer 0x100048f0, code 0x10004720; renderer 0x10005cb0
+(ordinal 0x100020a0: 1–20 from a table, else cardinal + `ste`; date
+0x10005aa0: day cardinal, month word 0x51+m, year 0x10005710 —
+`negentien honderd negentig`, `twee duizend vier en twintig`, below 1000
+the first two digits only; time 0x10004cd0 ` uur `; money 0x100028c0: two
+decimals after the units and currency as a bare cardinal, `en` + digit +
+`cent` below ten, cents alone for `0,xx`; fractions 0x10001a90, `1/10`
+read `eenelfde`, `2/3` nothing). Replayed on 389 distinct traced slot-9
+calls (`dutch::numeri::tests::dutch_slot9_trace`, fixture
+`dutch/numeri.les`).
+
+**Willem's stage** (`voicefon/willem.rs`, §4e; table 0x100099b0):
+FonVidAllofonoVoce 0x10001210 by code, in words not continuing a compound:
+`singapore` (`HEhR` → `R HEh`, g dropped), `conventionele` (`Hut` before
+`$`), `johnson` (j `Dg`, o `Ou`, h dropped), `justin`, `materiaal`/
+`materiële`/`materieel` (e dropped), `interessant` (schwa dropped),
+`british` (i), the `initia…` words (i → `I` before `n i Hut s`/`$`),
+`milieu` (schwa), `graham` (h → `I`); FonVidMetaFonema 0x100021a0: `Gx`
+id 0x4d, `Hj` 0x35, `Hud` 0x3a, else by code (0x10001d30), then
+Analisi2Sintesi 0x10002110 (0x36/0x5f → 0x35, 0x3e → 0x3d, 0x41 → 0x3a,
+0x42 → 0x40, 0x49 → 0x48, 0x4c → 0x4b, 0x4e/0x60 → 0x4d, 0x4f → 0x50, 0x5e
+→ 0x5c). Its words on `bench-nl` are 100% identical to the original's
+events.
+
+## 4j. Swedish FON, ported from LTTS7Swedish.dll (`lang/swedish/`)
+
+The module's one export `Swedish` (0x1000a540) checks that the `.lde`'s
+`Language` names `swedish` and hands the engine a table of 26 `{name,
+function}` pairs at **0x10046ec0**: GetVersion 0x1000a490, ELQGetGraphemes
+0x10009d00 (characters 0x100462d8, 8 bytes: lower, upper, flags 1 letter,
+4 digit, 8 consonant, 0x10 vowel, 0x20 upper, 0x40 lower, 0x80 accented,
+0x100 punctuation), ELQGetPhonemes 0x10009d10 (phone symbols 0x10046da8,
+90 entries `{symbol, code}`; accent 1 `0x1xxxx`, accent 2 `0x3xxxx`),
+ELQLanguageLoadReadOnlyData 0x10009f40 (the analyser's grammar descriptor;
+the abbreviations by `SELECT grafemica, fonetica, abbreviazione` of the
+pack's `Swedish.dbl`, 116 rows), LesGetAbbreviazioni 0x1000a3d0 /
+LesGetNumeroAbbreviazioni 0x1000a380, LesNormalizzaAccento 0x10005040,
+LesPronunciabile 0x10003bd0, LesAccenta 0x10001ad0, LesIniNumeri
+0x10007070, LesAnalizza 0x10009ce0, LesGetSymbolName 0x10003920,
+LesGradiAccentuali 0x10007180, LesElaboraParola 0x10007e30, LesWriteCateg
+0x10007130, LesAlloc/Free/ResetLanguageLexInfo 0x10009e30 / 0x10009eb0 /
+0x10009f30 (0x40 slots of 6 words per word, `Word::data`),
+LesConfiniProsodici 0x10008620, FonGetSamples 0x10009d20, FonTrasParola
+0x1000ee40, FonAllofonoLingua 0x1000e560.
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesElaboraParola → analyser | 0x10007e30 → 0x10009770, 0x10009500, 0x10009440, 0x10008ba0, 0x10008b20, 0x100092e0, 0x10009200, 0x10008eb0, 0x10008da0, 0x1000a6b0 | every word is split into morphemes by a grammar walked from the word's end: each transition matches one morpheme of its sorted list (stems, prefixes, derivational and inflectional suffixes, compound connectors); the two best complete analyses (at most 10 morphemes) are kept | grammar 0x100b9b58 (0x1ba nodes); categories 0x1004a028 (5), features 0x1004a360 (0x53), groups 0x1004a5f8 (0x23); vowels 0x100180ac |
+| LesAnalizza | 0x10009ce0 → 0x10009a10 | class, subclass and features of each word from its analyses (`STEM`, `DERIV_SUFFIX`, `FLEX_SUFFIX`, `PREFIX`) | — |
+| LesAccenta | 0x10001ad0 → 0x10001100, 0x10001890 | the stressed vowel and its accent (1 or 2) per morpheme: stress rules on the stem and suffix groups (`FLEX GRP_f_last_1`, `f_last_1_or` use the analysis count), compounds stress their first part with accent 2 | — |
+| LesConfiniProsodici | 0x10008620 → 0x10008190, 0x10007390, 0x100074c0, 0x10007860, 0x10007680 | group kinds per word by a state machine on the classes, the boundaries, locutions kept together (read from the code's immediates), `pippo` placeholders | locutions in 0x10007885–0x10007b67: 5 lists (offset, count, length) (0xc, 2, 6), (0x14, 5, 5), (0x50, 0x16, 4), (0xa8, 0x24, 3), (0x28, 10, 2); 0x100076a5 |
+| LesGradiAccentuali | 0x10007180 | stress grades: punctuation, function words unstressed | — |
+| LesNormalizzaAccento, LesPronunciabile, LesGetSymbolName | 0x10005040, 0x10003bd0 → 0x100039d0, 0x10003920 → 0x10003460 | accents folded; pronounceable words (a vowel, no impossible cluster: 2- and 3-letter lists); letter names from the switch (index bytes 0x10003814, jumps 0x100036f4), digits from the tens/units lists | spell lists 0x10017530 (8), 0x10017550 (0xe); tens 0x10016214 (8), units 0x10016234 (9) |
+| FonTrasParola | 0x1000ee40 → 0x1000a960 | the word's spelling rebuilt from its analysis (each morpheme's stress spelling, +0xc, when it has one), letter by letter into phone codes; morpheme boundaries steer vowel length and clusters; accented vowels take accent 1 or 2; `jag`, `av`, `trettio`… by word | vowels 0x10047458, consonants 0x10047464, front vowels 0x10047478; connector 0x100462c0; morpheme kinds STEM 0x10016500, DERIV 0x100163a0, PREFIX 0x10016274, FLEX 0x1001630c; JAG 0x1001afd0, AV 0x10028e3c, TRETTIO 0x100161dc |
+| FonAllofonoLingua | 0x1000e560 | an r merges into a following dental (0x19a2 + 0x1952 → 0x2001752 RT; RTS 0x20017f2, RTJ 0x20017e2, RN 0x20017c2, RL 0x20016a2) and spreads over following dentals; a few phones of `åkk`, `jag`, `det` deleted (`ELQListDeleteElement`) | åkk 0x1003d8e0, jag 0x1001afd0, för 0x100291c4, det 0x1001b018 |
+
+**Numbers** (`lang/swedish/numeri.rs`). LesIniNumeri fills slots 0–7 and
+9 like German's (§4, German): slot 0 0x10003160 (`{id, text}` pairs at
+0x10017298, 0x53; `""` 0x10016505), slot 1 0x100030e0 (area codes
+0x10016e18, 0xf7, `ELQSearchString` flag 2 by 0x10003060, then
+`ELQNumConvertPhoneNumber` steps 0/1), slot 2 0x10005cf0 (cardinals
+position by position; four digits 1100–1999 read as hundreds by
+0x100063a0, `nittonhundraåttiosju`, `hundra` 0x10016624; words 1–20 and
+tens 0x100056c0, two digits 0x10005af0 tens then units, hundreds
+0x100058e0 ids 0x3a/0x3b; `tusen` 0x47/0x48, `en miljon`/`miljoner`
+0x4a/0x4b, `en miljard`/`miljarder` 0x4d/0x4e; a trailing word 0 ` # `
+removed), slot 3 0x10005cb0, slot 4 0x10003130, slot 5 0x100054b0
+(currencies 0x100171f8, 8 × `{code, unit, units, cent, cents}`, singular
+after `1`, a space before and after), slot 6 0x10006520, slot 7
+0x10003190 (`ELQNumExtractDate`, two-digit years from 80 unless the
+separator is `/`). Slot 9 (0x10006ea0) sets the mode (5/6 → 4 with +0x48
+5/6), orders the recognizers by 0x10005bd0 (the mode's own first:
+1→phone, 2→code, 4→ordinal, 7→time, 9→real, 10→integer, 11→fraction,
+12→money) and renders by 0x10006990. Recognizers: date 0x10003c60
+(outside mode 8 the date order becomes `ymd`; slot 7, else a year range
+0x10003230 `1990-2000` or `1990 - 2000` (dash 0x100177a8; the two tokens
+after it consumed), else a VoiceXML date in mode 8 with order `b`
+0x100179a0), time 0x10003e00 (also `h:mm,dd`), ordinal 0x100040c0 (mode
+4; before `°`/`º` 0x100179b0 / 0x100179ac unless `c` 0x100179a8 follows;
+an apostrophe not before a number; `:a`/`:e` 0x10017860 / 0x10017848,
+consumed, refused when the text has `-/,` 0x100179a4), money 0x10004360
+(a currency sign after or before; no currency names, no forced money
+mode), real 0x100044c0, fraction 0x10004770 (list 0x10002330), phone
+0x10004890, integer 0x10004ca0, code 0x10004ad0 (separators `:/-+`
+0x100179b4). The renderer differs from German's: ordinals only with
++0x48 5/6 (0x10002620: tens and hundreds as cardinals with a space after
+each, `tjugo femte`, appending `0` 0x100177a4; a round ten or a longer
+number ends in `nde` 0x100177a0; 1–20 their own words
+0x10017694–0x1001779c); dates 0x100066e0 (day ordinal, month word
+0x50+m, a year 1100–1999 as hundreds, else an integer and ` # `); year
+ranges 0x100068a0 (`till ` 0x100179c8); times 0x10005110 (separators
+`.,:` 0x100179c4, ` och` 0x100179bc after a non-zero hour, `och`
+0x10017950 before the seconds); fractions 0x10002010
+(0x10017588–0x10017690); money by `ELQNumConvertCurrency` with no
+point/comma swap; slot 6 gets flag 1 only for codes (kind 2).
+
+**Voices.** Annika (`voicefon/annika.rs`, LTTS7Annika.dll table
+0x10009a40): FonVidAllofonoVoce 0x10001210 aspirates stops before a
+stressed vowel and leaves them unreleased before a consonant (labial
+0x1ff2 0x1fe2, velar 0xff2 0xfe2, dental 0x19f2 0x19e2, each with
+0x19a2/0x18a2/0x10c2), FonVidMetaFonema 0x10002140 (→ 0x10001b80, the
+default). Sven (`voicefon/sven.rs`, LTTS7Sven.dll table 0x10009a70):
+FonVidAllofonoVoce 0x10001440 looks each word up in a dictionary
+(0x1000c000 to 0x10009afc; `bort` 0x10009b00, `kanske` 0x10009b08), then
+runs Annika's stop rules; FonVidMetaFonema 0x10002630 maps analysis ids
+to synthesis ones (0x50→0x45, 0x51→0x47, 0x5b→0x57, 0x63/0x64→0x62).
+
+**Checked**: `swedish_trace` (`lang/swedish/trace.rs`, `QQ_SV_TRACE`)
+replays LesAnalizza, LesAccenta, LesGradiAccentuali, LesConfiniProsodici
+and FonTrasParola call by call against `LOQ_TRACE_LES` traces of 20 000
+held-out words, `bench-sv.txt` and `bench-sv-text.txt`: 20 108 / 20 108
+LES calls and 20 590 / 20 590 FonTrasParola calls identical.
+`numeri::tests::replay_slot9` (`QQ_SV_NUM`): 506 / 506 slot-9 calls (0–120,
+big numbers, times, dates, year ranges, ordinals, money, fractions,
+phones). `--fon-list oracle/words/sv.txt` (20 000 Hunspell `sv_SE` words,
+evenly sampled): 99.955%. `bench-sv.txt` and `bench-sv-text.txt`, Annika
+and Sven: FON 100% sounds, CAT 100%, samples 100% identical (before the
+port: FON 42.2%, CAT 99.6% / 99.2%).
+
+## 4k. Danish FON, ported from LTTS7Danish.dll (`lang/danish/`)
+
+The export `Danish` (0x10003120) accepts a descriptor whose `Language`
+list (split on 0x10025b54) has `danish` and hands the engine a table of
+**46** `{name, function}` pairs at **0x100251b8** (LesGetSymbolName
+0x100034c0, LesPronunciabile 0x10004640, LesElaboraParola 0x10004d60,
+LesWriteCateg 0x100046e0, LesAccenta 0x100021c0, LesNormalizzaAccento
+0x100019d0, FonTrasParola 0x1000bc20, FonAllofonoLingua 0x10017400,
+LesConfiniProsodici 0x10005c50, LesAnalizza 0x1000b620,
+LesGradiAccentuali 0x10004730, ELQLanguageLoadReadOnlyData 0x10002aa0,
+LesIsLetter 0x10004fc0, the number hooks LesGetMorphTable 0x100081e0,
+LesGetOrdinalStringTable 0x100081f0, LesGetClassifyTable 0x100081c0,
+LesGetCurrencyTable 0x100081d0, LesClassifyFunc 0x10008420, LesParseData
+0x10008e20, LesReadData 0x100082e0, LesReadFrazione 0x10008200,
+LesReadCodice 0x10007770, LesDoComposed/LesDoOrdinalDay 0x100030a0,
+LesDoAndBetweenTenthsUnits 0x100030b0, LesDoTenthInversion 0x100030d0,
+LesDoYearSplit 0x100030e0, LesDoAndBetweenThousandsHundreds 0x100030f0).
+No LesIniNumeri: numbers go through LoqTTS7.dll's generic number reader
+(not ported, §11). Native encoding 0x4e4 (1252, 0x100024b0); characters
+0x10024200 (8 bytes: lower, upper, flags +4); phones 0x10024de0 → 124
+`{symbol, code}` at 0x10024a00.
+
+**The word analyser.** The module links Loquendo's "WordAnalyzer"
+(`lang/wordanalyzer.rs`, shared with Russian; name table 0x100731f0,
+initAnalyzer 0x1001bbc0 → 0x1001bb40: 0x1ad nodes at 0x10076308, types
+`COMPOUND_CONNECTOR…` 0x1008094c (5), feature pairs 0x10073298 (0x48 × 8),
+attributes 0x10080960 (0xb), values 0x10080990 (0x56), group names
+0x10080cd0 (0x218 = getGroupingCount 0x1001bc30), group details 0x10078790
+(0x18 bytes: +4/+8 the A/B marks, +0xc FA and +0x10 FS stress function,
++0x14 key, +0x16 override entry), override patterns 0x1007d88c, stress
+function names 0x100d9df0; its +0x3c callback 0x1001bb30 returns 0). Its
+lexicon entries carry a respelling after their spelling (`godmorgen` →
+`gom\xe5\xe5n`, `mod` → `mo~d`: `:` long, `~`, `?` stød, `^` `"` stress).
+The loader (0x10002aa0) reads `Danish.dbl`'s `TD_Abbreviations` (NOCASE
+DESC) and `TD_Phonetizations` (`PH_Graphemic, PH_Phonetic`, BINARY ASC;
+one test row in the shipped file).
+
+| function | address | what it does |
+|---|---|---|
+| LesElaboraParola | 0x10004d60 → 0x10004a30 | the token (0xac as `-`) lowered (≤ 63 letters; `xxversionxx` 0x10026070 → 0x10026058) and analysed when mode 0 and readable, spelled, or expanded; else one record per LesGetSymbolName (mode 1) name, 0x15/0x83, the last 0x84. No analysis: split at the first `-` after the first letter, or the letters' names run together (0x100042b0) as 0x15/0x84 when unreadable. Kept: the analyses up to the first with more morphemes than the best (0x100048a0), each morpheme's getMorphemeInfo (0x1001bd60) fields in the LexInfo buffer (`{count, 10 × 0x194}`), a stem's group overridden from the next morpheme's key (0x10004930), an inflection after it ungrouped |
+| LesPronunciabile | 0x10004640 → 0x10004420 | V/C pattern: no vowel, one vowel not in `aiAI`, ≥ 5 in a row, `^CC$` 0x10025e80, `^CCC$` 0x10025e78, `^CCCCC`, `CCCCC$` (≤ 7 letters) unreadable; > 6 letters readable |
+| LesGetSymbolName | 0x100034c0 | marked respellings of letters and symbols (strings 0x10025b64…0x10025e64, short ones as code immediates); punctuation only with the char argument set |
+| LesNormalizzaAccento | 0x100019d0 | drops `` ` `` 0x92 `'` 0xb4 |
+| LesAnalizza | 0x1000b620 → 0x10009140, 0x10009650, 0x1000b460 | phonetization rows; the solution by the neighbours' parts of speech (patterns 0x10026f94…0x10026fd4); class 0x1000acc0, info 0x1000ae60, sub 0x1000b2a0 from the morphemes' features |
+| LesAccenta | 0x100021c0 → 0x10001730, 0x100010f0, 0x10001380, 0x100020d0, 0x10001570, 0x10001d30, 0x10001bf0, 0x10001ab0 | per morpheme (LexInfo +0xc, 0x20 bytes: marks A/B `{vowel, kind 1 ^ / 2 " / 3 ^^, stød 1 on it / 2 on the next consonant}`) the groups' FA functions (FA0, FA1, FACancAPStem, FAlig, FAor, FAShiftSuStemAPB1) then FS (FSCanc, FSCancSillabaAdiacente, FSIns, FSInsPoliAccB1), on the morpheme or its stem (a suffix's nearest stem before, a prefix's next); a word without a solution stressed on the vowel before its first accented letter (0x10001030) or its first; only the first main stress stays (0x10001570), none → grade 3 unless alone between punctuation; the respelling (+0x250) with per-letter flags (+0x14c: morpheme, type, 0x10 compound start, 0x20 `-`, 0x40/0x80 first/last, 0x100 `^`, 0x200 `^^`, 0x400 `"`, 0x800 `?`, 0x1000 `~`, 0x2000 `:`, 0x4000 respelled) |
+| LesConfiniProsodici | 0x10005c50 → 0x10005780, 0x100054d0, 0x10005300, 0x10005000, 0x10005130 | group kinds by a class state machine, fixed phrases 0x10026008…0x1002601c, pause 0x0a, punctuation boundaries |
+| LesGradiAccentuali | 0x10004730 | punctuation 0x0f, 0x0e → 0 |
+| FonTrasParola | 0x1000bc20 (loop 0x1000bcf0) | per letter of the marked respelling: punctuation 2 (`#` `,`) / 3; doubled consonants once (not `rr` `cc`); respelled letters (0x4000), `£`, 0x80 by the switch at 0x100131bb, the others by the spelling rules at 0x1000bfa6; mark tests 0x1000b790…0x1000b850, stressed vowel ahead 0x1000b8b0 (after a preposition, in the next word: the sentence's records); phonetization rows parsed by 0x1000bb50/0x1000bac0; sets vowels 0x10027108, consonants 0x10027250, back 0x1002714c, front 0x10027164; morphs `inde` `agtig` `ig` `isk` `be` `af` `et` `und` (0x100271b0…0x10027204) |
+| FonAllofonoLingua | 0x10017400 | ~70 ordered phone-sequence rules over the chunk list (first match wins); `\SAMPA=` (0x10027280) tags handled by the tail 0x1001a093 |
+
+**Frida** (`voicefon/frida.rs`; export 0x100011a0, table 0x10009c28):
+FonVidAllofonoVoce 0x10001210 (`20001ff2`/`20000ff2`/`200019f2` →
+`5ff2`/`4ff2`/`59f2` before a 0x1e2 consonant; `a` → `Ae` in
+`dansk`/`danmark` 0x10009cb4/0x10009cc0; `har` 0x10009cbc loses its r;
+medial `501` dropped before `n` → `219c2`), FonVidMetaFonema 0x10001c10
+(0x9f2 after a `w`/`p` phone merges into its stød id, 0x10001ba0).
+
+**Checked** (`QQ_DA_TRACE=<file.les>`, traces of `LOQ_LES_DA=1`,
+`oracle/lestrace.h`): bench (`oracle/bench-da.txt`) and 20 000 held-out
+words (`oracle/words/da.txt`, LibreOffice `da_DK/da_DK.dic` evenly
+sampled): LesElaboraParola 174/174 and 19 920/19 920 analysed words,
+LesAnalizza, LesConfiniProsodici, LesGradiAccentuali 46/46 and 19 994 /
+19 994 calls, LesAccenta 174/174 and 20 106/20 106 records,
+FonTrasParola 174/174 and 20 106/20 106, FonAllofonoLingua 86/86 and
+39 988/39 988 chunks; Frida's stage explains every event-2/event-3
+difference of the bench. Whole transcriptions (`QQ_NO_LEXICON=1`): held-out
+words 19 994 of 20 000 (the 6 left are Greek letters outside Windows-1252,
+empty in both); bench `oracle/bench-da.txt` FON 27.2% → **88.8%** (the 10
+sentences without numbers identical), CAT 100%, samples 100% identical;
+`oracle/bench-da-text.txt` 69.2% (numbers, §11).
+
+## 4l. Polish FON, ported from LTTS7Polish.dll (`lang/polish/`)
+
+The export `Polish` (0x1000e050) accepts a descriptor whose `Language`
+list has `polish` and hands the engine a table of 30 `{name, function}`
+pairs at **0x10022d78**: GetVersion 0x1000df70 (7.13.0),
+ELQGetLanguageNativeEncoding and …DefaultAnsiEncoding 0x1000e020
+(**0x4e2 = 1250**), …IsoEncoding 0x1000e030 (0x6fb0 = ISO-8859-2),
+…OemEncoding 0x1000e040 (0x354 = 852), ELQGetGraphemes 0x1000d890
+(0x100222a0: 8 bytes per character, lower, upper, flags at +4 as Greek's),
+ELQGetPhonemes 0x1000d8a0 (0x10022c78, `{entries, u16 count}`, 59 entries
+`{symbol, code}`), ELQLanguageLoadReadOnlyData 0x1000d990,
+LesGetAbbreviazioni 0x1000deb0 / LesGetNumeroAbbreviazioni 0x1000de60,
+LesGetDefaultCurrency 0x1000a5a0, LesNormalizzaAccento 0x100088c0,
+LesAccenta 0x10001280, LesPronunciabile 0x10008f30, LesIniNumeri
+0x1000c450, LesAnalizza 0x1000e640, LesGetSymbolName 0x10008d90,
+LesGradiAccentuali 0x1000c510, LesConfiniProsodici 0x1000d470,
+FonTrasParola 0x10010f60, FonTrasConfini 0x1000e9e0, FonAllofonoLingua
+0x100105a0, FonGetSamples 0x1000d8b0, LesIsPartOfAcronym 0x1000cdb0 (flag
+2), LesIsLetter 0x1000cdd0 (flag 1), LesIsUpper 0x1000cde0 (flag 0x20). No
+LesElaboraParola, LesSetModalitaFrase nor LesGestisciMaiuscole: the
+engine's own. The text is Windows-1250 (`Les::code_page`, `to_8bit_cp`
+as Greek's 1253). The loader 0x1000d990 reads `Polish.dbl` (353 rows) with
+`SELECT grafemica, fonetica FROM lessico` and the 145 abbreviations (`…
+WHERE abbreviazione!="" ORDER BY abbreviazione COLLATE NOCASE DESC`); the
+rows are searched by LTTS7Util's `ELQDBTableFind` (a binary search with
+`ELQstricmp`, A–Z folded, then back over equal rows).
+
+The module writes stress into the spelling: LesAccenta gives the
+stressed vowel its accented letter (0x10001050: `a` `á`, `ą` `ã`, `ę`
+`ě`, `o` `ô`, `ó`/`u` `ú`, `e` `é`, `i` `í`, `y` `ý`), and the later
+stages read those letters as the stressed vowels (0x1000e660 takes them
+back off).
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesAnalizza | 0x1000e640 | 0x1000e470: a record of class 0x17, a proper noun (0x15, sub 0xc8) or of subclass `z` found in the closed-class words (binary search by `strcmp`) takes their class, subclass, information and grade; 0x1000e600: a record still 0x17 is classed by its reversed text in the ending table (0x1000e500 → 0x1000e3d0, searched as Italian's): 1 adjective 0x29, 2 adverb 0x33, 3 verb 0x2a sub 0x8b, 5 homograph 0x2d, 6 verb sub 0x88, 7 verb, else 0x2f | words 0x1003d960 (0x201 × `{word, class, sub, info, grade}`); endings 0x1003b2f0 (0x334 × 12 bytes) |
+| LesAccenta | 0x10001280 | every record not elided and without an accented letter (0x10001240) gets one vowel marked (0x100011c0, counted from the end, an `i` before a vowel not counted, 0x10001000): the word lists' vowel; `arcy…` of 3 vowels, `eks…` of 2, `wice…` of 3 the last; a verb ending `byśmy`/`byście` the 4th from the end, `śmy` `ście` `bym` `byś` (and `by` after `y`) the 3rd; `eś`, `set`, `kroć` the 3rd; a verb after `nie`/`nié` the 2nd, or none for one vowel (the `nie` then grade 0); else the last of one vowel, the 2nd from the end of more. A text over 63 letters stops the function | lists (`ELQSearchString` flag 0x11): 0x1001e608 × 5 (1st from the end), 0x1001e620 × 0x163 (3rd), 0x1001ebb0 × 0x37 (4th), 0x1001ec90 × 0x29 (2nd); `nie` 0x1001ed3c, `nié` 0x1001ed38 |
+| LesConfiniProsodici | 0x1000d470 | 0x1000ce00 groups the words by a state machine over the classes (`*` `+` `,` verbs, non-finite subclasses 0x88 0x8e 0x89; `a` `al` `de` `del` 0x10020f64 0x10021dc0 0x10020f50 0x10021dbc keep a group open before a verb), 0x1000cb60 / 0x1000c980 keep multi-word expressions together (texts joined by spaces, unaccented, 0x1000c920); then by group type the boundary 5 at a phrase end (0x0a on the phrase before when it may break, 0x1000c780, and is long, 0x1000c650: more than 3 words and 14 letters on both sides), 9, 1, 1/3 for function words / others, punctuation as the engine's own (`common::confini_default`), class `7` 0x16; then subclass `y`/0x84 7, `z`/0x83 6, `{` 8. 0x1000c780 keeps `môże` (0x10021d8c) with a verb | expressions 4/3/2 words 0x10021adc × 4, 0x10021af0 × 0x27, 0x10021b90 × 0x7f; 3/2/1 0x10021ab0 × 1, 0x10021ab4 × 1, 0x10021ab8 × 9 |
+| LesGradiAccentuali | 0x1000c510 | punctuation and class `7` 0x0f; a word of grade 3 (from the closed-class words) after a boundary 0–3, 5–7 or 0x16 keeps it when it has at most 7 letters; subclass 0x83 3; else 0 | — |
+| LesNormalizzaAccento | 0x100088c0 | `` ` `` `'` `’` `´` → `'` | — |
+| LesPronunciabile | 0x10008f30 → 0x10008e00 | with `` ` `` or `'`, an accented letter or a vowel other than `aeiouy` it reads; `z`, `w` alone read (0x100210dc, 0x100210d8); else when it has a vowel (0x10008dd0) | — |
+| LesGetSymbolName | 0x10008d90 → 0x100088f0 | the character's signed value + 0x80 indexes the bytes at 0x10008c90 (above 0xfe the default), which index the jump table 0x10008b70; each case loads its name (`mov eax, name`), the names given only in mode ≠ 0 behind `test al, al`; the default 0x10008b67 `""` | — |
+| FonTrasParola | 0x10010f60 | the word without stress marks (0x1000e780) in the dictionary: a `fonetica` other than `""` (0x1001efd7) converted symbol by symbol (0x1000e890: symbols split at space or `-`, at most 5 characters; 0x1000e800 looks each up in the phone table, unknown 0x10); else the word (stress marks off only at grade 3, 0x1000e960) may start with a spelling of the word-start table (0x10010e20 flag 2, a prefix), whose phonetic string gives the first codes; every other letter by its left and right context (`strncmp` lists of the code's own literals): voicing and devoicing within the word, `rz` `sz` `cz` `ch` `dz` `dź` `dż`, `i` before a vowel softening the consonant, nasal vowels before fricatives and stops, `n` before velars, final devoicing. Punctuation `"` `'` nothing, `#` `,` 0x13, other 0x17. The `dż` + `żmy` test compares 2 characters only (`żm`) | word starts 0x1003f098 (0x29 × `{spelling, phonetic}`); `ELQSearchString` flag 0x12 (an entry starting the word): `s` + `i` read 0x1952 0x1003efb4 × 0xe, `rz` read r + z 0x1003eff0 × 0xc, `u` glide 0x1003ef98 × 6 |
+| FonTrasConfini | 0x1000e9e0 | before the incoming word's codes (first code `next[0]`, its text, the word before's text and boundary +0x11; `""`/0x0f for a chunk's first) the list's last phone is recoded: after `lúb` 0x1ff2 → 0x1fe2, `w wbréw przéciw naprzéciw` 0x1d52 → 0x1d42, `ôd pôd spôd przéd nád znád sprzéd wśrúd pônad` 0x1bf2 → 0x1be2, `béz przéz pôprzez z` 0x1952 → 0x1942 (also before a voiced obstruent), `áż íż gdziéż czýż gdýż níż` 0x2001752 → 0x2001742, each before a sonorant (`m n r l ł j`, not `rz`) or a vowel; 0x100002e1 + 0x101003e1 → + 0x1fc2 before 0x1ff2/0x1fe2, → one 0x2e1 before 0x401ec2/0x1003e1; voiceless → voiced before a voiced obstruent (`& 3 == 2`, bit 0x10 clear, not a sonorant): 0x1ff2 0x1d52 0x1912 0x1001712 0x1bf2 0x1952 0x1001752 0xff2 0x2001752 0x2001712; 0x19c2 → 0xfc2 before a velar; 0xff2 → 0x200ff2 before 0x7c1/0x10c2; 0x18a2 → 0x2018a2 before `i`/`í` + a consonant; a word ending `j` + one letter (0x7c1) before a pause gets a second 0x7c1 (`ELQListAddElementAfter`, kind 0x69) | lists 0x1003f024 × 1, 0x1003f02c × 4, 0x1003f040 × 9, 0x1003f068 × 4, 0x1003f07c × 6 (flag 0x11) |
+| FonAllofonoLingua | 0x100105a0 | a voiceless obstruent before 0x1942/0x1d42 and then a voiced obstruent or a vowel voiced (0x1ff2 0x1952 0xff2 0x1912 0x1bf2 0x1d52 0x2001712 0x1001712 0x1001752 0x2001752 → the voiced code); 0x1942 0x1001742 0x2001742 devoiced before a voiceless obstruent; 0x1be2 + 0x1be2 of the next word: a 0x501 between them (`ELQListFindElement` + `ELQListAddElementAfter`). Then only for a word whose tag holds `\SAMPA=` (0x1003f238): glides and palatals (0x401ec2 → 0x1003e1, 0x101003e1 after a marked vowel, 0x1fc2/0x19c2 → 0x1dc2, 0x11c2 → 0x101007c1, 0x19c2 → 0x2019c2/0x101003e1, 0xfe2/0xff2 → 0x200fe2/0x200ff2, 0x10c2 deleted after 0x200ff2/0x200fe2 or → 0x1007c1). An added entry's kind is the stack's byte (the local element sets word and code only): 0xe3 in every trace | — |
+
+**Numbers** (`polish/numeri.rs`). `LesIniNumeri` 0x1000c450 fills slots 0
+0x10008690 (word ids → strings, `{id, word}` 0x1001f078 × 0x53, `""`
+0x1001efd7 else), 1 0x10008610 (phone: area codes 0x1001f020 × 2,
+`0801`/`0800`, `ELQSearchString` mode 2 a prefix, then
+`ELQNumConvertPhoneNumber` steps 0/1), 2 0x1000b790 (cardinal), 3
+0x1000b750 (one digit: 0 id 0xf, 1 id 0x10, else 0x1000aad0), 4
+0x10008660, 5 0x1000a8c0 (currency names 0x1001f028, 4 rows `{symbol,
+unit, units, cent, cents}` for `$ € $. €.`; `"1"` 0x1002055c the
+singular), 6 0x1000c290 (decimals), 7 0x100086c0 (date parts), 9
+0x1000bf00. Slot 9 has Greek's skeleton but reads the neighbouring
+tokens by raw index (tags included): reading types 5/6 → mode 4 with
++0x48 = 5/6; mode 0xc for a currency symbol next or before or a next
+`euro` 0x1001e578 / `EUR` 0x10021118 / `eur` 0x10021114 (`€` 0x1001efe8)
+or `dolar` 0x1001f004 / `dolary` 0x1001effc / `USD` 0x10021110 / `usd`
+0x1002110c (`$` 0x1001f00c); nine recognizers 0x1000b150 in order (date
+0x10008f50, time 0x100090b0, ordinal 0x100094d0 with `°` 0x10021108 /
+`º` 0x10021104 not before `c` 0x10021100, currency 0x10009680, type 9
+0x10009a20, fraction 0x10009cd0, phone 0x10009df0, real 0x1000a200, code
+0x1000a030), then the renderer 0x1000b230 (as Greek's except kind 4 →
+0x10001cc0, 7 → 0x1000a5b0, 8 → 0x10008730, 0xb → 0x100016b0, 0xc swaps
+`,`/`.` for `ELQNumConvertCurrency`). Cardinal 0x1000b790: hundreds
+0x1000acf0, tens and units 0x1000aad0 (a code switch), two digits
+0x1000af40; after a group digit 2–4 `miliardy ` 0x1002114c, ` miliony `
+0x10021140, ` tysiące ` 0x10021134 unless a tens digit 1 was read
+anywhere before in the number (the flag is never reset: `12 002 000 000`
+says `milionów`, as the original); a trailing word 0 (`" # "`) is cut.
+Ordinals: 0x10001cc0 (masculine/feminine) matches the text exactly
+against `"0"`…`"100"` in its string blocks, read by walking consecutive
+NUL-padded strings from 100 down (masculine `{word, "n"}` 0x1001fc04,
+202 strings; feminine 0x1001f42c, 101), else a cardinal; 0x100065a0
+(genitive, 0x1002056c, 100 strings 100…1) after stripping leading zeros.
+Time 0x1000a5b0: the hour a feminine ordinal, minutes and seconds
+cardinals joined by word 0xd, ` sekundy ` word 0x5d after seconds (`h`
+0x100210fc, `:` 0x100210f8). Date 0x10008730: masculine ordinal day,
+month word 0x50 + m, `ltoa(y / 100 * 100)` as a cardinal, then the
+genitive of `y % 100` (VXML order 0x100210f4). Fractions 0x100016b0 (14
+pairs, keys 0x1001f428…0x1001f320, readings 0x1001f41c…0x1001f310;
+0x100019d0 tests membership). `:/-+` 0x10021120, `.,:` 0x10021130.
+
+**Voices** (`voicefon/polish.rs`). Krzysztof (LTTS7Krzysztof.dll, table
+0x100087b0): FonVidAllofonoVoce 0x10001210 does nothing, FonVidMetaFonema
+0x100015c0 (→ 0x10001220) the default. Zosia (LTTS7Zosia.dll, table
+0x100087b8): FonVidAllofonoVoce 0x10001060 adds a 0x501 after a 0x1be2
+followed in its word by 0x1be2/0x1001702/0x1902, and after a 0xfe2
+followed by the next word's 0x1be2 or in its word by those three (not
+before the run 0x1001702 0x6c1 0x107c1 0x2019c2 0x1001702 0x6c1 0x1007c1);
+FonVidMetaFonema 0x10001590 (→ 0x100011f0) the default. Both libraries'
+FonVidAllofonoAnalisi (0x10001290, 0x10001260) run only in the engine's
+analysis mode.
+
+**Checked** (`lang::polish::trace::polish_trace`, `QQ_PL_TRACE=<file.les>`,
+traces of `LOQ_LES_DLL=LTTS7Polish.dll LOQ_LES_TABLE=10022d78
+LOQ_LES_N=30`): on the bench, 60 written sentences, 1 500 generated ones
+(closed-class and held-out words, punctuation) and 20 000 held-out words
+(`oracle/words/pl.txt`, evenly sampled from LibreOffice `pl_PL/pl_PL.dic`,
+ISO-8859-2), LesAnalizza, LesAccenta, LesConfiniProsodici and
+LesGradiAccentuali (26 924 calls each), LesNormalizzaAccento,
+LesPronunciabile, LesGetSymbolName, FonTrasParola (45 192 calls;
+`polish_fontras_trace` in `parola.rs` replays it alone), FonTrasConfini
+(each chunk's list against the one FonAllofonoLingua is handed) and
+FonAllofonoLingua (28 322 chunks) give the original's records and codes
+for **every** call. Numbers:
+`polish_slot9_trace` (fixture `polish/numeri.les`) replays 960 traced
+slot-9 calls identically; only reading type 0 reaches the module untagged.
+Whole transcriptions (`QQ_NO_LEXICON=1`): held-out words 1.0% → **100%**
+(20 000 / 20 000); `bench-pl.txt`, Krzysztof and Zosia: FON 36.9% / 36.8%
+→ **100%** of sounds, CAT 99.5% / 98.4% → **100%**, samples 100%
+identical; `bench-pl-text.txt` (30 lines of numbers, dates, money,
+abbreviations): FON 19.5% / 19.4% → **100%**, CAT 99.7% (§11).
+
+## 4m. Russian FON, ported from LTTS7Russian.dll (`lang/russian/`)
+
+The export `Russian` (0x1000a1b0) hands the engine a table of 56
+`{name, function}` pairs at **0x1009f270** (LesGetSymbolName 0x100014f0,
+LesPronunciabile 0x10002c60, LesElaboraParola 0x10003280, LesAccenta
+0x10001280, LesNormalizzaAccento 0x100013e0, FonTrasParola 0x1000a620,
+FonAllofonoLingua 0x1000d570, LesConfiniProsodici 0x10003d80, LesAnalizza
+0x10008f90, LesGradiAccentuali 0x10002d60, LesIsPartOfAcronym/IsLetter/
+IsUpper 0x10003530/0x10003550/0x10003560, and the old number interface:
+LesGetMorphTable 0x100059c0 → 0x100a2e30, LesGetClassifyTable 0x100059a0 →
+0x100a2218, LesGetCurrencyTable 0x100059b0 → 0x100a2258,
+LesGetOrdinalStringTable 0x100059d0 → 0x100a2e40, LesClassifyFunc
+0x10004860, LesRead* 0x10005f70…0x10007d70, LesDo* 0x100046b0…0x100047c0,
+Les{Set,Get}NumberReadingMode 0x10006ab0/0x10006af0). There is no
+LesIniNumeri, LesSetModalitaFrase nor LesGestisciMaiuscole (the engine's
+run). `ELQGetLanguageNativeEncoding` 0x10009d70 = **0x4e3 (1251)**, Iso
+0x6fb3, Oem 0x362: the engine converts its input to Windows-1251. The
+module calls LTTS7Util through 0x61 pointers it fills by name (`{name,
+dest}` at 0x10119ea8, 0x10009b90). Character classes (`ELQGetGraphemes`
+0x10009c90 → 0x1009e760, 8 bytes per character, flags +4: 1 letter, 2
+acronym, 8 consonant, 0x10 vowel, 0x20 upper, 0x80 accented, 0x100
+punctuation); phones (`ELQGetPhonemes` 0x10009ca0 → 0x1009f168).
+
+**There is no dictionary file** (`Russian.lde` names only `Russian.lex`,
+the text filter). The lexicon is a morphological analyser linked into the
+module (`lang/wordanalyzer.rs`, the same code as LTTS7Danish.dll's): its
+read-only object (0x100094a0) has 0x4e1 nodes at 0x100975d8 (0x14 bytes:
+id, name, start +8, final +9, transition count +0xc, transitions +0x10);
+from the start node `MAIN_END` it strips morphs off the end of the word
+(transitions: next nodes +4 `{count, ids}`, morph list +8 `{?, count +4,
+entries +8}` sorted by reversed spelling; a morph `{spelling, id +4,
+class +8 (i16), length +0xa, flag +0xb}`, its spelling followed by its
+**stressed form**) until `MAIN_START` with nothing left; 37 555 morphs.
+0x1000ff80 matches a morph, 0x10010840/0x10010920 walk, 0x100106e0 and
+0x10010600 skip to the next candidate morph, 0x100102d0 keeps at most 10
+analyses (≤ 10 segments) ranked by 0x10010190 (bubble sort 0x10010270:
+fewer segments first, then the last morph's length, then the root's
+class), 0x10008fc0 accepts a path whose root (flag < 0) is no longer
+than the rest, 0x100103c0 reverses the segments (root first). The
+feature table at +0x24 (0x1008d6c0, 0x135 entries `{u8 count, (key,
+value)*}`, 0x10010040/0x10010060) gives each morph's features (6 part of
+speech, 7 government, 1 case, 3/4 gender/number, 8 verb form).
+
+| function | address | what it does | data |
+|---|---|---|---|
+| LesElaboraParola | 0x10003280 → 0x10002f60 | lower-cases the token (0x1009e760), `xxversionxx` → 0x10066880; one record (0x17, 200, 9, grade 0x0e, boundary 0x15; 0x10002dd0) with the analyses in its LexInfo (0x10009eb0: analyses, rank in use +4, stressed vowel +0xc, stressed spelling +0x10); without an analysis split at the first hyphen (`-то` 0x1006687c kept with its hyphen) or spelled (0x10002640: class 0x15, sub 0x83/0x84, boundary 7/8, each LesGetSymbolName stressed on its last vowel) when LesPronunciabile says no; a one-character token between sentence boundaries is spelled | — |
+| LesPronunciabile | 0x10002c30 → 0x10002880 | a single letter unless a consonant other than `ж в к с`; one of 0x51 letter groups (0x100a2000, 0x10002790); otherwise a vowel needed, then readable with `ьъы` (0x10065f28), more than 6 letters, or a C/V shape other than `^VCCCCC$ ^CCCCCV$ ^VCCCC$ ^CCCCV$ ^VCCC$ ^CCCV$` (0x10065f1c…0x10065ef0) | — |
+| LesGetSymbolName | 0x100014f0 | letter names (`б~е`, `и кр^аткое`…, with their stress marks), digit and symbol names (most only with the third argument set) | strings 0x10065a24…0x10065ee0, 0x1001c344, 0x10020500 |
+| LesAnalizza | 0x10008f90 | 0x100083c0 chooses each word's analysis (LexInfo +4) by its neighbours' part of speech: after `был/было/были/была` (0x10067d14…), `все` (0x10067cf8), `сам…` (0x10067ce4…), prepositions (government feature 7 → patterns 0x100a3134…0x100a31fc, word patterns 0x100a2f38 ×29), agreement patterns 0x100a2e4c/0x100a2e58/0x100a2e60 (0x10008230), feature patterns 0x100a2f14…0x100a31d4 (0x10008300); then 0x10008e10: class from feature 6 (0x10008a20: 6 → 0x29, 7 → 0x33, 0xc → 0x1f, `7` → 0x19, `1` → 0xc9, 0x2e for `не`/`нет`, 0x1d → 0xca, `8` → 0x20, `^` → 0x2a, `$'()-./` → 0x15), information from gender/number (0x10008b60), subclass from verb form/case (0x10008ca0); number words and `/` words class `y` (the one before `z`) | — |
+| LesAccenta | 0x10001280 → 0x10009520 | the stressed spelling: the root's and first suffix's stressed forms; the vowel = the root class's base (0x1008e068 `{i16 vowel, i16 pattern}`) + the suffix's shift in that movement pattern (0x1008e8d8, 0x10009100); a word the analyser lacks: brand names for spelled records (0x10119b70 ×68, 0x100092c0) or Latin transliterated (0x10009170), stress from the ending table 0x10059cc8 ×0xf9a (`common::lookup`, 0x10001460); `не` before `быть/был/было/были` (0x1009d830…) takes the stress, `быть…` after `не` none, `на плацу` the 2nd vowel; a marked spelling (`^`, `ё`) keeps its mark; vowel index by 0x10009000; grade 3 when unstressed | — |
+| LesConfiniProsodici | 0x10003d80 | 0x10003a60 groups words by class (fixed expressions 0x10066630 ×0x17, 0x10066690 ×0x6d, 0x100037b0), then boundaries 5/3/1/9/0x16 by group kind, 0x0a where a long phrase splits (0x100035b0, 0x10003690), punctuation by sentence type (0x0f–0x13) or `,)(-.` 0x0b (0x100668dc), number words 6/7/8 | — |
+| LesGradiAccentuali | 0x10002d60 | punctuation and `7` grade 0x0f, unset 0 | — |
+| FonTrasParola | 0x1000a620 | the stressed spelling letter by letter, each by its neighbours (skipping `^`): soft consonants before `яюеёиь` (0x1009f7d0), voicing before `бгджз`, devoicing before `цкшщхфпчст` and at the word's end, `сч сщ зч` → щ, silent `д л т в` (`здн`, `лнц`, `стн`, `вств`), `что`, `ться`, akanye/ikanye of unstressed о а е я by whether the next syllable is stressed (0x1000a350, into the next word after a preposition), word-final reductions in a chunk's last two words | letter sets 0x1009f758…0x1009f800, 0x1001b5e4…0x100658b4 |
+| FonAllofonoLingua | 0x1000d570 | inside a word: е/и after hard/soft consonants and j, final `ий` loses й, regressive voicing, double consonants said once (0x1000d520 position in word), `ссч` → щ; at a word's start the previous word's last consonant voiced before a voiced obstruent (and after `об над под перед из`), ы → и after a one-phone word | — |
+
+Voices Dmitri (table 0x10008728) and Olga (0x10008750), the same code at
+the same addresses (`voicefon/russian.rs`): FonVidAllofonoVoce 0x10001210
+softens s/z before tʲ dʲ nʲ and t before nʲ inside a word and turns a
+word-final `ə j ə` into the unit 0xe6c5; FonVidMetaFonema 0x100014b0 is
+the default but for the code 0x942, which the module never gives.
+
+Checked call by call (`russian::trace::russian_trace`; `LOQ_LES_RU=1
+LOQ_LES_DLL=LTTS7Russian.dll LOQ_LES_TABLE=1009f270 LOQ_LES_N=56`, which
+also dumps each record's LexInfo; `oracle/lestrace.h` now hooks up to 64
+slots): on the bench the analyser (138 words), LesAnalizza, LesAccenta,
+LesConfiniProsodici, LesGradiAccentuali (46 sentences each),
+FonTrasParola (158) and FonAllofonoLingua (50) give the original's
+analyses, records, stress and codes for every call. Whole transcriptions
+(`QQ_NO_LEXICON=1`): held-out words (`oracle/words/ru.txt`, every 7th
+alphabetic word of LibreOffice `ru_RU/ru_RU.dic`) **100%** (20 000 /
+20 000); `bench-ru.txt`, Dmitri and Olga: FON 38.9% → 90.4% of sounds,
+every word but the two numbers identical, CAT and samples 100%;
+`bench-ru-text.txt` (30 lines): 70.2%, the rest numbers (§11).
 
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
@@ -1217,9 +1746,11 @@ ambiguous):
 | Katrin | `oracle/bench-de.txt` | | | 98.2% | **100%** |
 | Jorge | `oracle/bench-es.txt` | | | 98.9% | **100%** |
 
-Every other voice with a benchmark: 100% except Annika 99.6%,
-Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof 99.5%,
-Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% (§11).
+Every other voice with a benchmark: 100% except Dave 99.1%, Dmitri 98.9%,
+Elizabeth 99.8%, Grace 99.3%, Olga 99.3%, Simon 98.9%, Stefan 99.7% (§11).
+Annika and Sven reached 100% (from 99.6% and 99.2%) once their voice
+stages were ported (§4j), Krzysztof and Zosia (from 99.5% and 98.4%) with
+the Polish module (§4l).
 Giulia and Steven went from 10.8% and 15.6% to 100%.
 
 (`--compare` gives the picker the original's own transcription; that string
@@ -1447,14 +1978,39 @@ when a speed/pitch change asks for it.
 
 ## 11. Not done / unknown
 
-- Portuguese (`lang/portuguese*`, both variants) is wired with its LES/FON
-  functions, numbers and the voices' own stage (`voicefon/portuguese.rs`)
-  partly ported: bench pt-pt 87.0%, pt-br 88.8% of sounds (from 39–49% with
-  the built-in rules). The port was cut off before its call-by-call check
-  and held-out list.
-- Swedish (`lang/swedish/`): LES, morphology and FonAllofonoLingua are
-  partly written; FonTrasParola isn't, so the module gives no phones and
-  is not wired.
+- Polish (§4l): the original starts a new word at the 0x501 that
+  FonAllofonoLingua adds between two d's of adjacent words (`brat 2.`:
+  `b r a dd | HEh dd v a`); our voice stage (`voicefon.rs` 0x1002d180, word
+  ends from record changes) leaves it on the word before. Behind a 0x501
+  that Zosia's FonVidAllofonoVoce adds (`Rok 2000`, `pociąg do`), the
+  original marks no word start for the rest of the phrase and for the
+  first words of the next one. Sounds, pieces and samples are identical;
+  only the word grouping differs (bench-pl Zosia 97.4% of words,
+  bench-pl-text 98.5% / 97.6%). On `bench-pl-text.txt` CAT given the
+  original's FON differs in `Zdobył 1. nagrodę, a jego brat 2. miejsce.`
+  (68 of 76 half-sounds, both voices), the line with that 0x501; the
+  samples of the whole file are still identical.
+- Portuguese (§4g): the held-out words left are all-capital acronyms the
+  engine spells (Portugal: `IBM PC AD ANC BMW CDU EDP NBA PAIGC PCP PSD PSR
+  SPA TVI`) and Brazil's `bei`, which the module lists as an abbreviation
+  read with `\{spell=yes` (the engine-wide text layer, `lang/common.rs`).
+  In `dois mil e vinte e quatro` the voice's events end no word between
+  `vinte` and `e` (`v i) n tt i`), ours do after `tt`: FonTrasConfini
+  deletes vinte's last phone (0x1000ea87) and the record keeps boundary
+  0x0e, so 0x1002d180 as ported (`voicefon.rs`, record boundary) marks a
+  word end the original does not. Sounds, pieces and samples are
+  identical; only the word grouping differs.
+- Swedish (§4j): FON, CAT and samples are 100% identical on `bench-sv`
+  and `bench-sv-text` (Annika, Sven). Held-out words 99.955%: the 9 of
+  20 000 left differ only in a word-end `-` ours print and the original
+  leaves out after a word whose last phone FonAllofonoLingua deleted
+  (`torsdageftermiddag` → `… m `I d a`, `Nasdaq`), a rendering of the
+  phone list, not its sounds. The `.fon` words metric
+  (94.6% / 93.5%) misses word separators the original leaves out before a
+  word starting with an aspirated stop or `h` (`n `2E s t a th `o:`) and
+  after a deleted final phone; sounds, pieces and samples are identical.
+  LesPronunciabile's look at the previous record (0x100039d0) is modelled
+  by the previous token.
 - The engine's text filters (§4h) run for every language. Left: Util's
   tag parser (ELQTagParser) and its `&…;` entities are not ported, so
   input that already holds `\}`, `\{(`, `\t`-like tags or `&amp;` can be
@@ -1484,11 +2040,11 @@ when a speed/pitch change asks for it.
   contents we fill with zeros. Neither reaches the output on the benchmarks
   (replays 100% identical). One voiced half of 423 (Bernard) gets other
   pitch marks than the original's, also without effect there.
-- CAT given the original's FON: 100% on 31 voices (Afroditi 98.1% →
-  100%: Greek asks with `;`, which the compare tool took as no question);
-  Annika
-  99.6%, Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Krzysztof
-  99.5%, Olga 99.3%, Simon 98.9%, Stefan 99.7%, Sven 99.2%, Zosia 98.4% not
+- CAT given the original's FON: 100% on 35 voices (Afroditi 98.1% →
+  100%: Greek asks with `;`, which the compare tool took as no question;
+  Annika and Sven since §4j, Krzysztof and Zosia since §4l);
+  Dave 99.1%, Dmitri 98.9%, Elizabeth 99.8%, Grace 99.3%, Olga 99.3%,
+  Simon 98.9%, Stefan 99.7% not
   yet diffed term by term (`LOQ_TRACE_CAT` against `QQ_TRACE_CAT`). The
   original's automatic pauses (TOP/LES) are a FON matter: given its FON the
   picker already gets them as pauses. Speed and pitch controls.
@@ -1526,3 +2082,30 @@ when a speed/pitch change asks for it.
   (`` `HEI-Hg `E m ``); quoquendo's tokenizer side still reads `am`. The
   engine's date/time format settings (ctx+0x20 +0x34, +0x30) are taken
   as the defaults seen in the traces, not from `\{…}` tags.
+- Dutch (§4i): `oracle/bench-nl-text.txt` is 100% identical in sounds
+  and half-sounds; `--compare` still counts 6 of its 30 lines as
+  differing in word grouping only: after FonAllofonoLingua inserts a
+  glottal stop before a vowel-initial word the original's events glue
+  the two words (`d R `i Hg Oa…`), as Greek's palatalised k does (§4f).
+  The original engine under Wine crashes now and then (an ntdll page
+  fault) in long `LOQ_LINES` runs, independent of the line: rerunning the
+  rest of the list goes through.
+- Danish numbers (§4k): LTTS7Danish.dll has no LesIniNumeri; its numbers
+  go through LoqTTS7.dll's generic number reader, which calls the
+  module's LesClassifyFunc 0x10008420, LesParseData 0x10008e20,
+  LesReadData 0x100082e0, LesReadFrazione 0x10008200, LesReadCodice
+  0x10007770 and LesDo* hooks and its morph/ordinal/classify/currency
+  tables (0x10080928, 0x10080938, 0x100800d0, 0x10080118). That engine
+  side (shared with Russian) is not ported: numbers read as their digits,
+  so `bench-da.txt` lines 9–10 and most of `bench-da-text.txt` differ.
+  The `\SAMPA=` tail of FonAllofonoLingua and the phonetization path of
+  FonTrasParola are ported but no trace exercises them.
+- Russian numbers (§4m): LTTS7Russian.dll has no LesIniNumeri either; it
+  plugs into the same LoqTTS7 generic reader (LesNumero2Testo 0x1003ebf0:
+  LesClassifyFunc 0x10004860, the engine's LesParse* defaults, the
+  module's LesRead* 0x10005f70…0x10007d70 adding morphs with
+  `ELQNumAddMorph`, LesDo* hooks, the morph table 0x100a2e30 read by the
+  engine's NumLett 0x10038d90), which is not ported: numbers read as their
+  digits' names. `bench-ru.txt` lines 9–10 (`2475`, `15 марта 2024`) and
+  the number lines of `bench-ru-text.txt` differ; every other word is the
+  original's. Roman numerals (`XXI`) also go through it.

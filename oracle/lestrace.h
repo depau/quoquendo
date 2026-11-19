@@ -9,9 +9,9 @@
  *   > <name> <6 argument dwords> [word=… idx=… | ctx=…]
  *     W <i> <24 record bytes> s4="text" …
  *   < <name> rc=<eax> [out=<codes>]
- * Up to 19 slots (NSLOT). */
+ * Up to 64 slots (NSLOT). */
 FILE *leslog;
-#define NSLOT 30
+#define NSLOT 64
 void *les_real[NSLOT];
 static const char *les_name[NSLOT];
 static unsigned les_args[NSLOT][8];
@@ -30,6 +30,81 @@ static void les_str(const char *tag, const unsigned char *s) {
     fputc('"', leslog);
 }
 
+/* LOQ_LES_RU=1: LTTS7Russian.dll's LexInfo behind a record's +0x14
+ * (LesAllocLanguageLexInfo 0x10009eb0: [0] the analyses, [3] the stressed
+ * vowel LesAccenta found, +0x10 the stressed spelling): "  L pos=… form=…
+ * n=… cur=…" then one "  A" line per analysis (by rank) with its segments
+ * start-end:<spelling VA>/<id>/<class>. */
+static void les_ru_lexinfo(unsigned li) {
+    if (li < 0x10000 || IsBadReadPtr((void *)li, 0x54)) return;
+    unsigned *L = (unsigned *)li;
+    unsigned a = L[0];
+    fprintf(leslog, "  L pos=%d", (int)L[3]);
+    les_str("form", (unsigned char *)(li + 0x10));
+    if (a < 0x10000 || IsBadReadPtr((void *)a, 0x50c)) { fprintf(leslog, "\n"); return; }
+    unsigned n = *(unsigned *)(a + 4);
+    fprintf(leslog, " n=%u cur=%d\n", n, (int)L[1]);
+    for (unsigned k = 0; k < n && k < 10; k++) {
+        unsigned s = *(unsigned *)(a + 0x4e0 + 4 * k);
+        if (s >= 10) break;
+        unsigned char *A = (unsigned char *)(a + 8 + s * 0x7c);
+        unsigned m = *(unsigned *)(A + 0x78);
+        fprintf(leslog, "  A %u slot=%u", k, s);
+        for (unsigned j = 0; j < m && j < 10; j++) {
+            unsigned *g = (unsigned *)(A + 12 * j);
+            unsigned *c = (unsigned *)g[2];
+            if (!c || IsBadReadPtr(c, 0x14)) { fprintf(leslog, " %d-%d:?", (int)g[0], (int)g[1]); continue; }
+            fprintf(leslog, " %d-%d:%x/%d/%d", (int)g[0], (int)g[1], c[0] ? c[0] - les_base + 0x10000000 : 0, (int)c[2], (int)*(short *)((char *)c + 0x10));
+        }
+        fprintf(leslog, "\n");
+    }
+}
+
+/* LOQ_LES_DA=1: LTTS7Danish.dll's LexInfo behind a record's +0x14 (0x294
+ * bytes, LesAllocLanguageLexInfo 0x10002630): its first 0x14c bytes, the
+ * per-letter table +0x14c (64 x {i8 morpheme, u8, u16 flags}) and the
+ * marked spelling +0x250, then the solutions LesElaboraParola copied into
+ * the buffer at +0 ({count, 10 x 0x194-byte solutions}; a solution is 10 x
+ * 0x28-byte morphemes, getMorphemeInfo's 10 fields, and their count at
+ * +0x190):
+ *   L <hex 0x14c> | <per-letter hex> | sp="spelling"
+ *   S <solution> <count>
+ *   M <morpheme> s0="…" s4="…" sc="…" p8=<8 bytes> <+0x10 short> <+0x14 VA> <+0x18 … +0x24> */
+static void les_da_lexinfo(unsigned li) {
+    if (li < 0x10000 || IsBadReadPtr((void *)li, 0x294)) return;
+    const unsigned char *L = (const unsigned char *)li;
+    fprintf(leslog, "  L ");
+    for (int k = 0; k < 0x14c; k++) fprintf(leslog, "%02x", L[k]);
+    fprintf(leslog, " | ");
+    for (int k = 0x14c; k < 0x24c; k++) fprintf(leslog, "%02x", L[k]);
+    fprintf(leslog, " |");
+    les_str("sp", L + 0x250);
+    fprintf(leslog, "\n");
+    unsigned buf = *(unsigned *)L;
+    if (buf < 0x10000 || IsBadReadPtr((void *)buf, 0xfd0)) return;
+    unsigned ns = *(unsigned *)buf;
+    for (unsigned s = 0; s < ns && s < 10; s++) {
+        const unsigned char *sol = (const unsigned char *)buf + 4 + s * 0x194;
+        unsigned nm = *(unsigned *)(sol + 0x190);
+        fprintf(leslog, "  S %u %u\n", s, nm);
+        for (unsigned m = 0; m < nm && m < 10; m++) {
+            const unsigned *f = (const unsigned *)(sol + m * 0x28);
+            fprintf(leslog, "  M %u", m);
+            les_str("s0", (const unsigned char *)f[0]);
+            les_str("s4", (const unsigned char *)f[1]);
+            les_str("sc", (const unsigned char *)f[3]);
+            fprintf(leslog, " p8=");
+            if (f[2] > 0x10000 && !IsBadReadPtr((void *)f[2], 8))
+                for (int k = 0; k < 8; k++) fprintf(leslog, "%02x", ((unsigned char *)f[2])[k]);
+            else fprintf(leslog, "-");
+            fprintf(leslog, " %d %x %d %d %d %d\n", (short)f[4], f[5] ? f[5] - les_base + 0x10000000 : 0, (int)f[6], (int)f[7], (int)f[8], (int)f[9]);
+        }
+    }
+}
+
+/* set around LesAnalizza's and LesAccenta's record dumps: the Danish
+   LexInfo is dumped there (and at FonTrasParola) only */
+static int les_da_on;
 /* the word records LES works on: ctx+4 -> 24-byte records, ctx+0xc count */
 static void les_words(unsigned ctx) {
     if (!ctx || IsBadReadPtr((void *)ctx, 16)) return;
@@ -49,6 +124,8 @@ static void les_words(unsigned ctx) {
             }
         }
         fprintf(leslog, "\n");
+        if (getenv("LOQ_LES_RU")) les_ru_lexinfo(*(unsigned *)(r + 0x14));
+        if (getenv("LOQ_LES_DA") && les_da_on) les_da_lexinfo(*(unsigned *)(r + 0x14));
     }
 }
 
@@ -151,6 +228,21 @@ void __cdecl les_pre(unsigned i, unsigned *args) {
     if (!strcmp(n, "FonTrasParola")) {
         les_str("word", (unsigned char *)args[2]);
         fprintf(leslog, " idx=%u\n", args[4]);
+        unsigned c = args[0];
+        if (getenv("LOQ_LES_DA") && c && !IsBadReadPtr((void *)c, 0x3c)) {
+            /* the record: FON ctx+0x2c records, chunk (ctx+0x28 + ctx+0x38 *
+               0x1c) +0x18 its first, as 0x1000b6d0 finds it */
+            unsigned ch = *(unsigned *)(c + 0x28) + *(unsigned *)(c + 0x38) * 0x1c;
+            if (!IsBadReadPtr((void *)ch, 0x1c)) {
+                unsigned r = *(unsigned *)(c + 0x2c) + (*(unsigned *)(ch + 0x18) + args[4]) * 0x18;
+                if (!IsBadReadPtr((void *)r, 0x18)) {
+                    fprintf(leslog, "  R %u", *(unsigned *)(ch + 0x18) + args[4]);
+                    for (int k = 0; k < 24; k++) fprintf(leslog, "%s%02x", k % 4 ? "" : " ", ((unsigned char *)r)[k]);
+                    fprintf(leslog, "\n");
+                    les_da_lexinfo(*(unsigned *)(r + 0x14));
+                }
+            }
+        }
     } else if (!strcmp(n, "FonTrasConfini")) {
         unsigned *code = (unsigned *)args[1];
         int *p3 = (int *)args[2];
@@ -165,7 +257,9 @@ void __cdecl les_pre(unsigned i, unsigned *args) {
         unsigned c = args[0];
         if (c && !IsBadReadPtr((void *)c, 32)) fprintf(leslog, " ctx=%08x,%08x,%08x,%08x,%08x", ((unsigned *)c)[0], ((unsigned *)c)[1], ((unsigned *)c)[2], ((unsigned *)c)[3], ((unsigned *)c)[4]);
         fprintf(leslog, "\n");
+        les_da_on = !strcmp(n, "LesAccenta") || !strcmp(n, "LesAnalizza");
         if (!strncmp(n, "Les", 3) && strcmp(n, "LesGetSymbolName")) les_words(strcmp(n, "LesGestisciMaiuscole") ? args[0] : args[1]);
+        les_da_on = 0;
     }
     fflush(leslog);
 }
@@ -202,7 +296,9 @@ void __cdecl les_post(unsigned i, unsigned rc) {
         fprintf(leslog, " c=%d\n", (int)(char)args[1]);
     } else {
         fprintf(leslog, "\n");
+        les_da_on = !strcmp(n, "LesAccenta") || !strcmp(n, "LesAnalizza");
         if (!strncmp(n, "Les", 3)) les_words(strcmp(n, "LesGestisciMaiuscole") ? args[0] : args[1]);
+        les_da_on = 0;
     }
     fflush(leslog);
 }
@@ -218,10 +314,18 @@ void __cdecl les_post(unsigned i, unsigned rc) {
 THUNK(0) THUNK(1) THUNK(2) THUNK(3) THUNK(4) THUNK(5) THUNK(6) THUNK(7) THUNK(8) THUNK(9)
 THUNK(10) THUNK(11) THUNK(12) THUNK(13) THUNK(14) THUNK(15) THUNK(16) THUNK(17) THUNK(18)
 THUNK(19) THUNK(20) THUNK(21) THUNK(22) THUNK(23) THUNK(24) THUNK(25) THUNK(26) THUNK(27) THUNK(28) THUNK(29)
+THUNK(30) THUNK(31) THUNK(32) THUNK(33) THUNK(34) THUNK(35) THUNK(36) THUNK(37) THUNK(38) THUNK(39)
+THUNK(40) THUNK(41) THUNK(42) THUNK(43) THUNK(44) THUNK(45) THUNK(46) THUNK(47) THUNK(48) THUNK(49)
+THUNK(50) THUNK(51) THUNK(52) THUNK(53) THUNK(54) THUNK(55) THUNK(56) THUNK(57) THUNK(58) THUNK(59)
+THUNK(60) THUNK(61) THUNK(62) THUNK(63)
 static void (*les_thunks[NSLOT])(void) = {les_thunk0, les_thunk1, les_thunk2, les_thunk3, les_thunk4,
     les_thunk5, les_thunk6, les_thunk7, les_thunk8, les_thunk9, les_thunk10, les_thunk11, les_thunk12,
     les_thunk13, les_thunk14, les_thunk15, les_thunk16, les_thunk17, les_thunk18, les_thunk19, les_thunk20,
-    les_thunk21, les_thunk22, les_thunk23, les_thunk24, les_thunk25, les_thunk26, les_thunk27, les_thunk28, les_thunk29};
+    les_thunk21, les_thunk22, les_thunk23, les_thunk24, les_thunk25, les_thunk26, les_thunk27, les_thunk28, les_thunk29,
+    les_thunk30, les_thunk31, les_thunk32, les_thunk33, les_thunk34, les_thunk35, les_thunk36, les_thunk37, les_thunk38,
+    les_thunk39, les_thunk40, les_thunk41, les_thunk42, les_thunk43, les_thunk44, les_thunk45, les_thunk46, les_thunk47,
+    les_thunk48, les_thunk49, les_thunk50, les_thunk51, les_thunk52, les_thunk53, les_thunk54, les_thunk55, les_thunk56,
+    les_thunk57, les_thunk58, les_thunk59, les_thunk60, les_thunk61, les_thunk62, les_thunk63};
 
 static int hook_language(const char *bin, const char *dll, unsigned table, unsigned n) {
     char path[MAX_PATH];
