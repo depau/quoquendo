@@ -7,6 +7,7 @@ pub mod danish;
 pub mod common;
 pub mod dutch;
 pub mod elqnum;
+pub mod loqnum;
 pub mod english;
 pub mod french;
 pub mod german;
@@ -48,6 +49,8 @@ pub struct ModuleFiles {
     pub regexps: Vec<Vec<u8>>,
     pub lexicons: Vec<Vec<u8>>,
     pub util: Option<Vec<u8>>,
+    /// LoqTTS7.dll: the generic number reader's data (`loqnum`)
+    pub engine: Option<Vec<u8>>,
     /// the voice's phone table as (symbol, engine feature word)
     pub phones: Vec<(String, u32)>,
 }

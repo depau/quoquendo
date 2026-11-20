@@ -22,6 +22,7 @@ mod accenta;
 mod allofono;
 mod analizza;
 mod elabora;
+mod numeri;
 mod parola;
 #[cfg(test)]
 mod trace;
@@ -250,6 +251,12 @@ impl LexInfo {
 pub struct Danish {
     pub(crate) pe: Pe,
     chars: Vec<(u8, u8, u32)>,
+    /// the number tables the engine's reader uses (`numeri`)
+    num_tables: super::loqnum::Tables,
+    /// LTTS7Util's character classes, for the number classifier's expressions
+    classes: Option<super::textfilter::Classes>,
+    /// LoqTTS7.dll, for the engine's own number tables
+    engine: Option<Pe>,
     pub(crate) analyzer: Analyzer,
     /// `SELECT AB_Abbreviation, AB_Expansion FROM TD_Abbreviations WHERE
     /// ifnull(AB_Abbreviation,'') <> '' ORDER BY AB_Abbreviation COLLATE
@@ -280,6 +287,7 @@ impl Danish {
             Some(d) => read_dictionary(d)?,
             None => (Vec::new(), Vec::new()),
         };
+        let num_tables = super::loqnum::Tables::read(&pe, numeri::MORPHS, numeri::CLASSIFY, numeri::CURRENCY, numeri::ORDINALS);
         Some(Danish {
             pe,
             chars,
@@ -291,6 +299,9 @@ impl Danish {
             abbreviations,
             abbreviation_table: Default::default(),
             phonetizations,
+            num_tables,
+            classes: files.util.clone().and_then(Pe::parse).and_then(|u| super::textfilter::Classes::from_util(&u)),
+            engine: files.engine.clone().and_then(Pe::parse),
         })
     }
 
@@ -393,6 +404,9 @@ impl super::common::Les for Danish {
     }
     fn pronunciabile(&self, w: &[u8]) -> bool {
         self.pronunciabile(w)
+    }
+    fn leggi_numero(&self, toks: &mut [super::common::Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        Danish::leggi_numero(self, toks, i, kind, dmy)
     }
     fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
         self.symbol_name(c, mode)

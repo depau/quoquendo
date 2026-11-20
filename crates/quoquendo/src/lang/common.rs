@@ -1348,10 +1348,73 @@ fn spell_tags(toks: &[Tok], i: usize) -> (bool, u8, bool) {
     (spell, mode, no)
 }
 
+/// `ELQNumArabic2Roman` (LTTS7Util 0x10014c70), despite its name: the
+/// value of a Roman numeral written as the canonical one (any case, 1 to
+/// 3999: it reads the value, writes it back with 0x10014f90 and compares),
+/// else 0.
+pub fn roman_value(s: &[u8]) -> i32 {
+    let digit = |c: u8| match c.to_ascii_uppercase() {
+        b'I' => 1,
+        b'V' => 5,
+        b'X' => 10,
+        b'L' => 50,
+        b'C' => 100,
+        b'D' => 500,
+        b'M' => 1000,
+        _ => 0,
+    };
+    let (mut v, mut prev) = (0i32, 0i32);
+    for &c in s.iter().rev() {
+        let d = digit(c);
+        if d == 0 {
+            return 0;
+        }
+        if d < prev {
+            if matches!(c.to_ascii_uppercase(), b'V' | b'L' | b'D') || prev / d > 10 {
+                return 0;
+            }
+            v -= d;
+        } else {
+            v += d;
+            prev = d;
+        }
+    }
+    if !(1..=3999).contains(&v) {
+        return 0;
+    }
+    const PLACES: [[&str; 10]; 4] = [
+        ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix"],
+        ["", "x", "xx", "xxx", "xl", "l", "lx", "lxx", "lxxx", "xc"],
+        ["", "c", "cc", "ccc", "cd", "d", "dc", "dcc", "dccc", "cm"],
+        ["", "m", "mm", "mmm", "", "", "", "", "", ""],
+    ];
+    let canon: String = (0..4).rev().map(|p| PLACES[p][(v / 10i32.pow(p as u32) % 10) as usize]).collect();
+    if canon.as_bytes().eq_ignore_ascii_case(s) {
+        v
+    } else {
+        0
+    }
+}
+
 /// The records for one token (0x10031410, the paths plain text takes:
 /// no SSML say-as, the engine's default settings). `skip` takes how many
 /// following tokens are used up (a number reader's, `°C`).
 fn token_records<L: Les + ?Sized>(l: &L, toks: &mut [Tok], i: usize, idx: usize, out: &mut Vec<Word>, skip: &mut usize) {
+    // 0x100315a4: a word after a `number=ordinal…`/`cardinal` tag that is a
+    // Roman numeral (a one-letter one may keep a dot) becomes its number
+    let (tag_kind, _) = number_tag(toks, i);
+    if matches!(tag_kind, 5 | 6 | 10) && matches!(toks[i].kind, tok::WORD | tok::ABBR) {
+        let mut w = toks[i].text.clone();
+        if w.len() == 2 && b"XxVvCcIiLlDdMm".contains(&w[0]) && w[1] == b'.' {
+            w.truncate(1);
+            toks[i].text = w.clone();
+        }
+        let v = roman_value(&w);
+        if v != 0 {
+            toks[i].text = v.to_string().into_bytes();
+            toks[i].kind = tok::NUMBER;
+        }
+    }
     let t = toks[i].text.clone();
     let expanded = toks[i].expanded;
     let next_real = |toks: &[Tok]| toks[i + 1..].iter().find(|tk| tk.kind != tok::TAG).cloned();

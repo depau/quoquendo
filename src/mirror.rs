@@ -54,6 +54,7 @@ pub fn write_catalog(ltts7: &Path, out: &Path) -> Result<usize, String> {
                     let mut lp: Vec<String> = files(dir).into_iter().map(|n| format!("{dir}/{n}")).collect();
                     lp.extend(v.language_library.clone());
                     lp.extend(v.util_library.clone());
+                    lp.extend(v.engine_library.clone());
                     languages.insert(name.clone(), json!({"files": entries(lp)?}));
                 }
                 Some(name)

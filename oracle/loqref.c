@@ -348,6 +348,67 @@ static int __cdecl callback(unsigned prompt, int type, void *data, void *user) {
 #define GET(t, n) t n = (t)GetProcAddress(dll, #n); if (!n) { fprintf(stderr, "missing %s\n", #n); return 2; }
 #define CHECK(x) do { int rc_ = (x); if (rc_) { fprintf(stderr, "%s failed: %d %s\n", #x, rc_, ttsGetErrorMessage(rc_)); return 3; } } while (0)
 
+/* LOQ_TRACE_NUM=1: LoqTTS7.dll's generic number reader (LesNumero2Testo
+ * 0x1003ebf0, the modules without a LesIniNumeri) to <prefix>.num. Two of
+ * its LTTS7Util pointers are swapped: ELQNumSetContextChunkPointer
+ * (0x100b7180, called once per number with the token buffer, 0x40c bytes a
+ * token, type at +0x400) logs the focus and the tokens up to the end type 7,
+ *   I <focus> <k>:<type>:"text" …
+ * and ELQNumDelete (0x100b71e0, after the reading) the ELQNum object (0x524
+ * bytes: type +4, subtype +8, escape +0xc, reading mode +0x110, skip +0x21c,
+ * ints +0x220…+0x234, strings +0x220 +0x228 +0x22c +0x320 +0x32c +0x420)
+ * and its morph list (+0x210: {tag, ids, cap, count}):
+ *   N type=… sub=… esc=… skip=… mode="…" i=… s220=… s228=… s22c=… s320=… s32c=… s420=… m=<ids> */
+FILE *numlog;
+typedef int (__cdecl *fn_num1)(void *);
+typedef int (__cdecl *fn_num2)(void *, void *);
+static fn_num1 real_numdelete;
+static fn_num2 real_numchunk;
+static void num_str(const char *tag, const unsigned char *s) {
+    FILE *save = leslog;
+    leslog = numlog;
+    les_str(tag, s);
+    leslog = save;
+}
+static int __cdecl hook_numchunk(void *num, void *toks) {
+    unsigned focus = *(unsigned *)((char *)num + 0x214);
+    fprintf(numlog, "I %u", focus);
+    for (unsigned k = 0; k < 32 && toks; k++) {
+        unsigned char *t = (unsigned char *)toks + k * 0x40c;
+        if (IsBadReadPtr(t, 0x40c)) break;
+        unsigned type = *(unsigned *)(t + 0x400);
+        char tag[16];
+        snprintf(tag, sizeof tag, "%u:%u:", k, type);
+        fprintf(numlog, " %s", tag);
+        num_str("", t);
+        if (type == 7) break;
+    }
+    fprintf(numlog, "\n");
+    return real_numchunk(num, toks);
+}
+static int __cdecl hook_numdelete(void *num) {
+    unsigned char *o = (unsigned char *)num;
+    if (o && !IsBadReadPtr(o, 0x524)) {
+        fprintf(numlog, "N type=%d sub=%d esc=%d skip=%d", *(int *)(o + 4), *(int *)(o + 8), *(int *)(o + 0xc), *(int *)(o + 0x21c));
+        num_str("mode", o + 0x110);
+        fprintf(numlog, " i=%d,%d,%d,%d,%d,%d", *(int *)(o + 0x220), *(int *)(o + 0x224), *(int *)(o + 0x228), *(int *)(o + 0x22c),
+                *(int *)(o + 0x230), *(int *)(o + 0x234));
+        num_str("s220", o + 0x220);
+        num_str("s228", o + 0x228);
+        num_str("s22c", o + 0x22c);
+        num_str("s320", o + 0x320);
+        num_str("s32c", o + 0x32c);
+        num_str("s420", o + 0x420);
+        unsigned *list = *(unsigned **)(o + 0x210);
+        fprintf(numlog, " m=");
+        if (list && !IsBadReadPtr(list, 0x14) && list[1] && !IsBadReadPtr((void *)list[1], 4 * list[3]))
+            for (unsigned k = 0; k < list[3]; k++) fprintf(numlog, k ? ",%d" : "%d", ((int *)list[1])[k]);
+        fprintf(numlog, "\n");
+        fflush(numlog);
+    }
+    return real_numdelete(num);
+}
+
 int main(int argc, char **argv) {
     if (argc < 5) {
         fprintf(stderr, "usage: loqref <LTTS7 bin folder> <voice> <utf-8 text file> <output prefix>\n");
@@ -414,6 +475,19 @@ int main(int argc, char **argv) {
             real_src = redirect(dll, 0x1001c9e2, (void *)hook_src);
             real_flush = redirect(dll, 0x10015be5, (void *)hook_flush);
         }
+    }
+    if (getenv("LOQ_TRACE_NUM")) {
+        snprintf(path, sizeof path, "%s.num", argv[4]);
+        numlog = fopen(path, "wb");
+        void **chunk = (void **)((char *)dll + (0x100b7180 - 0x10000000));
+        void **del = (void **)((char *)dll + (0x100b71e0 - 0x10000000));
+        if (!*chunk || !*del) { fprintf(stderr, "ELQNum pointers not set yet\n"); return 2; }
+        DWORD old;
+        VirtualProtect(chunk, 0x64, PAGE_READWRITE, &old);
+        real_numchunk = (fn_num2)*chunk;
+        *chunk = (void *)hook_numchunk;
+        real_numdelete = (fn_num1)*del;
+        *del = (void *)hook_numdelete;
     }
     if (getenv("LOQ_TRACE_DECODE")) {
         snprintf(path, sizeof path, "%s.dec", argv[4]);
@@ -497,6 +571,8 @@ int main(int argc, char **argv) {
         else snprintf(pre, sizeof pre, "%s", argv[4]);
         if (!*text) continue;
 
+        /* the number trace: the transcription's numbers, then the read's */
+        if (numlog) { fprintf(numlog, "U %d\n", i); fflush(numlog); }
         /* stage FON: the phonetic transcription only */
         static char fon[65536];
         unsigned fonlen = 0;

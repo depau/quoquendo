@@ -2050,6 +2050,54 @@
    "group": "voice-russian",
    "value": "Dmitri 0x10008728, Olga 0x10008750: FonVidAllofonoVoce 0x10001210 (s/z/t softening before soft consonants, word-final ə j ə -> 0xe6c5), FonVidAllofonoAnalisi 0x10001440, FonVidMetaFonema 0x100014b0 (default except 0x942), FonVidAnalisi2Sintesi 0x10001460, FonVidIngloba 0x10001480",
    "source": "LTTS7Dmitri.dll / LTTS7Olga.dll exports"
+  },
+  {
+   "name": "generic number reader",
+   "group": "numbers-engine",
+   "value": "LesNumero2Testo 0x1003ebf0 (from 0x1003f520 when the module has no slot 9): ELQNumIni, modes = ctx+0x32c, escape from the tag kind (1->1, 2->2, 4/5->4, 6->5, 7->7, 8->8, 9->0xb, 10->6, 0xb->10, 0xc->9), else LesClassifyFunc; parse by escape, else the fixed order Data, Ora, Valuta, Angolare, Frazione, Telefonico, Reale, Misura, Risultato, Intero, Ordinale, Codice; read by type; LesNumlettFunc; ctx+0x18 = skip",
+   "source": "LoqTTS7.dll 0x1003ebf0, 0x1003f520"
+  },
+  {
+   "name": "number reader binder slots",
+   "group": "numbers-engine",
+   "value": "+0x50 LesNumlettFunc 0x10038d90, +0x54 LesClassifyFunc 0x10038a20, +0x58 Parse Telefonico 0x10038e40, +0x5c Codice 0x10038ff0, +0x60 Intero 0x10039010, +0x64 Reale 0x10039400, +0x68 Ordinale 0x10039180, +0x6c Ora 0x100399e0, +0x70 Data 0x1003a040, +0x74 Valuta 0x1003a280, +0x78 Frazione 0x1003a720, +0x7c/+0x80/+0x84 Angolare/Misura/Risultato 0x1003dec0, +0x8c Read Telefonico 0x1003c060, +0x90 Codice 0x1003c160, +0x94 Intero 0x1003c300, +0x98 Reale 0x1003c3e0, +0x9c Ordinale 0x1003c390, +0xa0 Ora 0x1003c790, +0xa4 Data 0x1003d1f0, +0xa8 Valuta 0x1003d2d0, +0xac Frazione 0x1003da40, +0xb0 Angolare 0x1003db40, +0xb4 Misura 0x1003dca0, +0xb8 Risultato 0x1003de40, +0xc0..+0x10c LesDo* (YearSplit first; defaults 0x1003dec0, Gender 0x1003ded0), +0x110..+0x11c morph/classify/currency/ordinal tables",
+   "source": "LoqTTS7.dll LES binder 0x10036140 (0x1003667a…)"
+  },
+  {
+   "name": "ELQNum object",
+   "group": "numbers-engine",
+   "value": "0x524 bytes: type +4, subtype +8, escape +0xc, parse mode +0x10, reading mode +0x110, morph list +0x210 ({tag, ids, cap, count}), focus +0x214, chunk +0x218, skip +0x21c, ints +0x220..+0x234, strings +0x220 +0x228 +0x22c +0x320 +0x32c +0x420 (strncpy 0x100), user data +0x520",
+   "source": "LTTS7Util.dll ELQNumIni 0x10015220 and accessors 0x100152e0..0x10015a20"
+  },
+  {
+   "name": "number morph ids",
+   "group": "numbers-engine",
+   "value": "digit d: stem 0x19+0x2a(d-1) (+1 ordinal, +2 alt, +0x15 composed), ending stem+3 (+6 ordinal, +0xc alt, +2/+4 gender, +1 plural, +0x15 composed); 10-19 0x193+0x2a(n-10); tens 0x337 (20), 0x34c+3(t-3), endings 0x33a/0x361; hundreds 0x373/0x374, 0x386/0x387; thousand 0x399/0x3ac; million 0x3bf/0x3d2; billion 0x3e5/0x3f8; months 0x40b..0x416; 0x18 zero, 0x16 and, 1/2 separators",
+   "source": "LoqTTS7.dll 0x1003aa30..0x1003b790, 0x1003bcf0, 0x1003c840"
+  },
+  {
+   "name": "country codes",
+   "group": "numbers-engine",
+   "value": "0xda prefixes at 0x10071350 (first strncmp match after + or 00)",
+   "source": "LoqTTS7.dll LesParseTelefonico default 0x10038e40"
+  },
+  {
+   "name": "Roman numerals after number tags",
+   "group": "numbers-engine",
+   "value": "a word or abbreviation after a number=ordinalM/ordinalF/cardinal tag (kinds 5, 6, 10) that is a canonical Roman numeral 1..3999 (a one-letter one may keep its dot, letters 0x1009c630) becomes its number",
+   "source": "LoqTTS7.dll 0x100315a4; LTTS7Util ELQNumArabic2Roman 0x10014c70, 0x10014f90"
+  },
+  {
+   "name": "Danish number hooks",
+   "group": "numbers-danish",
+   "value": "tables morph 0x10080928, classify 0x100800d0, currency 0x10080118, ordinal 0x10080938; LesClassifyFunc 0x10008420 (months 0x10026b90 x0x24, year words 0x10026cdc x4 / 0x10026cb0 x11, s 0x10024020, ' 0x10026dec, - . / 0x10026de8..de0, modes d 0x10026d54, y 0x100241c0); LesParseData 0x10008e20 (0x100089b0); LesReadData 0x100082e0 (0x100078a0), LesReadFrazione 0x10008200, LesReadCodice 0x10007770; builder copies 0x10006400..0x10007160 (neuter 1 = 0x20); LesDoComposed/OrdinalDay 0x100030a0 (1), AndBetweenTenthsUnits 0x100030b0 (v%10!=0), TenthInversion 0x100030d0 (|v|>20), YearSplit 0x100030e0 (v<2000), AndBetweenThousandsHundreds 0x100030f0 (2001..2099 in dates, else 2001..2010)",
+   "source": "LTTS7Danish.dll function table 0x100251b8"
+  },
+  {
+   "name": "Russian number hooks",
+   "group": "numbers-russian",
+   "value": "LesClassifyFunc 0x10004860 (months 0x100675e8 x0x2b, year words 0x10067748 x7 / 0x10067740 x2, - . / 0x1006777c/74/70, modes d 0x10067780, y 0x10067778); builder 0x10004d40 (2 before thousands = 0x6b), 0x10005080, 0x100056c0 (200 = 0x397, 300/400 0x398), 0x100059e0 (separator morph; thousands 0x3bd/0x3be/0x3ac, millions 0x3e3/0x3e4/0x3d2); LesDoOrdinalTenth 0x100046b0, OrdinalDay 0x100046f0 (1), Gender 0x10004740 (type 4/8 -> 1, 5 -> 2, 6 in 'ext' mode 0x10067764 -> 2 for 1, 2), Composed/Plural 0x100047c0 (0)",
+   "source": "LTTS7Russian.dll function table 0x1009f270"
   }
  ]
 }

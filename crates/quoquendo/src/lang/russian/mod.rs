@@ -15,6 +15,7 @@ mod allofono;
 mod confini;
 mod fon;
 mod les;
+mod numeri;
 mod parola;
 #[cfg(test)]
 mod trace;
@@ -68,6 +69,12 @@ fn accept(pe: &Pe, path: &[Seg]) -> bool {
 pub struct Russian {
     pub(crate) pe: Pe,
     chars: Vec<(u8, u8, u32)>,
+    /// the number tables the engine's reader uses (`numeri`)
+    num_tables: super::loqnum::Tables,
+    /// LTTS7Util's character classes, for the number classifier's expressions
+    classes: Option<super::textfilter::Classes>,
+    /// LoqTTS7.dll, for the engine's own number tables
+    engine: Option<Pe>,
 }
 
 impl Russian {
@@ -83,7 +90,10 @@ impl Russian {
         let chars = (0..256u32)
             .map(|c| (pe.u8(CHARS + 8 * c), pe.u8(CHARS + 8 * c + 1), pe.u32(CHARS + 8 * c + 4)))
             .collect();
-        Some(Russian { pe, chars })
+        let num_tables = super::loqnum::Tables::read(&pe, numeri::MORPHS, numeri::CLASSIFY, numeri::CURRENCY, numeri::ORDINALS);
+        let classes = files.util.clone().and_then(Pe::parse).and_then(|u| super::textfilter::Classes::from_util(&u));
+        let engine = files.engine.clone().and_then(Pe::parse);
+        Some(Russian { pe, chars, num_tables, classes, engine })
     }
 
     pub(crate) fn flags(&self, c: u8) -> u32 {
@@ -257,6 +267,9 @@ impl super::common::Les for Russian {
     }
     fn pronunciabile_flag(&self, w: &[u8], flag: u8) -> bool {
         self.pronunciabile(w, flag)
+    }
+    fn leggi_numero(&self, toks: &mut [Tok], i: usize, kind: u32, dmy: &[u8]) -> Option<(Vec<u8>, usize)> {
+        Russian::leggi_numero(self, toks, i, kind, dmy)
     }
     fn symbol_name(&self, c: u8, mode: u8) -> Vec<u8> {
         self.symbol_name(c, mode)

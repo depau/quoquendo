@@ -1227,6 +1227,16 @@ impl Rxc {
     }
 }
 
+/// What the number classifiers (LoqTTS7.dll 0x10038a20, the modules'
+/// `LesClassifyFunc`) ask of an expression: `ELQRxcIni(pattern)` then
+/// `ELQRxcFindReplace` on `text` returning offset 0 with a match as long as
+/// the whole text. `None` when the expression does not compile.
+pub fn matches_whole(cl: &Classes, pattern: &[char], text: &[char]) -> Option<bool> {
+    let rx = Rxc::new(pattern, &[])?;
+    let s: Vec<u16> = text.iter().map(|&c| c as u32 as u16).collect();
+    Some(rx.find(cl, &s, 0).is_some_and(|(at, len, _)| at == 0 && len == text.len()))
+}
+
 // --- Filters ---------------------------------------------------------------------
 
 /// One lexicon rule: its key as raw word list entries, its value.

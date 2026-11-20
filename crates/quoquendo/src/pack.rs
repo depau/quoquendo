@@ -59,7 +59,7 @@ pub fn unpack_installer(exe: &[u8]) -> Result<Unpacked, String> {
         let keep = |p: &str| {
             let p = lower(p);
             p.strip_prefix(INNO_ROOT)
-                .is_some_and(|r| r.starts_with("data/") || r.starts_with("bin/ltts7") && r.ends_with(".dll"))
+                .is_some_and(|r| r.starts_with("data/") || (r.starts_with("bin/ltts7") || r == "bin/loqtts7.dll") && r.ends_with(".dll"))
         };
         inno::files(exe, keep)?
             .into_iter()
@@ -148,9 +148,12 @@ fn select(files: Vec<(String, Vec<u8>)>) -> Result<Unpacked, String> {
             if let Some(k) = library.and_then(|lib| find(&format!("bin/{lib}.dll"))) {
                 keep[k] = true;
             }
-            // the text filters read their character tables from LTTS7Util.dll
-            if let Some(k) = find("bin/LTTS7Util.dll") {
-                keep[k] = true;
+            // the text filters read their character tables from LTTS7Util.dll,
+            // the generic number reader its country codes from LoqTTS7.dll
+            for engine in ["bin/LTTS7Util.dll", "bin/LoqTTS7.dll"] {
+                if let Some(k) = find(engine) {
+                    keep[k] = true;
+                }
             }
         }
         voices.push(name.clone());

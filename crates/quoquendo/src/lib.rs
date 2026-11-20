@@ -140,6 +140,8 @@ pub struct VoiceFiles {
     pub language_library: Option<Vec<u8>>,
     /// `LTTS7Util.dll`: the text filters' character tables are read from it
     pub util_library: Option<Vec<u8>>,
+    /// `LoqTTS7.dll`: the generic number reader's country codes are read from it
+    pub engine_library: Option<Vec<u8>>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
     /// the voice's other `VocalDBName[i]` databases, in its `.vcf` order:
@@ -169,6 +171,8 @@ pub struct VoiceInfo {
     pub language_library: Option<String>,
     /// `bin/LTTS7Util.dll`, when present (with a language)
     pub util_library: Option<String>,
+    /// `bin/LoqTTS7.dll`, when present (with a language)
+    pub engine_library: Option<String>,
     /// the voice's `MotherTongue` when no `.lde` in the tree speaks it
     pub language_missing: Option<String>,
     /// why the voice can't speak yet (`no Catalan module`)
@@ -244,6 +248,8 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
         .map(|n| format!("bin/{n}"));
     // the text filters' character tables (`lang::textfilter`)
     let util_library = lde.and(find(&bins_dir, "LTTS7Util.dll")).map(|n| format!("bin/{n}"));
+    // the generic number reader's country codes (`lang::loqnum`)
+    let engine_library = lde.and(find(&bins_dir, "LoqTTS7.dll")).map(|n| format!("bin/{n}"));
     let language_missing = lde.is_none().then(|| descriptor.mother_tongue.clone());
     let unsupported = match &language_missing {
         Some(t) if catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(t)) => Some(format!("no {t} module")),
@@ -257,6 +263,7 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
         language,
         language_library,
         util_library,
+        engine_library,
         language_missing,
         unsupported,
     })
@@ -343,6 +350,7 @@ impl VoiceFiles {
             library: info.library.as_deref().and_then(read),
             language_library: info.language_library.as_deref().and_then(read),
             util_library: info.util_library.as_deref().and_then(read),
+            engine_library: info.engine_library.as_deref().and_then(read),
             dbl,
             gpr,
             regexps,
@@ -402,6 +410,7 @@ impl Voice {
                 regexps: files.regexps,
                 lexicons: files.lexicons,
                 util: files.util_library,
+                engine: files.engine_library,
                 phones: db.tables.as_ref().map(|t| t.phone_features()).unwrap_or_default(),
             }),
             None => frontend,

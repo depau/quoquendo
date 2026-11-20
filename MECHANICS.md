@@ -1373,7 +1373,7 @@ LesReadCodice 0x10007770, LesDoComposed/LesDoOrdinalDay 0x100030a0,
 LesDoAndBetweenTenthsUnits 0x100030b0, LesDoTenthInversion 0x100030d0,
 LesDoYearSplit 0x100030e0, LesDoAndBetweenThousandsHundreds 0x100030f0).
 No LesIniNumeri: numbers go through LoqTTS7.dll's generic number reader
-(not ported, §11). Native encoding 0x4e4 (1252, 0x100024b0); characters
+(§4n). Native encoding 0x4e4 (1252, 0x100024b0); characters
 0x10024200 (8 bytes: lower, upper, flags +4); phones 0x10024de0 → 124
 `{symbol, code}` at 0x10024a00.
 
@@ -1422,9 +1422,9 @@ FonTrasParola 174/174 and 20 106/20 106, FonAllofonoLingua 86/86 and
 39 988/39 988 chunks; Frida's stage explains every event-2/event-3
 difference of the bench. Whole transcriptions (`QQ_NO_LEXICON=1`): held-out
 words 19 994 of 20 000 (the 6 left are Greek letters outside Windows-1252,
-empty in both); bench `oracle/bench-da.txt` FON 27.2% → **88.8%** (the 10
-sentences without numbers identical), CAT 100%, samples 100% identical;
-`oracle/bench-da-text.txt` 69.2% (numbers, §11).
+empty in both); bench `oracle/bench-da.txt` FON 27.2% → 88.8% → **100%**
+since the numbers (§4n), CAT 100%, samples 100% identical;
+`oracle/bench-da-text.txt` 69.2% → **100%** (§4n).
 
 ## 4l. Polish FON, ported from LTTS7Polish.dll (`lang/polish/`)
 
@@ -1612,9 +1612,98 @@ FonTrasParola (158) and FonAllofonoLingua (50) give the original's
 analyses, records, stress and codes for every call. Whole transcriptions
 (`QQ_NO_LEXICON=1`): held-out words (`oracle/words/ru.txt`, every 7th
 alphabetic word of LibreOffice `ru_RU/ru_RU.dic`) **100%** (20 000 /
-20 000); `bench-ru.txt`, Dmitri and Olga: FON 38.9% → 90.4% of sounds,
-every word but the two numbers identical, CAT and samples 100%;
-`bench-ru-text.txt` (30 lines): 70.2%, the rest numbers (§11).
+20 000); `bench-ru.txt`, Dmitri and Olga: FON 38.9% → 90.4% → **100%**
+of sounds since the numbers (§4n), CAT and samples 100%;
+`bench-ru-text.txt` (30 lines): 70.2% → **100%** (§4n).
+
+## 4n. The engine's generic number reader (LoqTTS7.dll; `lang/loqnum.rs`)
+
+**Who uses it.** A module without `LesIniNumeri` (Danish, Russian) leaves
+slot 9 empty; 0x1003f520 then calls `LesNumero2Testo` (0x1003ebf0) with
+the escape the number tags ask for (kind 1→1, 2→2, 4/5→4, 6→5, 7→7, 8→8,
+9→0xb, 10→6, 0xb→10, 0xc→9, else 0). Its first call builds the whole
+reading in a buffer; the next ones `strtok` it on spaces (a `#` piece
+marks the record before 0x7b, as for slot 9). The module fills the
+binder's number slots by name (LES 0x10036140, from 0x1003667a): +0x50
+LesNumlettFunc, +0x54 LesClassifyFunc, +0x58…+0x88 LesParse* (Telefonico,
+Codice, Intero, Reale, Ordinale, Ora, Data, Valuta, Frazione, Angolare,
+Misura, Risultato, UserDefined), +0x8c…+0xbc LesRead* (the same order),
++0xc0…+0x10c the 20 LesDo* hooks
+(YearSplit, TenthInversion, AndBetweenTenthsUnits,
+AndBetweenHundredsTenths, AndBetweenThousandsHundreds, Truncation,
+TruncateTenth, OrdinalTenth, Composed, Gender, Plural, OverOnFraction,
+OrdinalDay, OfBetweenDayMonth, OfBetweenMonthYear, OClock, FeminineHour,
+Hour, Minutes, Seconds; called `(tables, value, num, type)`, the engine's
+all answer 0), +0x110…+0x11c the morph, classify (`{regexp, escape}`),
+currency and ordinal-string tables. Empty slots get the engine's
+functions (addresses in mechanics.json, `numbers-engine`).
+
+**The driver** (0x1003ebf0): `ELQNumIni` (LTTS7Util 0x10015220: a 0x524
+byte object, layout in mechanics.json), parse and reading mode = ctx+0x32c
+(`dmy` unless a `date…` tag), escape; escape 0 asks LesClassifyFunc. The
+escape's parser runs; if it refuses, the fixed order Data, Ora, Valuta,
+Angolare, Frazione, Telefonico, Reale, Misura, Risultato, Intero,
+Ordinale, Codice (types 8, 7, 9, 0xb, 10, 1, 6, 0xc, 0xd, 3, 4, 2); none →
+no reading. Then the type's reader adds morph ids (`ELQNumAddMorph`),
+LesNumlettFunc (0x10038d90) writes each morph's first morph-table string
+and ctx+0x18 takes the skip count (+0x21c).
+
+**The engine's parts** (`loqnum.rs`): the classifier 0x10038a20 (the
+first classify regexp matching the whole text, `ELQRxcFindReplace` at
+offset 0; patterns and text converted from 1252); the parsers 0x10038e40
+(telephone: `+`/`00` and the country codes at 0x10071350, so
+`pack.rs` now keeps `bin/LoqTTS7.dll` with a language), 0x10039010
+(integers, big above 2147483647), 0x10039180 (ordinals: `°`/`º` not
+before `c`, or `ª`, used up), 0x10039400 / 0x1003a280 (reals and amounts:
+the separator rule, the amount's currency from the next token, used up, or
+the previous), 0x100399e0 + 0x10039770 (times, ranges with one `-`),
+0x1003a040 + 0x10039bd0 (dates in the parse mode's order, years 0–19 →
+20xx, 20–99 → 19xx, 100–999 +1000), 0x1003a720 (fractions, `¼ ½ ¾`); the
+readers 0x1003c060…0x1003de40 and the cardinal builder 0x1003aa30
+(stem variant), 0x1003aaa0 (ending variant), 0x1003aba0 (digit),
+0x1003aed0 (0–99), 0x1003b4d0 (0–999), 0x1003b790 (int), 0x1003bf10
+(digits by pairs), 0x1003bcf0 (a character), 0x1003c840 (month names),
+0x1003c580 (times), 0x1003c970 (dates); morph ids in mechanics.json. The
+token helper 0x10038930 steps over tag tokens (type 5) and stops at the
+end (type 7) or index 14; quoquendo gives it the number's sentence.
+
+**Roman numerals** (0x100315a4, every language): a word after a
+`number=ordinalM`/`ordinalF`/`cardinal` tag that is a canonical Roman
+numeral (`ELQNumArabic2Roman` 0x10014c70: value 1–3999 written back by
+0x10014f90 and compared, any case; a one-letter one may keep a dot)
+becomes its number before the token is read (`common::roman_value`):
+`XXI век`, `Ludwig XIV.`, `Christian IV`.
+
+**Russian** (`russian/numeri.rs`): LesClassifyFunc 0x10004860 (the table
+part as the engine's, plus dates: before a month name mode `d`, a four-digit
+number before `году`… or after `году`/`год^у` mode `y`, after a month
+name `y` or `d`), the engine's parsers, every reader its own
+(0x10005f70…0x10007d70) on its builder copy 0x10004d40…0x100059e0 (a
+separator morph argument: 2 for readings, 1 in codes; two before
+thousands 0x6b, 200 0x397, 300/400 0x398, thousand forms 0x3bd/0x3be/0x3ac
+by the last digit, million forms 0x3e3/0x3e4/0x3d2), dates with an
+ordinal day and year (`пятн^адцатое марта две тысячи двадцать
+четвёртого`), LesDoOrdinalTenth/OrdinalDay/Gender. The reading-mode user
+data (LesGetNumberReadingMode 0x10006af0, slot +0x17c) is empty with the
+engine's defaults, so the modes 0x1d/0x1e (reals) and 0x1f (codes) are not
+modelled.
+
+**Danish** (`danish/numeri.rs`): LesClassifyFunc 0x10008420 (as Russian's
+with Danish words: `i siden år før efter inden indtil f.Kr. e.Kr. ad bc`
+before a year, `f.Kr. e.Kr. ad bc`, `s`, `'s` after it), LesParseData
+0x10008e20 (the engine's), LesReadData 0x100082e0 (0x100078a0: years
+before 2000 split, `nitten hundrede og syvogfirs`), LesReadFrazione
+0x10008200 (`en halv`, numerator and ordinal denominator with `del`/`dele`),
+LesReadCodice 0x10007770 (digits spelled), the engine's readers for the
+rest, and LesDoComposed/OrdinalDay 1, AndBetweenTenthsUnits,
+TenthInversion (`femogtyve`), YearSplit, AndBetweenThousandsHundreds.
+
+**Checked** (`LOQ_TRACE_NUM=1`, oracle/loqref.c: the token buffer and the
+ELQNum object with its morphs after every reading; `QQ_TRACE_NUM=1` prints
+quoquendo's): type, escape, skip, mode and morph list identical for every
+number of `bench-ru` (3), `bench-ru-text` (38), `bench-da` (3),
+`bench-da-text` (39) and two stress lists of telephone numbers, amounts,
+fractions, times, ranges, big integers and dates (32 Russian, 33 Danish).
 
 ## 5. CAT — picking pieces (the original's rules, decompiled)
 
@@ -1915,7 +2004,10 @@ hooking past a shorter table corrupts the next one and the voice fails to
 load with 15). The slot-9 number reader `LesIniNumeri` installs is
 hooked too: `> NUM`/`< NUM` lines with the type, index, date order, text,
 reading and ctx+0x18, and the token buffer before (`T`) and after (`U`);
-`LOQ_NUM_ONLY=1` logs only those. `oracle/parse_les.py` turns it into JSON lines,
+`LOQ_NUM_ONLY=1` logs only those. `LOQ_TRACE_NUM=1` logs the generic
+number reader's work to `<prefix>.num` (§4n: the token buffer, then the
+ELQNum object and its morphs after each reading; `QQ_TRACE_NUM=1` is
+quoquendo's). `oracle/parse_les.py` turns it into JSON lines,
 §4b). quoquendo's counterparts: `QQ_TRACE_CAT=1`,
 `QQ_CHECK_MARKS=<trace.join>`, `--check-decode <trace.dec>`,
 `QQ_RESAMPLE_TRACE=<prefix>.res` (`codec::tests::replays_the_engines_resampler`),
@@ -2008,9 +2100,9 @@ when a speed/pitch change asks for it.
   `bench-*-text.txt` is identical). Left on those benches after the
   filters (module FON, phones): English `\{spell=yes US` (the original
   spells `US`; the `spell` tag is read by `common::spell_tags` but the
-  English path still reads `us`), German `Ludwig XIV.`/`Friedrich II.`
-  after `\{number=ordinalM` (the original reads the roman ordinals),
-  French `45 67` (below). The English `#50` in "Seventy students sent…"
+  English path still reads `us`) and French `45 67` (below; the Roman
+  ordinals after `\{number=ordinalM` are read since §4n). The English
+  `#50` in "Seventy students sent…"
   (`oracle/bench-en-voice.txt`) is not found yet: the original's
   LesConfiniProsodici gives seventy 0x03, students 0x05, sent 0x05
   (`/tmp/qq-tl/s7.les`), no pause boundary.
@@ -2080,22 +2172,20 @@ when a speed/pitch change asks for it.
   The original engine under Wine crashes now and then (an ntdll page
   fault) in long `LOQ_LINES` runs, independent of the line: rerunning the
   rest of the list goes through.
-- Danish numbers (§4k): LTTS7Danish.dll has no LesIniNumeri; its numbers
-  go through LoqTTS7.dll's generic number reader, which calls the
-  module's LesClassifyFunc 0x10008420, LesParseData 0x10008e20,
-  LesReadData 0x100082e0, LesReadFrazione 0x10008200, LesReadCodice
-  0x10007770 and LesDo* hooks and its morph/ordinal/classify/currency
-  tables (0x10080928, 0x10080938, 0x100800d0, 0x10080118). That engine
-  side (shared with Russian) is not ported: numbers read as their digits,
-  so `bench-da.txt` lines 9–10 and most of `bench-da-text.txt` differ.
-  The `\SAMPA=` tail of FonAllofonoLingua and the phonetization path of
-  FonTrasParola are ported but no trace exercises them.
-- Russian numbers (§4m): LTTS7Russian.dll has no LesIniNumeri either; it
-  plugs into the same LoqTTS7 generic reader (LesNumero2Testo 0x1003ebf0:
-  LesClassifyFunc 0x10004860, the engine's LesParse* defaults, the
-  module's LesRead* 0x10005f70…0x10007d70 adding morphs with
-  `ELQNumAddMorph`, LesDo* hooks, the morph table 0x100a2e30 read by the
-  engine's NumLett 0x10038d90), which is not ported: numbers read as their
-  digits' names. `bench-ru.txt` lines 9–10 (`2475`, `15 марта 2024`) and
-  the number lines of `bench-ru-text.txt` differ; every other word is the
-  original's. Roman numerals (`XXI`) also go through it.
+- Danish (§4k): the `\SAMPA=` tail of FonAllofonoLingua and the
+  phonetization path of FonTrasParola are ported but no trace exercises
+  them.
+- Danish and Russian numbers (§4n): every traced reading is the
+  original's, and sounds, pieces and samples of `bench-da`,
+  `bench-da-text`, `bench-ru` and `bench-ru-text` are identical. Left: the
+  word grouping of the events (`bench-da-text` 99.1%, `bench-ru` 98.6%,
+  `bench-ru-text` 97.3% of words): after a date's reading (`15 марта 2024
+  года`, `12.05.2023`, `9 мая 1945`, `до 1 апреля`, `31 декабря`) and from
+  the word before some Danish cardinals (`har 1024 sider`, `har 28
+  elever`) the original marks no word start up to the sentence's end,
+  ours one per word. Consecutive numbers (`+7 495 123 45 67`, as French
+  `45 67`): the original gives each reading but the last the last-word
+  subclass 0x7b (then boundary 8 and a 50 ms pause), ours 0x79; the
+  number readings themselves are identical, the flag's source in
+  0x10031410 (its +0x84 local or 0x1002ddc0) is not found yet. The
+  reading-mode user data (`LesSetNumberReadingMode`) is not modelled.

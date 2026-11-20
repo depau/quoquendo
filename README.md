@@ -100,15 +100,16 @@ tool only, not needed to use quoquendo), on the benchmark sentences in
 | Krzysztof, Zosia | Polish | 100% | 100% | 100% |
 | Annika, Sven | Swedish | 100% | 100% | 100% |
 | Willem | Dutch | 100% | 100% | 100% |
+| Frida | Danish | 100% | 100% | 100% |
+| Dmitri, Olga | Russian | 100% | 100% | 100% |
 
 The pronunciation of these languages is ported from the original's own
-language modules and each voice's own phone rules (MECHANICS.md §4b–§4j);
+language modules and each voice's own phone rules (MECHANICS.md §4b–§4n;
+Danish and Russian numbers through the engine's generic number reader, §4n);
 the original's choice of pieces, its decoder, its joins and, for voices
 recorded at 44.1 kHz (Marcello, Florence, Alan, Grace, Ximena…), its
 resampling to 32 kHz are reproduced exactly (§2c, §2d, §5, §6).
-Danish numbers wait for the engine's generic number reader (MECHANICS
-§11); Russian still uses approximate
-pronunciation rules. Every voice's row, stage by stage, is in
+Every voice's row, stage by stage, is in
 `oracle/out/dashboard.md` (`quoquendo --compare-all`).
 
 See MECHANICS.md §2d, §4–§6 and §9.

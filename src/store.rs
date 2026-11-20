@@ -125,6 +125,7 @@ fn language_files(info: &quoquendo::VoiceInfo, list: &dyn Fn(&str) -> Vec<String
         .unwrap_or_default();
     out.extend(info.language_library.clone());
     out.extend(info.util_library.clone());
+    out.extend(info.engine_library.clone());
     out
 }
 
