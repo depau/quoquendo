@@ -1383,7 +1383,8 @@ impl App {
                 let fe = &voice.frontend;
                 match &voice.language_missing {
                     Some(t) => ui.label(RichText::new(format!("none: no {t} language folder")).color(AMBER)),
-                    None => ui.label(format!("{} dictionary words, {} lexicon words", fe.dictionary_len(), fe.lexicon_len())),
+                    None if fe.has_module() => ui.label("the original's language module, ported"),
+                    None => ui.label(format!("built-in rules, {} dictionary words", fe.dictionary_len())),
                 };
             });
         });

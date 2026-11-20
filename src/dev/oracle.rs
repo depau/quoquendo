@@ -124,54 +124,6 @@ pub fn run_many(voice: &str, texts: &[String]) -> Result<Vec<Reference>, String>
     texts.iter().map(|t| load(&cache.join(key(voice, t)), t)).collect()
 }
 
-/// The original engine's transcription of every line of `words` (FON only,
-/// fast: ~5 000 words a second), as (word, transcription). Some words crash
-/// the engine; the helper writes each line as it goes, so the word after the
-/// last one written is skipped and the rest is run again.
-pub fn transcribe_words(voice: &str, words: &[String]) -> Result<Vec<(String, String)>, String> {
-    let dir = oracle_dir().ok_or("oracle/run.sh not found (run from the quoquendo folder)")?;
-    let cache = dir.join("cache");
-    std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
-    let index: std::collections::HashMap<&str, usize> = words.iter().enumerate().map(|(i, w)| (w.as_str(), i)).collect();
-    let mut done = Vec::new();
-    let mut start = 0usize;
-    while start < words.len() {
-        let list = cache.join(format!("words-{voice}.txt"));
-        std::fs::write(&list, words[start..].join("\n") + "\n").map_err(|e| e.to_string())?;
-        let prefix = cache.join(format!("words-{voice}"));
-        let _ = std::fs::remove_file(prefix.with_extension("fonlist"));
-        let out = std::process::Command::new(dir.join("run.sh"))
-            .arg(voice)
-            .arg(&list)
-            .arg(&prefix)
-            .env("LOQ_FON_ONLY", "1")
-            .output()
-            .map_err(|e| format!("running the original engine: {e}"))?;
-        let text = std::fs::read(prefix.with_extension("fonlist")).unwrap_or_default();
-        let pairs: Vec<(String, String)> = String::from_utf8_lossy(&text)
-            .lines()
-            .filter_map(|l| l.split_once('\t'))
-            .map(|(w, t)| (w.to_string(), t.trim().trim_end_matches('-').to_string()))
-            .collect();
-        let last = pairs.last().and_then(|(w, _)| index.get(w.as_str()).copied());
-        done.extend(pairs);
-        if String::from_utf8_lossy(&out.stdout).contains("ok") {
-            break;
-        }
-        // crashed: skip the word after the last one written
-        let next = last.map(|i| i + 1).unwrap_or(start);
-        if next < start {
-            return Err(format!("the original engine failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
-        }
-        eprintln!(
-            "the original engine stopped at \"{}\"; skipping it",
-            words.get(next).map(String::as_str).unwrap_or("")
-        );
-        start = next + 1;
-    }
-    Ok(done)
-}
-
 fn load(prefix: &Path, text: &str) -> Result<Reference, String> {
     let read = |ext: &str| std::fs::read(prefix.with_extension(ext)).map_err(|e| format!("{}.{ext}: {e}", prefix.display()));
     let mut r = Reference {

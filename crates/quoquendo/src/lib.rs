@@ -52,8 +52,7 @@ pub struct Voice {
 }
 
 impl Voice {
-    /// Load a voice described by its `.vcf`/`.vde` (`discover_voices`), with
-    /// its learned lexicon when one was registered (`g2p::add_lexicon_dir`).
+    /// Load a voice described by its `.vcf`/`.vde` (`discover_voices`).
     pub fn open(descriptor: &VoiceDescriptor) -> Result<Voice, String> {
         let data = if descriptor.data_dir.as_os_str().is_empty() {
             descriptor
@@ -77,9 +76,6 @@ impl Voice {
         v.db.audio_path = Some(descriptor.voice_path.join(&v.descriptor.bin_name));
         v.descriptor.data_dir = data;
         v.descriptor.voice_path = descriptor.voice_path.clone();
-        if let Some(lexicon) = g2p::find_lexicon(&v.descriptor.mother_tongue) {
-            v.frontend = v.frontend.clone().with_lexicon(&lexicon);
-        }
         Ok(v)
     }
 

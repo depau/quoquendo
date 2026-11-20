@@ -405,12 +405,6 @@ S=I                          (after some sentences) I question, E exclamation
 The original's FON is code in each `LTTS7<Language>.dll`; for the ported
 languages it is read from there (below and §4b–§4d).
 
-**Dictionaries.** When `lexicons/<MotherTongue>.tsv` exists, every word in it
-reads exactly as the original engine transcribed it on its own (languages
-without a ported module only). They are made by `quoquendo --learn-lexicon
-<word list> --voice <voice>` (§8, §9) and are not shipped: they come from
-the original engine.
-
 **The languages' own data** (read from the installer's files: the `.dbl`
 by `g2p::Frontend::from_files` for unported languages, both by the ported
 modules):
@@ -1925,7 +1919,7 @@ reading and ctx+0x18, and the token buffer before (`T`) and after (`U`);
 §4b). quoquendo's counterparts: `QQ_TRACE_CAT=1`,
 `QQ_CHECK_MARKS=<trace.join>`, `--check-decode <trace.dec>`,
 `QQ_RESAMPLE_TRACE=<prefix>.res` (`codec::tests::replays_the_engines_resampler`),
-`QQ_DEBUG_JOIN=1`, `QQ_NO_LEXICON=1` (rules alone).
+`QQ_DEBUG_JOIN=1`.
 
 `LOQ_LINES=1` treats every line as an utterance; `LOQ_FON_ONLY=1` writes
 `<prefix>.fonlist` with one transcription per line (87 421 words in 6 s).
@@ -1938,16 +1932,12 @@ The Italian ending tables once learned from the original's transcriptions
 (`it-position.tsv`, `it-quality.tsv`) are gone with the fitted rules: the
 module's own tables (§4b) give the stress.
 
-Then the transcriptions themselves became the dictionaries (§4): Italian
-87 421 words, US English 128 376 (the SCOWL-based en_US word list), French
-635 540 (fr_FR Hunspell, expanded). `--compare` now also counts single sounds.
-Sounds identical to the original on the benchmarks:
-
-| voice | benchmark | sounds | words |
-|---|---|---|---|
-| Roberto | `oracle/bench-it.txt` (20 sentences) | **97.5%** | 92.0% |
-| Allison | `oracle/bench-en.txt` (10) | **96.3%** | 70.1% (the original groups words differently) |
-| Bernard | `oracle/bench-fr.txt` (10) | **100%** | 88.2% |
+Then the transcriptions themselves became dictionaries (`--learn-lexicon`,
+`lexicons/<MotherTongue>.tsv`: Italian 87 421 words, US English 128 376,
+French 635 540) that brought the fitted rules to 96–100% of sounds on the
+benchmarks. They are gone too, with `QQ_NO_LEXICON`: every language a voice
+of the pack speaks has its module ported (§4b–§4m), and the results that
+cite `QQ_NO_LEXICON=1` above are the ports alone.
 
 ## 10. What the engine's own code says (LoqTTS7.dll, decompiled)
 

@@ -6,7 +6,7 @@ use crate::dev::{engines, oracle, pipeline};
 use crate::install;
 use quoquendo::{g2p, loquendo, synth};
 
-use g2p::{analyse, Language, Token};
+use g2p::{analyse, Token};
 use std::path::PathBuf;
 use synth::Settings;
 
@@ -27,8 +27,6 @@ pub struct LaunchOptions {
     /// `--fon-list <word file>`: print "word<TAB>transcription" per line, as
     /// the original engine's helper does (oracle/loqref.c, LOQ_FON_ONLY)
     fon_list: Option<PathBuf>,
-    /// `--learn-lexicon <word file>`: the original's pronunciation of every word
-    learn_lexicon: Option<PathBuf>,
     install: Option<PathBuf>,
     /// `--unpack <installer|folder> <LTTS7 out dir>`
     unpack: Option<(PathBuf, PathBuf)>,
@@ -78,8 +76,6 @@ pub fn parse_args() -> LaunchOptions {
             }
         } else if a == "--compare" {
             opts.compare = args.next();
-        } else if a == "--learn-lexicon" {
-            opts.learn_lexicon = args.next().map(PathBuf::from);
         } else if a == "--install" {
             opts.install = args.next().map(PathBuf::from);
         } else if a == "--fon-list" {
@@ -138,9 +134,8 @@ fn selftest() -> i32 {
         };
         let db = &voice.db;
         println!(
-            "  language files: {} dictionary words, {} lexicon words",
-            voice.frontend.dictionary_len(),
-            voice.frontend.lexicon_len()
+            "  language files: {} dictionary words",
+            voice.frontend.dictionary_len()
         );
         if let Some(tongue) = &voice.language_missing {
             println!("  language data missing: needs {tongue}");
@@ -428,24 +423,10 @@ fn check_decode(trace: &std::path::Path, voice: Option<&str>) -> Result<(), Stri
     Ok(())
 }
 
-fn learn_lexicon(file: &std::path::Path, voice: Option<&str>) -> Result<(), String> {
-    let v = find_voice(voice)?.descriptor;
-    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
-    let words: Vec<String> = text.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty()).collect();
-    let pairs = oracle::transcribe_words(&v.name, &words)?;
-    let dir = g2p::lexicon_dirs().into_iter().next().ok_or("no place for lexicons")?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("{}.tsv", v.mother_tongue));
-    let body: String = pairs.iter().filter(|(_, t)| !t.is_empty()).map(|(w, t)| format!("{w}\t{t}\n")).collect();
-    std::fs::write(&path, body).map_err(|e| e.to_string())?;
-    println!("{} words -> {}", pairs.len(), path.display());
-    Ok(())
-}
-
-fn fon_list(list: &std::path::Path, voice: Option<&str>) {
+fn fon_list(list: &std::path::Path, voice: Option<&str>) -> Result<(), String> {
     // compared with the original's `.fonlist` (its module's transcription):
     // the voice library's stage is not in it
-    let fe = find_voice(voice).map(|v| v.frontend.without_voice()).unwrap_or_else(|_| g2p::Frontend::rules(Language::Italian));
+    let fe = find_voice(voice)?.frontend.without_voice();
     let text = std::fs::read_to_string(list).unwrap_or_default();
     let mut out = String::new();
     for line in text.lines().filter(|l| !l.trim().is_empty()) {
@@ -463,19 +444,12 @@ fn fon_list(list: &std::path::Path, voice: Option<&str>) {
         out.push_str(&format!("{line}\t{}-\n", words.join("-")));
     }
     print!("{out}");
+    Ok(())
 }
 
 /// Run a command-line mode, if one was asked for: its exit code. None opens
 /// the window.
 pub fn run(opts: &LaunchOptions) -> Option<i32> {
-    // optional pronunciation dictionaries learned from the original engine
-    // (`--learn-lexicon`): beside the oracle folder, or beside the program
-    if let Some(o) = oracle::oracle_dir() {
-        g2p::add_lexicon_dir(o.parent().unwrap_or(&o).join("lexicons"));
-    }
-    if let Some(exe) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("lexicons"))) {
-        g2p::add_lexicon_dir(exe);
-    }
     let done = |r: Result<(), String>| match r {
         Ok(()) => 0,
         Err(e) => {
@@ -515,12 +489,8 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
         let out = opts.out.clone().unwrap_or_else(|| PathBuf::from("quoquendo-speech.wav"));
         return Some(done(say(text, opts.voice.as_deref(), &opts.stages, &out)));
     }
-    if let Some(file) = &opts.learn_lexicon {
-        return Some(done(learn_lexicon(file, opts.voice.as_deref())));
-    }
     if let Some(list) = &opts.fon_list {
-        fon_list(list, opts.voice.as_deref());
-        return Some(0);
+        return Some(done(fon_list(list, opts.voice.as_deref())));
     }
     if let Some(what) = &opts.compare {
         return Some(done(compare(what, opts.voice.as_deref())));

@@ -240,14 +240,12 @@ pub struct LanguageData {
 }
 
 /// A voice's front end: its language, and that language's own data
-/// (dictionary and letter-to-sound model, or the ported language module)
-/// and learned lexicon when it has them. One per voice: English Us/Gb/Au
-/// share a `Language` but not a dictionary.
+/// (dictionary and letter-to-sound model, or the ported language module).
+/// One per voice: English Us/Gb/Au share a `Language` but not a dictionary.
 #[derive(Clone)]
 pub struct Frontend {
     pub lang: Language,
     data: Option<std::sync::Arc<LanguageData>>,
-    lexicon: Option<std::sync::Arc<Lexicon>>,
     /// the original's language module, ported (`lang`), reading its tables
     /// from the language pack's DLL
     module: Option<std::sync::Arc<dyn crate::lang::Module>>,
@@ -262,7 +260,6 @@ impl Frontend {
         Frontend {
             lang,
             data: None,
-            lexicon: None,
             module: None,
             voice: None,
         }
@@ -313,7 +310,6 @@ impl Frontend {
         Frontend {
             lang,
             data: Some(std::sync::Arc::new(data)),
-            lexicon: None,
             module: None,
             voice: None,
         }
@@ -323,68 +319,10 @@ impl Frontend {
     pub fn dictionary_len(&self) -> usize {
         self.data.as_ref().map(|d| d.dictionary.len()).unwrap_or(0)
     }
-
-    /// Words in the learned lexicon.
-    pub fn lexicon_len(&self) -> usize {
-        self.lexicon.as_ref().map(|l| l.len()).unwrap_or(0)
-    }
-
-    /// Add a pronunciation lexicon learned from the original engine
-    /// (lines `word<TAB>transcription`), looked up before everything else.
-    pub fn with_lexicon(mut self, tsv_text: &str) -> Frontend {
-        let lex: Lexicon = tsv_text
-            .lines()
-            .filter_map(|l| l.split_once('\t'))
-            .filter(|(_, t)| t.chars().any(|c| c != ' ' && c != '-'))
-            .map(|(w, t)| (w.to_string(), t.to_string()))
-            .collect();
-        self.lexicon = Some(std::sync::Arc::new(lex));
-        self
-    }
 }
 
 fn language_data_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
     fe.data.as_ref()?.dictionary.get(&word.to_lowercase()).cloned()
-}
-
-// --- pronunciation dictionaries ---------------------------------------------
-
-// ponytail: transcriptions kept as text and split on lookup; split up front the
-// 635 000-word French dictionary took ~350 MB
-type Lexicon = std::collections::HashMap<String, String>;
-
-static LEXICON_DIRS: std::sync::RwLock<Vec<std::path::PathBuf>> = std::sync::RwLock::new(Vec::new());
-
-/// Add a folder to look for pronunciation dictionaries in
-/// (`<MotherTongue>.tsv`, lines `word<TAB>transcription`).
-pub fn add_lexicon_dir(dir: impl Into<std::path::PathBuf>) {
-    let dir = dir.into();
-    let mut dirs = LEXICON_DIRS.write().unwrap();
-    if !dirs.contains(&dir) {
-        dirs.push(dir);
-    }
-}
-
-/// The folders registered with `add_lexicon_dir`.
-pub fn lexicon_dirs() -> Vec<std::path::PathBuf> {
-    LEXICON_DIRS.read().unwrap().clone()
-}
-
-/// The learned dictionary for a `MotherTongue` (`<MotherTongue>.tsv` in the
-/// first registered folder holding one), for `Frontend::with_lexicon`.
-/// `QQ_NO_LEXICON=1` measures the rules alone.
-pub fn find_lexicon(mother_tongue: &str) -> Option<String> {
-    if std::env::var_os("QQ_NO_LEXICON").is_some() {
-        return None;
-    }
-    lexicon_dirs()
-        .into_iter()
-        .find_map(|dir| std::fs::read_to_string(dir.join(format!("{mother_tongue}.tsv"))).ok())
-}
-
-fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
-    let t = fe.lexicon.as_ref()?.get(&word.to_lowercase())?;
-    Some(t.split([' ', '-']).filter(|s| !s.is_empty()).map(str::to_string).collect())
 }
 
 /// A word's phones by the built-in rules, for the languages without a
@@ -393,11 +331,7 @@ fn lexicon_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
 /// module they read nothing, and the voice reports its language data missing.
 pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
-    // the dictionary first: the original engine's own pronunciation
-    if let Some(p) = lexicon_lookup(word, fe) {
-        return p;
-    }
-    // then the language's own data from the installer (`Frontend::from_files`)
+    // the language's own data from the installer (`Frontend::from_files`)
     if let Some(p) = language_data_lookup(word, fe) {
         return p;
     }
