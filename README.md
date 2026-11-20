@@ -50,9 +50,11 @@ trunk serve --release                             # http://127.0.0.1:8080
 
 The same app; voices live in the browser's own storage. Browsers can't fetch
 the installers from archive.org (it sends no CORS header for `.exe` files), so
-downloads need a voice mirror (`QQ_MIRROR_URL` at build time, or Settings);
-installers downloaded by hand can always be imported. GitHub Pages builds it
-from `main` (`.github/workflows/pages.yml`).
+downloads go through the voice mirror: the site the app is served from, or
+the one in Settings. Installers downloaded by hand can always be imported.
+The app and the voices are served by one Cloudflare Worker over one R2
+bucket, deployed from `main` (`.github/workflows/site.yml`; setup in
+`mirror/README.md`).
 
 ### On Android
 

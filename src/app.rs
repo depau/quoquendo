@@ -536,11 +536,8 @@ impl App {
                         ui.checkbox(&mut self.show_curtain, "Behind the curtain");
                         ui.separator();
                         ui.label("Voice mirror URL");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.mirror_url)
-                                .desired_width(260.0)
-                                .hint_text(catalog::DEFAULT_MIRROR.unwrap_or("none: archive.org only")),
-                        );
+                        let fallback = catalog::effective_mirror("").unwrap_or_else(|| "none: archive.org only".into());
+                        ui.add(egui::TextEdit::singleline(&mut self.mirror_url).desired_width(260.0).hint_text(fallback));
                         ui.separator();
                         ui.hyperlink_to("About quoquendo", "https://github.com/depau/quoquendo");
                     });

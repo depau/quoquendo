@@ -10,10 +10,17 @@ pub use quoquendo::catalog::{archive_url, Installer, INSTALLERS};
 /// The mirror built in (`QQ_MIRROR_URL` at build time).
 pub const DEFAULT_MIRROR: Option<&str> = option_env!("QQ_MIRROR_URL");
 
-/// The mirror in use: the one set in the app, else the built-in one.
+/// The mirror in use: the one set in the app, else the built-in one; in the
+/// browser, else the page's own site (the Worker serves the app and the
+/// voices from one origin, `mirror/worker`).
 pub fn effective_mirror(setting: &str) -> Option<String> {
     let s = setting.trim();
     let m = if s.is_empty() { DEFAULT_MIRROR.unwrap_or("").trim() } else { s };
+    #[cfg(target_arch = "wasm32")]
+    let m = match m {
+        "" => web_sys::window().and_then(|w| w.location().origin().ok()).unwrap_or_default(),
+        m => m.to_string(),
+    };
     (!m.is_empty()).then(|| m.trim_end_matches('/').to_string())
 }
 

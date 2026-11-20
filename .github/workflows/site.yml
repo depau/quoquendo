@@ -1,0 +1,45 @@
+name: site
+
+# The web app, served by the same Worker and R2 bucket as the voices
+# (mirror/worker): built with trunk, uploaded under site/.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BUCKET: quoquendo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install trunk
+        run: cargo install --locked trunk
+      # the app fetches voices from the site it is served from
+      - name: Build
+        run: trunk build --release --public-url /
+      # hashed files first, index.html last: a visitor never gets an
+      # index.html whose files aren't there yet
+      - name: Upload to R2
+        run: |
+          set -euo pipefail
+          cd dist
+          find . -type f ! -name index.html ! -name '.*' -printf '%P\n' | sort | while IFS= read -r p; do
+            npx --yes wrangler@3 r2 object put "$BUCKET/site/$p" --file "$p" --remote
+          done
+          npx --yes wrangler@3 r2 object put "$BUCKET/site/index.html" --file index.html --content-type 'text/html; charset=utf-8' --remote
+      - name: Deploy the Worker
+        working-directory: mirror/worker
+        run: npx --yes wrangler@3 deploy

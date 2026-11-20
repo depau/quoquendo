@@ -9,6 +9,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BUCKET: quoquendo
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,9 +36,9 @@ jobs:
           set -euo pipefail
           cd out/LTTS7
           find . -type f ! -path ./installers.json -printf '%P\n' | sort | while IFS= read -r p; do
-            npx --yes wrangler@3 r2 object put "quoquendo-voices/v1/$p" --file "$p" --remote
+            npx --yes wrangler@3 r2 object put "$BUCKET/v1/$p" --file "$p" --remote
           done
-          npx --yes wrangler@3 r2 object put quoquendo-voices/v1/catalog.json --file ../catalog.json --content-type application/json --remote
+          npx --yes wrangler@3 r2 object put "$BUCKET/v1/catalog.json" --file ../catalog.json --content-type application/json --remote
       - name: Deploy the Worker
         working-directory: mirror/worker
         run: npx --yes wrangler@3 deploy
