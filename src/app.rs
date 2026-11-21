@@ -79,6 +79,67 @@ struct Download {
     cancel: store::Cancel,
 }
 
+/// A column of the voice tables.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Col {
+    Voice,
+    Language,
+    Gender,
+    Size,
+    Status,
+}
+
+/// How a voice table is sorted: a column, then language, then name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Sort {
+    col: Col,
+    desc: bool,
+}
+
+impl Default for Sort {
+    fn default() -> Sort {
+        Sort { col: Col::Language, desc: false }
+    }
+}
+
+/// A cell's sort key: text compares case-insensitively, numbers as numbers.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum Key {
+    Num(u64),
+    Text(String),
+}
+
+fn text_key(s: &str) -> Key {
+    Key::Text(s.to_lowercase())
+}
+
+impl Sort {
+    /// A column heading: clicking it sorts by that column, again reverses.
+    fn header(&mut self, ui: &mut egui::Ui, title: &str, col: Col) {
+        let on = self.col == col;
+        let mark = match (on, self.desc) {
+            (false, _) => "",
+            (true, false) => " ⏶",
+            (true, true) => " ⏷",
+        };
+        let text = RichText::new(format!("{title}{mark}")).small().color(if on { TEXT } else { MUTED });
+        let r = ui.add(egui::Label::new(text).sense(egui::Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand);
+        if r.clicked() {
+            *self = Sort { col, desc: on && !self.desc };
+        }
+    }
+
+    /// Sort `rows` by the chosen column, ties by language then name.
+    fn apply<T>(&self, rows: &mut [T], key: impl Fn(&T, Col) -> Key) {
+        rows.sort_by(|a, b| {
+            let o = key(a, self.col).cmp(&key(b, self.col));
+            (if self.desc { o.reverse() } else { o })
+                .then_with(|| key(a, Col::Language).cmp(&key(b, Col::Language)))
+                .then_with(|| key(a, Col::Voice).cmp(&key(b, Col::Voice)))
+        });
+    }
+}
+
 /// The developer tools' state (desktop only).
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
@@ -114,6 +175,8 @@ pub struct App {
     filter: String,
     filter_language: String,
     filter_gender: String,
+    sort_installed: Sort,
+    sort_catalog: Sort,
     mirror_url: String,
 
     text: String,
@@ -188,6 +251,8 @@ impl App {
             filter: String::new(),
             filter_language: String::new(),
             filter_gender: String::new(),
+            sort_installed: Sort::default(),
+            sort_catalog: Sort::default(),
             mirror_url: get("mirror_url").unwrap_or_default(),
             text: get("text").unwrap_or_default(),
             last_sample: String::new(),
@@ -826,12 +891,21 @@ impl App {
             let mut delete = None;
             let mut keep = false;
             let mut choose = None;
+            let mut rows: Vec<&InstalledVoice> = self.installed.iter().collect();
+            self.sort_installed.apply(&mut rows, |v, col| match col {
+                Col::Voice => text_key(&v.name),
+                Col::Language => text_key(&v.mother_tongue),
+                Col::Gender => text_key(&v.gender),
+                // ready, then needing language data, then unsupported
+                Col::Status | Col::Size => Key::Num(if v.unsupported.is_some() { 2 } else { v.language_missing.is_some() as u64 }),
+            });
             egui::Grid::new("installed").num_columns(5).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
-                for h in ["Voice", "Language", "Gender", "Status", ""] {
-                    ui.label(RichText::new(h).small().color(MUTED));
+                for (h, col) in [("Voice", Col::Voice), ("Language", Col::Language), ("Gender", Col::Gender), ("Status", Col::Status)] {
+                    self.sort_installed.header(ui, h, col);
                 }
+                ui.label("");
                 ui.end_row();
-                for v in &self.installed {
+                for v in rows {
                     if ui.link(&v.name).clicked() && v.can_speak() {
                         choose = Some(v.name.clone());
                     }
@@ -993,14 +1067,23 @@ impl App {
             .filter(|i| self.filter_language.is_empty() || i.language == self.filter_language)
             .filter(|i| self.filter_gender.is_empty() || i.gender == self.filter_gender)
             .collect();
-        shown.sort_by_key(|i| i.label.to_lowercase());
+        let installed = |i: &Installer| self.installed.iter().any(|v| v.root.is_none() && v.name.eq_ignore_ascii_case(i.voice));
+        let pending = |i: &Installer| self.downloads.iter().any(|d| d.installer.file == i.file);
+        self.sort_catalog.apply(&mut shown, |i, col| match col {
+            Col::Voice => text_key(i.label),
+            Col::Language => text_key(i.language),
+            Col::Gender => text_key(i.gender),
+            Col::Size => Key::Num(i.size),
+            // installed, then downloading, then to download
+            Col::Status => Key::Num(if installed(i) { 0 } else if pending(i) { 1 } else { 2 }),
+        });
         let can_fetch = !cfg!(target_arch = "wasm32") || self.mirror().is_some();
         let mut queue = None;
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
             egui::Grid::new("catalog").num_columns(5).striped(true).spacing([18.0, 5.0]).show(ui, |ui| {
-                for h in ["Voice", "Language", "Gender", "Size", "Status"] {
-                    ui.label(RichText::new(h).small().color(MUTED));
+                for (h, col) in [("Voice", Col::Voice), ("Language", Col::Language), ("Gender", Col::Gender), ("Size", Col::Size), ("Status", Col::Status)] {
+                    self.sort_catalog.header(ui, h, col);
                 }
                 ui.end_row();
                 for inst in shown {
@@ -1008,11 +1091,9 @@ impl App {
                     ui.label(inst.language);
                     ui.label(RichText::new(inst.gender).color(MUTED));
                     ui.label(RichText::new(catalog::size_label(inst.size)).monospace());
-                    let installed = self.installed.iter().any(|v| v.root.is_none() && v.name.eq_ignore_ascii_case(inst.voice));
-                    let pending = self.downloads.iter().any(|d| d.installer.file == inst.file);
-                    if installed {
+                    if installed(inst) {
                         ui.label(RichText::new("Installed").color(GREEN));
-                    } else if pending {
+                    } else if pending(inst) {
                         ui.label(RichText::new("In downloads").color(MUTED));
                     } else if ui
                         .add_enabled(can_fetch, egui::Button::new("Download"))
