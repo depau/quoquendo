@@ -112,7 +112,7 @@ const CURRENCY_WORDS: [(&[u32], u32, bool); 14] = [
 /// immediates: 0xa5, 0xa3); the codes that take `una` (0x10004a40).
 const YEN: u32 = 0x1002c30c;
 const POUND: u32 = 0x1002c334;
-const FEMININE: [u32; 4] = [0x1002c334, 0x1002c2f4, 0x1002c288, 0x1002c1f8];
+const FEMININE: [u32; 4] = [POUND, 0x1002c2f4, 0x1002c288, 0x1002c1f8];
 
 /// The byte at `i` of a C string (its NUL past the end).
 fn c(s: &[u8], i: usize) -> u8 {

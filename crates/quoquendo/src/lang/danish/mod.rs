@@ -40,12 +40,9 @@ const FUNCTIONS: u32 = 0x100251b8;
 /// 0x40 lower case, 0x80 accented, 0x100 punctuation).
 pub(crate) const CHARS: u32 = 0x10024200;
 pub(crate) const LETTER: u32 = 0x1;
-pub(crate) const ACRONYM: u32 = 0x2;
-pub(crate) const DIGIT: u32 = 0x4;
 pub(crate) const CONSONANT: u32 = 0x8;
 pub(crate) const VOWEL: u32 = 0x10;
 pub(crate) const UPPER: u32 = 0x20;
-pub(crate) const LOWER: u32 = 0x40;
 pub(crate) const ACCENTED: u32 = 0x80;
 pub(crate) const PUNCT: u32 = 0x100;
 
@@ -328,11 +325,6 @@ impl Danish {
         let ent = self.pe.u32(PHONES);
         let n = self.pe.u16(PHONES + 4) as u32;
         (0..n).map(move |k| (self.s(self.pe.u32(ent + 8 * k)), self.pe.u32(ent + 8 * k + 4)))
-    }
-
-    /// 0x1000bac0: a symbol's code (0x10 for none).
-    pub(crate) fn phone_code(&self, sym: &[u8]) -> u32 {
-        self.phone_table().find(|&(s, _)| s == sym).map_or(0x10, |(_, c)| c)
     }
 
     pub fn symbol(&self, code: u32) -> Option<&str> {

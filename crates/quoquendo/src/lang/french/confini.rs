@@ -80,10 +80,6 @@ fn f(w: &[Word], i: isize, k: usize) -> u8 {
 }
 
 impl French {
-    fn one_of(&self, t: Option<&[u8]>, list: &[u32]) -> bool {
-        t.is_some_and(|t| list.iter().any(|&a| self.s(a) == t))
-    }
-
     /// LTTS7Util's `ELQSearchString` (0x10028ca0) with flag 1 (whole
     /// strings): over more than 3 entries a binary search, else a scan.
     fn search_string(&self, key: &[u8], list: &[u32]) -> bool {

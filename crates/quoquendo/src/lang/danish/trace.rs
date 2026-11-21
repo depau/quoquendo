@@ -43,7 +43,6 @@ impl TWord {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Call {
     pub name: String,
-    pub args: Vec<u32>,
     pub ctx: Vec<u32>,
     pub rc: u32,
     /// the records before and after (LES functions)
@@ -204,12 +203,7 @@ pub(super) fn parse(path: &str) -> Vec<Call> {
         if let Some(rest) = line.strip_prefix("> ") {
             let mut it = rest.split_whitespace();
             let name = it.next().unwrap_or("").to_string();
-            let args: Vec<u32> = it.clone().take(6).filter_map(|x| u32::from_str_radix(x, 16).ok()).collect();
-            let mut c = Call {
-                name,
-                args,
-                ..Default::default()
-            };
+            let mut c = Call { name, ..Default::default() };
             if let Some(cx) = line.split(" ctx=").nth(1) {
                 c.ctx = cx.split(',').filter_map(|x| u32::from_str_radix(x.trim(), 16).ok()).collect();
             }

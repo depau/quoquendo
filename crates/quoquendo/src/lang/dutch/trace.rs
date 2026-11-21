@@ -187,9 +187,6 @@ fn dutch_trace() {
                         .map(|s| s.split_whitespace().next().unwrap_or("").split(',').filter_map(|c| u32::from_str_radix(c, 16).ok()).collect())
                         .unwrap_or_default();
                     if let Some(at) = (pos..sentence.len()).find(|&j| sentence[j].text == word) {
-                        if idx == 0 || at < idx {
-                            chunk_start = at - idx.min(at);
-                        }
                         chunk_start = at - idx.min(at);
                         pos = at + 1;
                         let ours = d.tras_parola(&sentence[chunk_start..], idx);

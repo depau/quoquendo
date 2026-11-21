@@ -55,7 +55,6 @@ impl Variant {
 /// Character classes (0x10027d00): 8 bytes per character, the lower case
 /// at +0, flags at +4 (0x10 vowel, 0x20 upper case).
 const CHARS: u32 = 0x10027d00;
-const VOWEL: u32 = 0x10;
 const UPPER: u32 = 0x20;
 
 /// The columns the module selects from `lessico` (0x10027cd0, joined into
@@ -239,10 +238,6 @@ impl English {
 
     pub(crate) fn flags(&self, c: u8) -> u32 {
         self.chars[c as usize].1
-    }
-
-    pub(crate) fn is_vowel(&self, c: u8) -> bool {
-        self.flags(c) & VOWEL != 0
     }
 
     /// The code of a phone symbol in the variant's table (0x1000bf00): 0x10

@@ -2,12 +2,8 @@
 //! lower-case word, each case looking around the letter (neighbours, the
 //! word's start and end, word lists) and writing phone codes.
 
-use super::super::German;
+use super::super::{German, PUNCT, VOWEL};
 use super::{cs, strncmp};
-
-/// Character flag: punctuation (`DAT_100287cc` bit 8), vowel (bit 4).
-const PUNCT: u32 = 0x100;
-const VOWEL: u32 = 0x10;
 
 /// Voiceless consonants "cfhkpqsßtxz" (0x10107eec), voiced "bdglmnrwv"
 /// (0x10107ee0); together the consonants of the syllable checks.

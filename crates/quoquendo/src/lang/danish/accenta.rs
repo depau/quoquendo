@@ -481,17 +481,11 @@ impl Danish {
         }
         let mut buf: Vec<u8> = Vec::new();
         let (mut cursor, mut start, mut prev) = (0usize, 0usize, 0u16);
-        let mut glossed = false;
         for (j, m) in sol.iter().enumerate() {
+            let glossed = m.gloss.is_some();
             let s: Vec<u8> = match &m.gloss {
-                Some(g) => {
-                    glossed = true;
-                    Self::parse_marks(li, cursor, g, 0x40)
-                }
-                None => {
-                    glossed = false;
-                    m.text.clone()
-                }
+                Some(g) => Self::parse_marks(li, cursor, g, 0x40),
+                None => m.text.clone(),
             };
             if s.len() + buf.len() >= 0x40 {
                 continue;

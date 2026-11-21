@@ -349,14 +349,6 @@ fn fld(w: &[Word], i: isize, f: usize) -> u8 {
     w.get(i as usize).map_or(0, |r| r.f[f])
 }
 
-/// A record's text (empty past the end).
-fn text(w: &[Word], i: isize) -> &[u8] {
-    if i < 0 {
-        return &[];
-    }
-    w.get(i as usize).map_or(&[][..], |r| &r.text[..])
-}
-
 /// The byte at `i`, 0 outside the string.
 #[inline]
 fn b(s: &[u8], i: isize) -> u8 {
