@@ -61,6 +61,11 @@ struct Explore {
     page: usize,
     /// for the loaded voice: each phone with every take of it (sentence, phone index)
     index: Option<(String, Vec<(String, Vec<(u32, u16)>)>)>,
+    /// the left list shows the recorded sentences (else the phones)
+    sentences: bool,
+    sentence_filter: String,
+    /// the sentences the filter keeps: (voice, filter) they were found for
+    sentence_hits: Option<(String, String, Vec<usize>)>,
 }
 
 enum DownloadState {
@@ -1150,8 +1155,37 @@ impl App {
         }
         self.explore = Explore {
             index: Some((v.descriptor.name.clone(), map.into_iter().collect())),
+            sentences: self.explore.sentences,
             ..Default::default()
         };
+    }
+
+    /// The recorded sentences the sentence filter keeps: a sentence number
+    /// (`#12`, `12`) keeps the sentences whose number starts with it, phones
+    /// (`a r t`) the sentences that say them in that order, word breaks
+    /// ignored.
+    fn explore_sentence_hits(&mut self) {
+        let Some(v) = &self.voice else { return };
+        let filter = self.explore.sentence_filter.trim().to_string();
+        if self.explore.sentence_hits.as_ref().is_some_and(|(n, f, _)| *n == v.descriptor.name && *f == filter) {
+            return;
+        }
+        let number = filter.trim_start_matches('#');
+        let units = &v.db.units;
+        let hits: Vec<usize> = if filter.is_empty() {
+            (0..units.len()).collect()
+        } else if !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()) {
+            (0..units.len()).filter(|u| u.to_string().starts_with(number)).collect()
+        } else {
+            let want = format!(" {} ", filter.split_whitespace().collect::<Vec<_>>().join(" "));
+            (0..units.len())
+                .filter(|&u| {
+                    let said: Vec<&str> = units[u].phones.iter().filter(|p| p.timed).map(|p| p.sym.as_str()).collect();
+                    format!(" {} ", said.join(" ")).contains(&want)
+                })
+                .collect()
+        };
+        self.explore.sentence_hits = Some((v.descriptor.name.clone(), filter, hits));
     }
 
     fn explore_tab(&mut self, ui: &mut egui::Ui) {
@@ -1160,6 +1194,7 @@ impl App {
             return;
         }
         self.explore_index();
+        self.explore_sentence_hits();
         let Some(voice) = &self.voice else { return };
         let db = &voice.db;
         let rate = db.audio_rate() as f32;
@@ -1188,30 +1223,63 @@ impl App {
         if db.audio.is_none() {
             ui.label(RichText::new("This voice's recordings can't be played yet.").color(AMBER));
         }
-        ui.horizontal(|ui| {
-            ui.label("Sentence #");
-            let mut n = self.explore.unit.unwrap_or(0);
-            if ui.add(egui::DragValue::new(&mut n).range(0..=db.units.len().saturating_sub(1))).changed() {
-                open_unit = Some(Some(n));
-            }
-            if ui.button("Open").clicked() {
-                open_unit = Some(Some(n));
-            }
-        });
         ui.separator();
         let height = ui.available_height();
         ui.horizontal_top(|ui| {
-            // the phones, with how often each was recorded
+            // a list to pick from: the phones, with how often each was
+            // recorded, or the recorded sentences
             ui.vertical(|ui| {
-                ui.set_width(170.0);
-                ui.add(egui::TextEdit::singleline(&mut self.explore.filter).hint_text("Filter phones").desired_width(160.0));
-                egui::ScrollArea::vertical().id_salt("phones").max_height(height - 40.0).show(ui, |ui| {
-                    for (sym, takes) in index.iter().filter(|(s, _)| self.explore.filter.is_empty() || s.contains(self.explore.filter.as_str())) {
-                        let chosen = self.explore.phone.as_deref() == Some(sym.as_str()) && self.explore.unit.is_none();
-                        let label = RichText::new(format!("{sym:<6} {:>6}", takes.len())).monospace();
-                        if ui.selectable_label(chosen, label).clicked() {
-                            pick_phone = Some(sym.clone());
+                let width = if self.explore.sentences { 380.0 } else { 170.0 };
+                ui.set_width(width);
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.explore.sentences, false, "Phones");
+                    ui.selectable_value(&mut self.explore.sentences, true, "Sentences");
+                });
+                if !self.explore.sentences {
+                    ui.add(egui::TextEdit::singleline(&mut self.explore.filter).hint_text("Filter phones").desired_width(width - 10.0));
+                    egui::ScrollArea::vertical().id_salt("phones").max_height(height - 70.0).show(ui, |ui| {
+                        for (sym, takes) in index.iter().filter(|(s, _)| self.explore.filter.is_empty() || s.contains(self.explore.filter.as_str())) {
+                            let chosen = self.explore.phone.as_deref() == Some(sym.as_str()) && self.explore.unit.is_none();
+                            let label = RichText::new(format!("{sym:<6} {:>6}", takes.len())).monospace();
+                            if ui.selectable_label(chosen, label).clicked() {
+                                pick_phone = Some(sym.clone());
+                            }
                         }
+                    });
+                    return;
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.explore.sentence_filter)
+                        .hint_text("Phones in order (a r t) or a number")
+                        .desired_width(width - 10.0),
+                );
+                let hits: &[usize] = self.explore.sentence_hits.as_ref().map_or(&[], |(_, _, h)| h.as_slice());
+                ui.label(RichText::new(format!("{} of {} sentences", hits.len(), db.units.len())).small().color(MUTED));
+                let row = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+                let digits = db.units.len().saturating_sub(1).to_string().len();
+                egui::ScrollArea::vertical().id_salt("sentences").max_height(height - 90.0).show_rows(ui, row, hits.len(), |ui, rows| {
+                    for &u in &hits[rows] {
+                        let unit = &db.units[u];
+                        let said: Vec<&str> = unit.phones.iter().filter(|p| p.timed).map(|p| p.sym.as_str()).collect();
+                        // a question or an exclamation is marked after the number
+                        let mood = match unit.mood {
+                            Some('I') => " ? ",
+                            Some('E') => " ! ",
+                            _ => "   ",
+                        };
+                        ui.horizontal(|ui| {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                            let timed = || unit.phones.iter().filter(|p| p.timed);
+                            if let (Some(a), Some(b)) = (timed().next(), timed().last()) {
+                                if ui.small_button("▶").on_hover_text("Play this sentence").clicked() {
+                                    play = Some((u as u32, a.start, b.end));
+                                }
+                            }
+                            let text = RichText::new(format!("#{u:<digits$}{mood}{}", said.join(" "))).monospace();
+                            if ui.selectable_label(self.explore.unit == Some(u), text).clicked() {
+                                open_unit = Some(Some(u));
+                            }
+                        });
                     }
                 });
             });
@@ -1225,7 +1293,13 @@ impl App {
                         if ui.button("◀ Back").clicked() {
                             open_unit = Some(None);
                         }
+                        if ui.add_enabled(u > 0, egui::Button::new("◀")).on_hover_text("Previous sentence").clicked() {
+                            open_unit = Some(Some(u - 1));
+                        }
                         ui.label(RichText::new(format!("Sentence #{u}")).strong());
+                        if ui.add_enabled(u + 1 < db.units.len(), egui::Button::new("▶")).on_hover_text("Next sentence").clicked() {
+                            open_unit = Some(Some(u + 1));
+                        }
                         let mood = match unit.mood {
                             Some('I') => "question",
                             Some('E') => "exclamation",
@@ -1303,7 +1377,7 @@ impl App {
                         });
                     });
                 } else {
-                    ui.label(RichText::new("Pick a phone to hear every take of it, or open a recorded sentence by number.").color(MUTED));
+                    ui.label(RichText::new("Pick a phone to hear every take of it, or a recorded sentence to hear it phone by phone.").color(MUTED));
                 }
             });
         });
