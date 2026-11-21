@@ -81,7 +81,9 @@ async function object(request, env, key, cache) {
   const r = obj.range;
   if (r && request.headers.has("Range")) {
     let offset, length;
-    if ("suffix" in r) {
+    // R2 fills in only the fields of the range it served (the others are
+    // undefined, not absent)
+    if (r.suffix !== undefined) {
       length = Math.min(r.suffix, obj.size);
       offset = obj.size - length;
     } else {
