@@ -37,8 +37,9 @@ quoquendo --unpack <installer|folder> <dir>       # the same into any folder
 
 This keeps only the voice's files and its language's in
 `~/.local/share/quoquendo/LTTS7` (`%APPDATA%` on Windows). The app's Voices
-tab does the same, and downloads any of the pack's 47 installers from
-archive.org, or their files from a voice mirror ([mirror/](mirror/README.md)).
+tab does the same, and downloads any of the catalog's 48 installers (the
+pack's 47 and Federica's) from archive.org, or their files from a voice
+mirror ([mirror/](mirror/README.md)).
 Every file on the mirror is listed, with links, sizes and checksums, in
 [mirror/FILES.md](mirror/FILES.md), for use outside the app.
 

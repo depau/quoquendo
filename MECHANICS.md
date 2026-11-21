@@ -2137,6 +2137,19 @@ when a speed/pitch change asks for it.
   `ttsLoadPersona` fails with 12 "Invalid function or API parameter". The
   Loquendo 6 pack's installers carry an LTTS6 Mandarin module
   (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from.
+- Federica (Italian) exists only as an LTTS 7.2 bundle (archive.org
+  `loquendo-7-federica-italian`, an Inno installer of the whole 7.2
+  engine): voices and languages under `modules/<Name>/`, configured by one
+  XML `global.ttsconf` instead of `.vcf`/`.vde`/`.lde`, her main database
+  split in two (`VocalDBName` `Federica_1`, `Federica_2`; 7.0 names the
+  first after the voice, the loader now takes `VocalDBName[0]`).
+  `pack::place_ttsconf` writes a `.vcf`/`.vde` from her `<voice>` entry
+  (`ttsconf`) and keeps only her files: the bundle's 7.2 language and engine
+  DLLs differ from the 7.0 ones the ported modules are matched to, so she
+  reads Italian from any 7.0 Italian installer. Its `global.ttsconf` lists
+  26 more voices than the pack (Veena, Lisheng, Otoya, Laila…); none was
+  found as 7.x data. The pack's `Loquendo 6/` Juan, Montserrat, Saskia,
+  Silvana and Valentina are LTTS 6 (6.0/6.1).
 - Jordi (Catalan), Empar (Valencian) and Carmela (Galician) have no module
   in their voice installers either; theirs come in Loquendo's separate
   language distributions (`Catalan & Valencian Distribution.exe`,

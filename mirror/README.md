@@ -17,7 +17,7 @@ and supports `Range` requests. The voices' files and the app's hashed files
 are cached for a year (they never change under a name); `catalog.json`,
 `index.html` and the unpack worker's files for 5 minutes.
 
-The mirror workflow downloads all 47 installers from archive.org (kept in
+The mirror workflow downloads the catalog's 48 installers from archive.org (kept in
 the Actions cache for the next run), and the Catalan & Valencian and
 Galician language distributions from the bucket's `distributions/` (on no
 public site, so put there by hand; the Worker doesn't serve that prefix):

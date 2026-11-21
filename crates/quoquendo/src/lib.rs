@@ -33,6 +33,7 @@ pub mod speex;
 pub mod sqlite;
 pub mod synth;
 pub mod text;
+pub mod ttsconf;
 pub mod voicefon;
 pub mod wise;
 pub mod x87;
@@ -75,7 +76,7 @@ impl Voice {
                 .unwrap_or_default()
         };
         let mut v = Voice::from_bytes(VoiceFiles::from_layout(&descriptor.name, &read, &list)?)?;
-        v.db.path = descriptor.voice_path.join(format!("{}.sde", v.descriptor.name));
+        v.db.path = descriptor.voice_path.join(format!("{}.sde", v.descriptor.main_db()));
         v.db.audio_path = Some(descriptor.voice_path.join(&v.descriptor.bin_name));
         v.descriptor.data_dir = data;
         v.descriptor.voice_path = descriptor.voice_path.clone();
@@ -241,8 +242,8 @@ pub fn inspect(voice: &str, read: &dyn Fn(&str) -> Option<Vec<u8>>, list: &dyn F
         .ok_or("the voice has no .vde")?;
     let dv = ini(&vde);
     let mut descriptor = VoiceDescriptor::from_ini(&cv, &dv);
-    // the recordings: the biggest <Voice>.*.bin (the name tells codec and rate)
-    let prefix = format!("{}.", base.to_ascii_lowercase());
+    // the recordings: the biggest <main database>.*.bin (the name tells codec and rate)
+    let prefix = format!("{}.", descriptor.main_db().to_ascii_lowercase());
     let bins: Vec<&String> = in_dir
         .iter()
         .filter(|n| {
@@ -321,8 +322,9 @@ impl VoiceFiles {
                 .and_then(|n| read(&format!("{dir}/{n}")))
         };
         let vde = pick(&format!("{name}.vde")).ok_or("the voice has no .vde")?;
-        let sde = pick(&format!("{name}.sde")).ok_or("the voice has no .sde")?;
-        let prefix = format!("{}.", name.to_ascii_lowercase());
+        let main = info.descriptor.main_db();
+        let sde = pick(&format!("{main}.sde")).ok_or("the voice has no .sde")?;
+        let prefix = format!("{}.", main.to_ascii_lowercase());
         let (bin_name, bin) = in_dir
             .iter()
             .filter(|n| {

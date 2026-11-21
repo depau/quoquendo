@@ -1,7 +1,7 @@
 //! The voice installers of the Loquendo 7 pack on archive.org
-//! (`text-to-speech-oddcast-voices-pack-2024`, folder `Loquendo 7`): file,
-//! size, and the voice each installs (`Raffaele - Italian.exe` installs
-//! Roberto).
+//! (`text-to-speech-oddcast-voices-pack-2024`, folder `Loquendo 7`), and the
+//! few kept in items of their own (`OUTSIDE_PACK`): file, size, and the voice
+//! each installs (`Raffaele - Italian.exe` installs Roberto).
 
 /// One installer of the pack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub struct Installer {
     pub size: u64,
 }
 
-pub const INSTALLERS: [Installer; 47] = [
+pub const INSTALLERS: [Installer; 48] = [
     Installer { file: "Afroditi - Greek.exe", label: "Afroditi", language: "Greek", voice: "Afroditi", gender: "Female", size: 50011977 },
     Installer { file: "Alan - Australian English.exe", label: "Alan", language: "Australian English", voice: "Alan", gender: "Male", size: 61492224 },
     Installer { file: "Allison - US English.exe", label: "Allison", language: "US English", voice: "Allison", gender: "Female", size: 57322123 },
@@ -38,6 +38,7 @@ pub const INSTALLERS: [Installer; 47] = [
     Installer { file: "Empar - Valencian Catalan.exe", label: "Empar", language: "Valencian Catalan", voice: "Empar", gender: "Female", size: 67425280 },
     Installer { file: "Esperanza - Mexican Spanish.exe", label: "Esperanza", language: "Mexican Spanish", voice: "Esperanza", gender: "Female", size: 50719785 },
     Installer { file: "Eusebio - European Portuguese.exe", label: "Eusebio", language: "European Portuguese", voice: "Eusebio", gender: "Male", size: 53562368 },
+    Installer { file: "Federica - Italian.exe", label: "Federica", language: "Italian", voice: "Federica", gender: "Female", size: 119971609 },
     Installer { file: "Felipe - Brazilian Portuguese.EXE", label: "Felipe", language: "Brazilian Portuguese", voice: "Felipe", gender: "Male", size: 52724736 },
     Installer { file: "Fernanda - Brazilian Portuguese.exe", label: "Fernanda", language: "Brazilian Portuguese", voice: "Fernanda", gender: "Female", size: 68588354 },
     Installer { file: "Florence - French.exe", label: "Florence", language: "French", voice: "Florence", gender: "Female", size: 54070272 },
@@ -84,10 +85,17 @@ pub fn unsupported(language: &str) -> Option<String> {
         .map(|w| format!("no {w} module"))
 }
 
+/// Installers archive.org keeps outside the pack, with their item: Federica's
+/// (an LTTS 7.2 bundle, `pack::place_ttsconf`) is in no pack folder.
+pub const OUTSIDE_PACK: [(&str, &str); 1] = [("Federica - Italian.exe", "loquendo-7-federica-italian")];
+
 /// Where archive.org serves an installer (with ranges; its storage nodes
 /// send no CORS header for `.exe` files, so browsers can't fetch it directly).
 pub fn archive_url(file: &str) -> String {
-    let mut url = String::from("https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/");
+    let mut url = match OUTSIDE_PACK.iter().find(|(f, _)| *f == file) {
+        Some((_, item)) => format!("https://archive.org/download/{item}/"),
+        None => String::from("https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/"),
+    };
     for b in file.bytes() {
         if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
             url.push(b as char);
@@ -114,6 +122,7 @@ mod tests {
             "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Felipe%20-%20Brazilian%20Portuguese.EXE"
         );
         assert_eq!(installer_for("roberto").unwrap().file, "Raffaele - Italian.exe");
+        assert_eq!(archive_url("Federica - Italian.exe"), "https://archive.org/download/loquendo-7-federica-italian/Federica%20-%20Italian.exe");
     }
 
     #[test]

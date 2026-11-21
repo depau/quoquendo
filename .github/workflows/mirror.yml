@@ -49,13 +49,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p installers out/LTTS7
+          # file and URL: most are in the pack, a few in items of their own
           ./target/release/quoquendo --list-installers > installers.txt
-          while IFS= read -r f; do
+          while IFS=$'\t' read -r f url; do
             [ -n "$f" ] || continue
             if [ ! -s "installers/$f" ]; then
-              enc=$(jq -rn --arg s "$f" '$s|@uri')
-              curl -fL --retry 5 --retry-all-errors -o "installers/$f" \
-                "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/$enc"
+              curl -fL --retry 5 --retry-all-errors -o "installers/$f" "$url"
             fi
             ./target/release/quoquendo --unpack "installers/$f" out/LTTS7
           done < installers.txt

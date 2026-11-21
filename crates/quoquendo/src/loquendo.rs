@@ -508,7 +508,7 @@ impl VoiceDescriptor {
         if let Ok(entries) = fs::read_dir(&d.voice_path) {
             for e in entries.flatten() {
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.ends_with(".bin") && name.contains(".LTTS7Codec") && name.starts_with(&format!("{}.", d.name)) {
+                if name.ends_with(".bin") && name.contains(".LTTS7Codec") && name.starts_with(&format!("{}.", d.main_db())) {
                     d.set_bin_name(&name);
                     break;
                 }
@@ -562,6 +562,12 @@ impl VoiceDescriptor {
             d.vocal_dbs.push(d.name.clone());
         }
         d
+    }
+
+    /// The main database's name: `VocalDBName[0]`, the voice's own name
+    /// except where 7.2 splits it (`Federica_1`, then `Federica_2`).
+    pub fn main_db(&self) -> &str {
+        self.vocal_dbs.first().map_or(self.name.as_str(), String::as_str)
     }
 
     /// The recordings file's name, and the sample rate it carries

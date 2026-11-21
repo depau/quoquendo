@@ -41,7 +41,8 @@ pub struct LaunchOptions {
     mirror_catalog: Option<(PathBuf, PathBuf)>,
     /// `--mirror-table <catalog.json> <mirror base URL> <out .md>`
     mirror_table: Option<(PathBuf, String, PathBuf)>,
-    /// `--list-installers`: the pack's installer file names
+    /// `--list-installers`: each installer's file name and archive.org URL,
+    /// tab-separated
     list_installers: bool,
     /// `--compare-all`: every voice against the original on its language's
     /// benchmark, into oracle/out/dashboard.md
@@ -489,7 +490,7 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
     }
     if opts.list_installers {
         for i in &quoquendo::catalog::INSTALLERS {
-            println!("{}", i.file);
+            println!("{}\t{}", i.file, quoquendo::catalog::archive_url(i.file));
         }
         return Some(0);
     }

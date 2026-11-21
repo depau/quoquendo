@@ -56,19 +56,80 @@ fn folder(path: &str) -> &str {
 /// Unpack a voice installer into the files its voices need.
 pub fn unpack_installer(exe: &[u8]) -> Result<Unpacked, String> {
     let files: Vec<(String, Vec<u8>)> = if is_inno(exe) {
+        // 7.2 bundles keep voices and languages in `modules/`, described by
+        // `global.ttsconf` (`place_ttsconf`)
         let keep = |p: &str| {
             let p = lower(p);
-            p.strip_prefix(INNO_ROOT)
-                .is_some_and(|r| r.starts_with("data/") || (r.starts_with("bin/ltts7") || r == "bin/loqtts7.dll") && r.ends_with(".dll"))
+            p.strip_prefix(INNO_ROOT).is_some_and(|r| {
+                r.starts_with("data/") || r.starts_with("modules/") || r == "global.ttsconf" || (r.starts_with("bin/ltts7") || r == "bin/loqtts7.dll") && r.ends_with(".dll")
+            })
         };
-        inno::files(exe, keep)?
-            .into_iter()
-            .map(|(p, d)| (p[INNO_ROOT.len()..].to_string(), d))
-            .collect()
+        let files = inno::files(exe, keep)?.into_iter().map(|(p, d)| (p[INNO_ROOT.len()..].to_string(), d)).collect();
+        place_ttsconf(files)
     } else {
         place_wise(wise::files(exe)?)?
     };
     select(files)
+}
+
+/// A 7.2 bundle (`global.ttsconf`, `modules/<Name>/`) as the 7.0 tree the
+/// rest reads: each voice whose module folder it carries gets a `.vcf` and
+/// `.vde` written from its `<voice>` entry, its files in
+/// `data/voices/<Name>/`, its library in `bin/`. The bundle's 7.2 language
+/// modules and engine libraries stay out: they differ from 7.0's, which the
+/// ported languages are matched to, so the voice reads its language from a
+/// 7.0 installer's (or the mirror's). Other installers pass through.
+fn place_ttsconf(files: Vec<(String, Vec<u8>)>) -> Vec<(String, Vec<u8>)> {
+    let Some((_, conf)) = files.iter().find(|(p, _)| lower(p) == "global.ttsconf") else { return files };
+    let voices: Vec<crate::ttsconf::VoiceEntry> = crate::ttsconf::voices(&String::from_utf8_lossy(conf))
+        .into_iter()
+        .filter(|v| {
+            let module = format!("modules/{}/", lower(&v.name));
+            files.iter().any(|(p, _)| lower(p).starts_with(&module))
+        })
+        .collect();
+    let mut out = Vec::new();
+    for v in &voices {
+        let lang = crate::g2p::Language::from_voice(&v.mother_tongue, &v.aliases.join(","));
+        let encode = |s: String| s.chars().map(|c| crate::lang::common::to_8bit_cp(c, lang.code_page()).unwrap_or(b'?')).collect::<Vec<u8>>();
+        let name = &v.name;
+        let mut vcf = format!(
+            "; Voice Configurator File for Loquendo TTS, from LTTS 7.2's global.ttsconf\r\n\r\n\"Description\" = \"{}\"\r\n\"BaseVoice\" = \"{name}\"\r\n\"VoicePath\" = \"voices/{name}\"\r\n",
+            v.description
+        );
+        for (i, db) in v.vocal_dbs.iter().enumerate() {
+            vcf.push_str(&format!("\"VocalDBName[{i}]\" = \"{db}\"\r\n"));
+        }
+        let mut gender = v.gender.clone();
+        if let Some(first) = gender.get_mut(..1) {
+            first.make_ascii_uppercase();
+        }
+        let vde = format!(
+            "; Voice descriptor file for Loquendo TTS, from LTTS 7.2's global.ttsconf\r\n\r\n\"BaseDescription\" = \"{}\"\r\n\"Library\" = \"LTTS7{name}, {name}\"\r\n\"BaseSpeed\" = \"{}\"\r\n\"BasePitch\" = \"{}\"\r\n\"Gender\" = \"{gender}\"\r\n\"Age\" = \"{}\"\r\n\"GildedTTS\" = \"{}\"\r\n\"MotherTongue\" = \"{}\"\r\n\"MotherTongueAliases\" = \"{}\"\r\n\"DemoSentence\" = \"{}\"\r\n",
+            v.description,
+            v.base_speed,
+            v.base_pitch,
+            v.age,
+            if v.gilded { "yes" } else { "no" },
+            v.mother_tongue,
+            v.aliases.join(","),
+            v.demo_sentence
+        );
+        out.push((format!("data/{name}.vcf"), encode(vcf)));
+        out.push((format!("data/voices/{name}/{name}.vde"), encode(vde)));
+    }
+    for (path, data) in files {
+        let low = lower(&path);
+        let owner = voices.iter().find(|v| low.starts_with(&format!("modules/{}/", lower(&v.name))) || low == format!("bin/ltts7{}.dll", lower(&v.name)));
+        if let Some(v) = owner {
+            let place = match path.strip_prefix("modules/").and_then(|r| r.split_once('/')) {
+                Some((_, file)) => format!("data/voices/{}/{file}", v.name),
+                None => path,
+            };
+            out.push((place, data));
+        }
+    }
+    out
 }
 
 /// Wise cabinets are flat: the `.vcf` goes in `data/`, libraries in `bin/`,

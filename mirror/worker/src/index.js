@@ -6,6 +6,9 @@
 //   dist), so the app and its voices share one origin.
 
 const ARCHIVE = "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/";
+// installers kept in archive.org items of their own (OUTSIDE_PACK in
+// crates/quoquendo/src/catalog.rs)
+const OUTSIDE_PACK = { "Federica - Italian.exe": "https://archive.org/download/loquendo-7-federica-italian/" };
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -110,7 +113,8 @@ async function archive(request, file) {
   const fwd = new Headers();
   const range = request.headers.get("Range");
   if (range) fwd.set("Range", range);
-  const upstream = await fetch(ARCHIVE + encodeURIComponent(name), {
+  const base = Object.hasOwn(OUTSIDE_PACK, name) ? OUTSIDE_PACK[name] : ARCHIVE;
+  const upstream = await fetch(base + encodeURIComponent(name), {
     method: request.method,
     headers: fwd,
     redirect: "follow",
