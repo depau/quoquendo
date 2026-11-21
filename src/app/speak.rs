@@ -383,25 +383,26 @@ impl App {
     fn voice_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.label("Voice");
-            let current = self
-                .chosen
-                .as_ref()
-                .and_then(|c| self.installed_voice(c))
-                .map(voice_label)
-                .unwrap_or_else(|| "pick a voice".into());
+            let current = self.chosen.as_ref().and_then(|c| self.installed_voice(c));
+            let text = current.map_or_else(|| "pick a voice".into(), |v| flagged(ui, flag_language(v), voice_label(v)));
             let mut pick = None;
             let width = (if self.advanced() { 250.0f32 } else { 290.0 }).min(ui.available_size_before_wrap().x - 40.0).max(120.0);
-            egui::ComboBox::from_id_salt("voice").selected_text(current).width(width).show_ui(ui, |ui| {
+            let combo = egui::ComboBox::from_id_salt("voice").selected_text(text).width(width).show_ui(ui, |ui| {
                 for v in &self.installed {
                     let label = match &v.unsupported {
                         Some(u) => format!("{} — {u}", voice_label(v)),
                         None => voice_label(v),
                     };
-                    if ui.selectable_label(self.chosen.as_deref() == Some(v.name.as_str()), label).clicked() {
+                    let item = ui.selectable_label(self.chosen.as_deref() == Some(v.name.as_str()), flagged(ui, flag_language(v), label));
+                    paint_flag_before_text(ui, item.rect, flag_language(v));
+                    if item.clicked() {
                         pick = Some(v.name.clone());
                     }
                 }
             });
+            if let Some(v) = current {
+                paint_flag_before_text(ui, combo.response.rect, flag_language(v));
+            }
             if let Some(p) = pick {
                 self.choose(&p);
             }

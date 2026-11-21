@@ -20,6 +20,7 @@
 pub mod catalog;
 pub mod codec;
 pub mod export;
+pub mod flag;
 pub mod g2p;
 pub mod gpr;
 pub mod inno;

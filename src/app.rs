@@ -754,14 +754,17 @@ impl App {
                 Col::Status | Col::Size => Key::Num(if v.unsupported.is_some() { 2 } else { v.language_missing.is_some() as u64 }),
             });
             egui::Grid::new("installed").num_columns(5).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
-                for (h, col) in [("Voice", Col::Voice), ("Language", Col::Language), ("Gender", Col::Gender), ("Status", Col::Status)] {
+                for (h, col) in [("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Status", Col::Status)] {
                     self.sort_installed.header(ui, h, col);
                 }
                 ui.label("");
                 ui.end_row();
                 for v in rows {
+                    ui.horizontal(|ui| {
+                        flag(ui, flag_language(v));
+                        ui.label(&v.mother_tongue);
+                    });
                     ui.label(&v.name);
-                    ui.label(&v.mother_tongue);
                     ui.label(RichText::new(&v.gender).color(MUTED));
                     match (&v.unsupported, &v.language_missing) {
                         (Some(u), _) => ui.label(RichText::new(format!("{u} — unsupported yet")).color(MUTED)),
@@ -832,7 +835,10 @@ impl App {
                 ui.set_width(ui.available_width());
                 egui::Grid::new("downloads").num_columns(4).spacing([18.0, 6.0]).show(ui, |ui| {
                     for (i, d) in self.downloads.iter().enumerate() {
-                        ui.label(d.installer.label);
+                        ui.horizontal(|ui| {
+                            flag(ui, d.installer.language);
+                            ui.label(d.installer.label);
+                        });
                         ui.label(RichText::new(format!("{} · {}", d.installer.language, catalog::size_label(d.installer.size))).color(MUTED));
                         match &d.state {
                             DownloadState::Queued => {
@@ -948,7 +954,7 @@ impl App {
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
             egui::Grid::new("catalog").num_columns(5).striped(true).spacing([18.0, 5.0]).show(ui, |ui| {
-                for (h, col) in [("Voice", Col::Voice), ("Language", Col::Language), ("Gender", Col::Gender), ("Size", Col::Size), ("Status", Col::Status)] {
+                for (h, col) in [("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Size", Col::Size), ("Status", Col::Status)] {
                     self.sort_catalog.header(ui, h, col);
                 }
                 ui.end_row();
@@ -957,8 +963,11 @@ impl App {
                     let dead = catalog::unsupported(inst.language);
                     // weaker than the theme's text, whatever that is
                     let ink = |t: &str| if dead.is_some() { RichText::new(t).weak() } else { RichText::new(t) };
+                    ui.horizontal(|ui| {
+                        flag(ui, inst.language);
+                        ui.label(ink(inst.language));
+                    });
                     ui.label(ink(inst.label));
-                    ui.label(ink(inst.language));
                     ui.label(if dead.is_some() { RichText::new(inst.gender).weak() } else { RichText::new(inst.gender).color(MUTED) });
                     ui.label(ink(&catalog::size_label(inst.size)).monospace());
                     if installed(inst) {
@@ -1315,6 +1324,79 @@ fn voice_label(v: &InstalledVoice) -> String {
     let lang = Language::from_voice(&v.mother_tongue, "").label();
     let lang = if lang == Language::Generic.label() { v.mother_tongue.as_str() } else { lang };
     format!("{} — {lang} ({})", v.name, if v.gender.is_empty() { "?" } else { &v.gender })
+}
+
+/// A flag in a table cell or beside a label, and one before a button's text.
+const FLAG: egui::Vec2 = egui::vec2(20.0, 14.0);
+const FLAG_SMALL: egui::Vec2 = egui::vec2(16.0, 11.0);
+
+/// The language a voice's flag stands for: its installer's (`US English`),
+/// else its MotherTongue.
+fn flag_language(v: &InstalledVoice) -> &str {
+    catalog::installer_for(&v.name).map_or(v.mother_tongue.as_str(), |i| i.language)
+}
+
+/// A language's flag, or as much room for a language without one.
+fn flag(ui: &mut egui::Ui, language: &str) {
+    let (rect, _) = ui.allocate_exact_size(FLAG, egui::Sense::hover());
+    paint_flag(ui.painter(), rect, language);
+}
+
+/// `text` with room before it for [`paint_flag_before_text`], when the
+/// language has a flag.
+fn flagged(ui: &egui::Ui, language: &str, text: String) -> egui::WidgetText {
+    if quoquendo::flag::of(language).is_none() {
+        return text.into();
+    }
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    job.append(&text, FLAG_SMALL.x + 6.0, egui::TextFormat::simple(font, Color32::PLACEHOLDER));
+    job.into()
+}
+
+/// Paint a flag in the room [`flagged`] left in a button's text (combo
+/// boxes and selectable labels lay their text out at the button padding).
+fn paint_flag_before_text(ui: &egui::Ui, button: egui::Rect, language: &str) {
+    let min = egui::pos2(button.left() + ui.spacing().button_padding.x, button.center().y - FLAG_SMALL.y / 2.0);
+    paint_flag(ui.painter(), egui::Rect::from_min_size(min, FLAG_SMALL), language);
+}
+
+/// Paint a language's flag into `rect`. Stripes are snapped to pixels and
+/// drawn without feathering, so neighbouring ones meet without a seam.
+fn paint_flag(painter: &egui::Painter, rect: egui::Rect, language: &str) {
+    use quoquendo::flag::{self, Shape};
+    let Some(shapes) = flag::of(language) else { return };
+    let rect = painter.round_rect_to_pixels(rect);
+    let painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    let (sx, sy) = (rect.width() / flag::W, rect.height() / flag::H);
+    let at = |x: f32, y: f32| rect.min + egui::vec2(x * sx, y * sy);
+    let rgb = |c: u32| Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
+    for &shape in shapes {
+        match shape {
+            Shape::Rect(x, y, w, h, c) => {
+                let mut mesh = egui::Mesh::default();
+                mesh.add_colored_rect(painter.round_rect_to_pixels(egui::Rect::from_two_pos(at(x, y), at(x + w, y + h))), rgb(c));
+                painter.add(mesh);
+            }
+            Shape::Poly(points, c) => {
+                painter.add(egui::Shape::convex_polygon(points.iter().map(|&(x, y)| at(x, y)).collect(), rgb(c), egui::Stroke::NONE));
+            }
+            Shape::Circle(x, y, r, c) => {
+                painter.circle_filled(at(x, y), r * sx, rgb(c));
+            }
+            Shape::Star(x, y, r, c) => {
+                let mut mesh = egui::Mesh::default();
+                mesh.colored_vertex(at(x, y), rgb(c));
+                for k in 0..10 {
+                    let a = std::f32::consts::PI * (k as f32 / 5.0 - 0.5);
+                    let r = if k % 2 == 0 { r } else { r * flag::STAR_INNER };
+                    mesh.colored_vertex(at(x + r * a.cos(), y + r * a.sin()), rgb(c));
+                    mesh.add_triangle(0, 1 + k, 1 + (k + 1) % 10);
+                }
+                painter.add(mesh);
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
