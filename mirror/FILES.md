@@ -1,6 +1,6 @@
 # Mirrored files
 
-Every file the voice mirror serves under `https://quoquendo.depau.eu/v1/`, as its [`catalog.json`](https://quoquendo.depau.eu/v1/catalog.json) lists them: 47 voices and 14 language folders unpacked from Loquendo 7's installers and language distributions (`quoquendo --unpack`), 551 files, 2.1 GB in all. The mirror workflow writes this page (`quoquendo --mirror-table`); don't edit it by hand.
+Every file the voice mirror serves under `https://quoquendo.depau.eu/v1/`, as its [`catalog.json`](https://quoquendo.depau.eu/v1/catalog.json) lists them: 48 voices and 15 language folders unpacked from Loquendo 7's installers and language distributions (`quoquendo --unpack`), 564 files, 2.2 GB in all. The mirror workflow writes this page (`quoquendo --mirror-table`); don't edit it by hand.
 
 Each path is relative to an LTTS7 folder: a voice needs its own files and its language folder's, placed as the paths say (`curl --create-dirs -o "LTTS7/<path>" <link>`). The installers they came from are linked from each voice.
 
@@ -24,6 +24,7 @@ Each path is relative to an LTTS7 folder: a voice needs its own files and its la
 | [Empar](#empar) | [Valencian](#catalan) | [Empar - Valencian Catalan.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Empar%20-%20Valencian%20Catalan.exe) | 9 | 63.6 MB |
 | [Esperanza](#esperanza) | [SpanishMx](#spanish) | [Esperanza - Mexican Spanish.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Esperanza%20-%20Mexican%20Spanish.exe) | 5 | 34.9 MB |
 | [Eusebio](#eusebio) | [PortuguesePt](#portuguese) | [Eusebio - European Portuguese.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Eusebio%20-%20European%20Portuguese.exe) | 10 | 50.7 MB |
+| [Federica](#federica) | [Italian](#italian) | [Federica - Italian.exe](https://archive.org/download/loquendo-7-federica-italian/Federica%20-%20Italian.exe) | 11 | 93.2 MB |
 | [Felipe](#felipe) | [PortugueseBr](#portuguese) | [Felipe - Brazilian Portuguese.EXE](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Felipe%20-%20Brazilian%20Portuguese.EXE) | 10 | 50.6 MB |
 | [Fernanda](#fernanda) | [PortugueseBr](#portuguese) | [Fernanda - Brazilian Portuguese.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Fernanda%20-%20Brazilian%20Portuguese.exe) | 10 | 51.8 MB |
 | [Florence](#florence) | [French](#french) | [Florence - French.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Florence%20-%20French.exe) | 9 | 50.7 MB |
@@ -39,7 +40,7 @@ Each path is relative to an LTTS7 folder: a voice needs its own files and its la
 | [Katrin](#katrin) | [German](#german) | [Katrin - German.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Katrin%20-%20German.exe) | 10 | 52.4 MB |
 | [Krzysztof](#krzysztof) | [Polish](#polish) | [Krzysztof - Polish.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Krzysztof%20-%20Polish.exe) | 10 | 41.1 MB |
 | [Leonor](#leonor) | [SpanishEs](#spanish) | [Leonor - European Spanish.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Leonor%20-%20European%20Spanish.exe) | 10 | 40.6 MB |
-| [Linlin](#linlin) | Chinese | [LinLin - Chinese.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/LinLin%20-%20Chinese.exe) | 5 | 30.4 MB |
+| [Linlin](#linlin) | [Chinese](#chinese) | [LinLin - Chinese.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/LinLin%20-%20Chinese.exe) | 5 | 30.4 MB |
 | [Luca](#luca) | [Italian](#italian) | [Luca - Italian.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Luca%20-%20Italian.exe) | 10 | 42.4 MB |
 | [Marcello](#marcello) | [Italian](#italian) | [Marcello - Italian.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Marcello%20-%20Italian.exe) | 5 | 47.7 MB |
 | [Matteo](#matteo) | [Italian](#italian) | [Matteo - Italian.exe](https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Matteo%20-%20Italian.exe) | 10 | 41.3 MB |
@@ -281,6 +282,22 @@ Each path is relative to an LTTS7 folder: a voice needs its own files and its la
 | [`data/voices/Eusebio/EusebioGildedParalinguistics.sde`](https://quoquendo.depau.eu/v1/data/voices/Eusebio/EusebioGildedParalinguistics.sde) | 3 kB | `43cb9bda4c35d9cfe10f6d0bcfd2dcd8c75629100268c64f352f2c80bd85fd9d` |
 | [`data/voices/Eusebio/EusebioGildedPhrases.32000.LTTS7Codec210.44000.10.bin`](https://quoquendo.depau.eu/v1/data/voices/Eusebio/EusebioGildedPhrases.32000.LTTS7Codec210.44000.10.bin) | 1.0 MB | `62bd073cc623e0a4ba98b7c1086931bcc6b066572c7c5eb64c86c1dcecd72fbe` |
 | [`data/voices/Eusebio/EusebioGildedPhrases.sde`](https://quoquendo.depau.eu/v1/data/voices/Eusebio/EusebioGildedPhrases.sde) | 54 kB | `eca3e9c202a452f8ed8c6b6a2a34ee9df795400f022a8a0dc95ffee4a034f926` |
+
+### Federica
+
+| File | Size | SHA-256 |
+|---|---:|---|
+| [`bin/LTTS7Federica.dll`](https://quoquendo.depau.eu/v1/bin/LTTS7Federica.dll) | 44 kB | `29601bb58c32808dd904609082a5f290ff0bddd2e14577d5552a825bddc6d3f3` |
+| [`data/Federica.vcf`](https://quoquendo.depau.eu/v1/data/Federica.vcf) | 339 B | `5ee1092105551d001803fe0baaf4bba96be7103e775cb325d607815f38c27db8` |
+| [`data/voices/Federica/Federica.vde`](https://quoquendo.depau.eu/v1/data/voices/Federica/Federica.vde) | 445 B | `464206d16cb0e978f402a0482f36b8e62b1e94a3f490d4800fc21edc423445fa` |
+| [`data/voices/Federica/FedericaGildedParalinguistics.44000.LTTS7CodecMsx.58300.10.bin`](https://quoquendo.depau.eu/v1/data/voices/Federica/FedericaGildedParalinguistics.44000.LTTS7CodecMsx.58300.10.bin) | 2.0 MB | `38273c66df631ef705819d88b78cf0497ea02c6ee47006a95d392f2444236315` |
+| [`data/voices/Federica/FedericaGildedParalinguistics.sde`](https://quoquendo.depau.eu/v1/data/voices/Federica/FedericaGildedParalinguistics.sde) | 11 kB | `f2af8d4dda108999e10bb3934773614d517222393c84e060e5911f62f64e980e` |
+| [`data/voices/Federica/FedericaGildedPhrases.44000.LTTS7CodecMsx.58300.10.bin`](https://quoquendo.depau.eu/v1/data/voices/Federica/FedericaGildedPhrases.44000.LTTS7CodecMsx.58300.10.bin) | 4.1 MB | `ef4452b9c13c435fb8ec1e0783e6b7122acd0bd6deeec618938b528b324be6ad` |
+| [`data/voices/Federica/FedericaGildedPhrases.sde`](https://quoquendo.depau.eu/v1/data/voices/Federica/FedericaGildedPhrases.sde) | 152 kB | `b187d3559fc2a80d977bf024fd617940ab6e3414150158950ddd36d068ac4d84` |
+| [`data/voices/Federica/Federica_1.44000.LTTS7CodecMsx.58300.10.bin`](https://quoquendo.depau.eu/v1/data/voices/Federica/Federica_1.44000.LTTS7CodecMsx.58300.10.bin) | 48.2 MB | `51bec7ad5ffe5a0be82ba494eb94a523b049759d8bd4fe496dd85f5fc9f9f09f` |
+| [`data/voices/Federica/Federica_1.sde`](https://quoquendo.depau.eu/v1/data/voices/Federica/Federica_1.sde) | 1.7 MB | `f15cb31193f0c537850628102df990babd10b63cb8ff68dd308faa29190fe1dc` |
+| [`data/voices/Federica/Federica_2.44000.LTTS7CodecMsx.58300.10.bin`](https://quoquendo.depau.eu/v1/data/voices/Federica/Federica_2.44000.LTTS7CodecMsx.58300.10.bin) | 35.9 MB | `a925dc97d76fadcee59490f8ebd1e7f0973242a90c7ce0b18b68121657e71b0b` |
+| [`data/voices/Federica/Federica_2.sde`](https://quoquendo.depau.eu/v1/data/voices/Federica/Federica_2.sde) | 1.2 MB | `4639ea1ef5e6aef5ce1448bee004869349e91d2816c696bf36c903b7e6b06399` |
 
 ### Felipe
 
@@ -737,6 +754,15 @@ Each path is relative to an LTTS7 folder: a voice needs its own files and its la
 | [`data/languages/Catalan/CatalanVa.dbl`](https://quoquendo.depau.eu/v1/data/languages/Catalan/CatalanVa.dbl) | 310 kB | `613eef655cb7646a1555a2db63efee9449ba8d0424bf46899d9e9dd763f2ac08` |
 | [`data/languages/Catalan/CatalanVa.lde`](https://quoquendo.depau.eu/v1/data/languages/Catalan/CatalanVa.lde) | 362 B | `a6c2148f917933a92d2cacb7ec4c902671ddb61cce293c1439b0782ab87228df` |
 | [`data/languages/Catalan/Valencian.lcf`](https://quoquendo.depau.eu/v1/data/languages/Catalan/Valencian.lcf) | 195 B | `54e01c1b827a6a9a139b9e058d3194d5fbec118e2ce03d9f7cc5a9bdcd32eae7` |
+
+### Chinese
+
+| File | Size | SHA-256 |
+|---|---:|---|
+| [`bin/LTTS7Util.dll`](https://quoquendo.depau.eu/v1/bin/LTTS7Util.dll) | 538 kB | `43d6cf2b6d05279146a4cebd8312eaf7c3e6824b3cb7618d76525abbd998597c` |
+| [`bin/LoqTTS7.dll`](https://quoquendo.depau.eu/v1/bin/LoqTTS7.dll) | 746 kB | `e8c057e0fbd85c2898a82e99a2fb9680d0ebea4b59badf2ddf654e1a4c4dcb26` |
+| [`data/languages/Chinese/Chinese.chd`](https://quoquendo.depau.eu/v1/data/languages/Chinese/Chinese.chd) | 923 kB | `a75ce67abfb7e1b34dc257cd92d52d09eb75536b7d9609ba9b22ec9e50cab0d4` |
+| [`data/languages/Chinese/Chinese.lde`](https://quoquendo.depau.eu/v1/data/languages/Chinese/Chinese.lde) | 188 B | `0a0ca0e8149dbc443394e35f5b7a367da43b923c562d9fef818d940f96adc04b` |
 
 ### Danish
 
