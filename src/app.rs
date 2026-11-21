@@ -1141,14 +1141,21 @@ impl App {
                 }
                 ui.end_row();
                 for inst in shown {
-                    ui.label(inst.label);
-                    ui.label(inst.language);
-                    ui.label(RichText::new(inst.gender).color(MUTED));
-                    ui.label(RichText::new(catalog::size_label(inst.size)).monospace());
+                    // a voice no module can read: listed, but not offered
+                    let dead = catalog::unsupported(inst.language);
+                    // weaker than the theme's text, whatever that is
+                    let ink = |t: &str| if dead.is_some() { RichText::new(t).weak() } else { RichText::new(t) };
+                    ui.label(ink(inst.label));
+                    ui.label(ink(inst.language));
+                    ui.label(if dead.is_some() { RichText::new(inst.gender).weak() } else { RichText::new(inst.gender).color(MUTED) });
+                    ui.label(ink(&catalog::size_label(inst.size)).monospace());
                     if installed(inst) {
                         ui.label(RichText::new("Installed").color(GREEN));
                     } else if pending(inst) {
                         ui.label(RichText::new("In downloads").color(MUTED));
+                    } else if let Some(u) = &dead {
+                        ui.label(RichText::new("Won't speak").weak().italics())
+                            .on_hover_text(format!("{u}: quoquendo has no {} language data to read this voice with", inst.language));
                     } else if ui
                         .add_enabled(can_fetch, egui::Button::new("Download"))
                         .on_disabled_hover_text("Browsers can't fetch installers from archive.org: set a voice mirror in Settings, or import a downloaded installer.")

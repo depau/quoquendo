@@ -114,15 +114,6 @@ fn list_voices(store: &str) -> String {
     Value::Array(voices).to_string()
 }
 
-/// Why an installer's voice can't speak yet, known from its name alone: its
-/// language has no module anywhere (`Mandarin Chinese` → `no Chinese module`).
-fn catalog_unsupported(language: &str) -> Option<String> {
-    language
-        .split_whitespace()
-        .find(|w| catalog::NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(w)))
-        .map(|w| format!("no {w} module"))
-}
-
 fn catalog_json() -> String {
     let all: Vec<Value> = catalog::INSTALLERS
         .iter()
@@ -135,7 +126,7 @@ fn catalog_json() -> String {
                 "gender": i.gender,
                 "size": i.size,
                 "archiveUrl": catalog::archive_url(i.file),
-                "unsupported": catalog_unsupported(i.language),
+                "unsupported": catalog::unsupported(i.language),
             })
         })
         .collect();
@@ -423,13 +414,5 @@ mod tests {
         let v: Value = serde_json::from_str(&catalog_json()).unwrap();
         assert_eq!(v.as_array().unwrap().len(), catalog::INSTALLERS.len());
         assert!(v[0]["archiveUrl"].as_str().unwrap().starts_with("https://archive.org/"));
-    }
-
-    #[test]
-    fn catalog_names_missing_modules() {
-        assert_eq!(catalog_unsupported("Mandarin Chinese").as_deref(), Some("no Chinese module"));
-        // the language distributions bring Catalan, Valencian and Galician
-        assert_eq!(catalog_unsupported("Valencian Catalan"), None);
-        assert_eq!(catalog_unsupported("Italian"), None);
     }
 }

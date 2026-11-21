@@ -75,6 +75,15 @@ pub const INSTALLERS: [Installer; 47] = [
 /// from the separate language distributions (`pack::unpack_installer`).
 pub const NO_MODULE: [&str; 1] = ["Chinese"];
 
+/// Why an installer's voice can't speak, known from its catalog language
+/// alone: no module anywhere (`Mandarin Chinese` → `no Chinese module`).
+pub fn unsupported(language: &str) -> Option<String> {
+    language
+        .split_whitespace()
+        .find(|w| NO_MODULE.iter().any(|m| m.eq_ignore_ascii_case(w)))
+        .map(|w| format!("no {w} module"))
+}
+
 /// Where archive.org serves an installer (with ranges; its storage nodes
 /// send no CORS header for `.exe` files, so browsers can't fetch it directly).
 pub fn archive_url(file: &str) -> String {
@@ -105,5 +114,13 @@ mod tests {
             "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/Felipe%20-%20Brazilian%20Portuguese.EXE"
         );
         assert_eq!(installer_for("roberto").unwrap().file, "Raffaele - Italian.exe");
+    }
+
+    #[test]
+    fn names_missing_modules() {
+        assert_eq!(unsupported("Mandarin Chinese").as_deref(), Some("no Chinese module"));
+        // the language distributions bring Catalan, Valencian and Galician
+        assert_eq!(unsupported("Valencian Catalan"), None);
+        assert_eq!(unsupported("Italian"), None);
     }
 }
