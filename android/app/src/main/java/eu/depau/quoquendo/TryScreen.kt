@@ -239,6 +239,7 @@ private fun VoicePicker(model: MainModel, voice: InstalledVoice?, go: (Screen) -
             onValueChange = {},
             readOnly = true,
             label = { Text("Voice") },
+            leadingIcon = voice?.let { v -> { Flag(model.languageOf(v), Modifier.size(20.dp, 14.dp)) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
@@ -252,6 +253,7 @@ private fun VoicePicker(model: MainModel, voice: InstalledVoice?, go: (Screen) -
                             if (why != null) Text(why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
+                    leadingIcon = { Flag(model.languageOf(v), Modifier.size(24.dp, 17.dp).alpha(if (v.unsupported == null) 1f else 0.38f)) },
                     enabled = v.unsupported == null,
                     onClick = { model.selectVoice(v); open = false },
                 )

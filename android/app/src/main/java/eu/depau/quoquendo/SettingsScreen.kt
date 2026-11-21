@@ -220,7 +220,7 @@ private fun VoiceChooser(model: MainModel, language: String, onDismiss: () -> Un
         text = {
             Column {
                 @Composable
-                fun Option(title: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+                fun Option(title: String, detail: String?, selected: Boolean, flag: String? = null, onClick: () -> Unit) {
                     Row(
                         Modifier.fillMaxWidth().clickable { onClick(); onDismiss() }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -228,7 +228,10 @@ private fun VoiceChooser(model: MainModel, language: String, onDismiss: () -> Un
                         RadioButton(selected = selected, onClick = null)
                         Spacer(Modifier.width(16.dp))
                         Column {
-                            Text(title, style = MaterialTheme.typography.bodyLarge)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (flag != null) Flag(flag, Modifier.padding(end = 8.dp).size(24.dp, 17.dp))
+                                Text(title, style = MaterialTheme.typography.bodyLarge)
+                            }
                             if (detail != null) {
                                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -238,7 +241,7 @@ private fun VoiceChooser(model: MainModel, language: String, onDismiss: () -> Un
                 if (model.regions(language) > 1) Option(MATCH_THE_REGION, null, chosen == null) { model.chooseAppVoice(language, null) }
                 for (v in model.speakersOf(language)) {
                     val region = v.locales.firstOrNull { it.language == language }?.displayCountry.orEmpty()
-                    Option(v.name, listOf(region, v.gender).filter { it.isNotEmpty() }.joinToString(" · "), v.name == chosen) {
+                    Option(v.name, listOf(region, v.gender).filter { it.isNotEmpty() }.joinToString(" · "), v.name == chosen, model.languageOf(v)) {
                         model.chooseAppVoice(language, v.name)
                     }
                 }

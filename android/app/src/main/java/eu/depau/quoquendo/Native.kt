@@ -27,6 +27,9 @@ object Native {
     /** JSON array of the formats [export] writes: `{ext, label, hint, mime}`. */
     @JvmStatic external fun formats(): String
 
+    /** A language's flag (`US English`, `EnglishGb`) as shapes in a 30×21 box, `[]` for none: see [Flag]. */
+    @JvmStatic external fun flag(language: String): String
+
     @JvmStatic external fun loadVoice(storeDir: String, name: String): Long
 
     /** The recordings bank's own rate: the rate of [pieceSamples] (44000 for CodecMsx voices). */

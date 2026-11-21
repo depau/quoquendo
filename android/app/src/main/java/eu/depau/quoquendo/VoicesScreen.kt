@@ -2,7 +2,6 @@ package eu.depau.quoquendo
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -110,14 +108,10 @@ fun VoicesTopBar(model: MainModel, search: MutableState<String?>) {
     )
 }
 
+/** A row's language flag; the same room for a language without one. */
 @Composable
-private fun Avatar(name: String, dim: Boolean = false) {
-    Box(
-        Modifier.size(40.dp).alpha(if (dim) 0.6f else 1f).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(name.take(1).uppercase(), color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.titleMedium)
-    }
+private fun Avatar(language: String) {
+    Box(Modifier.size(40.dp, 28.dp)) { Flag(language, Modifier.fillMaxSize()) }
 }
 
 @Composable
@@ -214,7 +208,7 @@ private fun InstalledRow(model: MainModel, v: InstalledVoice, onDelete: () -> Un
     }
     ListItem(
         colors = listColors,
-        leadingContent = { Avatar(v.name) },
+        leadingContent = { Avatar(model.languageOf(v)) },
         headlineContent = { Text(v.name) },
         supportingContent = supporting,
         trailingContent = {
@@ -244,7 +238,7 @@ private fun CatalogRow(model: MainModel, i: Installer) {
     ListItem(
         colors = listColors,
         modifier = if (state is Download.Failed) Modifier.clickable { model.download(i) } else Modifier,
-        leadingContent = { Avatar(i.label) },
+        leadingContent = { Avatar(i.language) },
         // the status beside the name and the details on one line, so every
         // row is the same height (until a download shows its progress)
         headlineContent = {

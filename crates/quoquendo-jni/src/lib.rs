@@ -146,6 +146,29 @@ fn catalog_json() -> String {
     Value::Array(all).to_string()
 }
 
+/// A language's flag as `[kind, rgb, numbers…]` arrays in a 30×21 box:
+/// `["rect", rgb, x, y, w, h]`, `["poly", rgb, x1, y1, x2, y2, …]`,
+/// `["circle", rgb, x, y, r]`, `["star", rgb, x, y, outer, inner]`;
+/// empty for a language without one.
+fn flag_json(language: &str) -> String {
+    use quoquendo::flag::{self, Shape};
+    let shapes: Vec<Value> = flag::of(language)
+        .unwrap_or_default()
+        .iter()
+        .map(|s| match *s {
+            Shape::Rect(x, y, w, h, c) => json!(["rect", c, x, y, w, h]),
+            Shape::Poly(points, c) => {
+                let mut v = vec![json!("poly"), json!(c)];
+                v.extend(points.iter().flat_map(|&(x, y)| [json!(x), json!(y)]));
+                Value::Array(v)
+            }
+            Shape::Circle(x, y, r, c) => json!(["circle", c, x, y, r]),
+            Shape::Star(x, y, r, c) => json!(["star", c, x, y, r, r * flag::STAR_INNER]),
+        })
+        .collect();
+    Value::Array(shapes).to_string()
+}
+
 fn load_voice(store: &str, name: &str) -> Result<Voice, String> {
     let s = Store(PathBuf::from(store));
     Voice::from_bytes(VoiceFiles::from_layout(name, &|p| s.read(p), &|p| s.list(p))?)
@@ -458,6 +481,14 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_listVoices<'l>(mut env: JN
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_catalog<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>) -> jstring {
     guard(&mut env, std::ptr::null_mut(), |env| ret_string(env, catalog_json()))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_flag<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, language: JString<'l>) -> jstring {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let language = jstr(env, &language)?;
+        ret_string(env, flag_json(&language))
+    })
 }
 
 #[no_mangle]
