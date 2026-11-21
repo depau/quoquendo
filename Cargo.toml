@@ -37,7 +37,7 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement", "Request", "RequestInit", "Response", "Headers", "ReadableStream",
     "ReadableStreamDefaultReader", "AudioContext", "AudioBuffer", "AudioBufferSourceNode",
     "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext", "WritableStream",
-    "Worker", "DedicatedWorkerGlobalScope", "MessageEvent", "Location",
+    "Worker", "DedicatedWorkerGlobalScope", "MessageEvent", "Location", "History",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

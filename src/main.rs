@@ -8,6 +8,7 @@
 mod app;
 mod audio;
 mod catalog;
+mod route;
 mod store;
 
 #[cfg(not(target_arch = "wasm32"))]

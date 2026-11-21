@@ -14,6 +14,8 @@ use quoquendo::g2p::{self, Language};
 use quoquendo::loquendo;
 use quoquendo::synth::{self, Settings};
 use std::sync::mpsc::{channel, Receiver};
+#[cfg(target_arch = "wasm32")]
+use crate::route::{self, Route};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -149,6 +151,30 @@ struct Dev {
     extras: Vec<(String, usize, usize)>,
 }
 
+/// A link to a voice that isn't installed: the catalog entry and the link.
+#[cfg(target_arch = "wasm32")]
+struct Offer {
+    installer: &'static Installer,
+    route: Route,
+}
+
+/// The page's address (browser only).
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+struct Links {
+    /// the hash last read from or written to the address bar
+    written: Option<String>,
+    /// the next write replaces the history entry (it follows a link or back/forward)
+    replace_next: bool,
+    /// `ctx.input(|i| i.time)` of the last write
+    last_write: f64,
+    /// a link opened before the voices were listed
+    pending: Option<Route>,
+    /// a link waiting for its voice's download (followed if still on Voices when it lands)
+    awaiting: Option<Route>,
+    offer: Option<Offer>,
+}
+
 pub struct App {
     tab: Tab,
     tx: store::Tx,
@@ -185,6 +211,8 @@ pub struct App {
     dev: Dev,
     #[cfg(not(target_arch = "wasm32"))]
     screenshot: Option<std::path::PathBuf>,
+    #[cfg(target_arch = "wasm32")]
+    links: Links,
     frame_no: u64,
     quit_after: Option<u64>,
 }
@@ -262,6 +290,8 @@ impl App {
             },
             #[cfg(not(target_arch = "wasm32"))]
             screenshot: launch.screenshot.clone(),
+            #[cfg(target_arch = "wasm32")]
+            links: Links::default(),
             frame_no: 0,
             quit_after: None,
         };
@@ -281,6 +311,14 @@ impl App {
         #[cfg(not(target_arch = "wasm32"))]
         return self.dev.on;
         #[cfg(target_arch = "wasm32")]
+        false
+    }
+
+    /// A link waiting for the voice list names a voice (browser only).
+    fn link_names_voice(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        return self.links.pending.as_ref().is_some_and(|r| r.voice().is_some());
+        #[cfg(not(target_arch = "wasm32"))]
         false
     }
 
@@ -322,6 +360,31 @@ impl App {
         store::load(&v, self.tx.clone());
     }
 
+    /// Load the voice picked last time, else Roberto, else the first voice
+    /// that can speak.
+    fn pick_default(&mut self) {
+        let count = self.installed.len();
+        let pick = self
+            .chosen
+            .clone()
+            .filter(|c| self.installed_voice(c).is_some())
+            .or_else(|| self.installed.iter().find(|v| v.name == "Roberto" && v.can_speak()).map(|v| v.name.clone()))
+            .or_else(|| self.installed.iter().find(|v| v.can_speak()).map(|v| v.name.clone()));
+        match pick {
+            Some(p) => self.choose(&p),
+            None => {
+                self.status = if count == 0 {
+                    "No voices yet: get one in the Voices tab.".into()
+                } else {
+                    format!("{count} voices, none can speak yet")
+                };
+                if count == 0 {
+                    self.tab = Tab::Voices;
+                }
+            }
+        }
+    }
+
     fn poll(&mut self, ctx: &egui::Context) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
@@ -339,27 +402,8 @@ impl App {
                 StoreEvent::Listed(list) => {
                     self.installed = list;
                     self.listed = true;
-                    let count = self.installed.len();
-                    if self.voice.is_none() && self.loading.is_none() {
-                        let pick = self
-                            .chosen
-                            .clone()
-                            .filter(|c| self.installed_voice(c).is_some())
-                            .or_else(|| self.installed.iter().find(|v| v.name == "Roberto" && v.can_speak()).map(|v| v.name.clone()))
-                            .or_else(|| self.installed.iter().find(|v| v.can_speak()).map(|v| v.name.clone()));
-                        match pick {
-                            Some(p) => self.choose(&p),
-                            None => {
-                                self.status = if count == 0 {
-                                    "No voices yet: get one in the Voices tab.".into()
-                                } else {
-                                    format!("{count} voices, none can speak yet")
-                                };
-                                if count == 0 {
-                                    self.tab = Tab::Voices;
-                                }
-                            }
-                        }
+                    if self.voice.is_none() && self.loading.is_none() && !self.link_names_voice() {
+                        self.pick_default();
                     }
                 }
                 StoreEvent::Loaded(voice) => {
@@ -1113,6 +1157,13 @@ impl App {
             });
         });
         if let Some(inst) = queue {
+            self.queue_download(inst);
+        }
+    }
+
+    /// Add an installer to the downloads, unless it's there already.
+    fn queue_download(&mut self, inst: &'static Installer) {
+        if self.downloads.iter().all(|d| d.installer.file != inst.file) {
             self.downloads.push(Download {
                 installer: inst,
                 state: DownloadState::Queued,
@@ -1154,9 +1205,14 @@ impl App {
                 map.entry(p.sym.clone()).or_default().push((u as u32, i as u16));
             }
         }
+        // a first build (or one a link cleared) keeps the phone and sentence
+        // picked; another voice's starts afresh
+        let fresh = self.explore.index.is_none();
         self.explore = Explore {
             index: Some((v.descriptor.name.clone(), map.into_iter().collect())),
             sentences: self.explore.sentences,
+            phone: if fresh { self.explore.phone.take() } else { None },
+            unit: if fresh { self.explore.unit } else { None },
             ..Default::default()
         };
     }
@@ -1707,6 +1763,203 @@ impl App {
     }
 }
 
+/// Deep links (browser only): the address bar follows the page shown, and
+/// an address opened, edited or reached with back/forward opens its page.
+#[cfg(target_arch = "wasm32")]
+impl App {
+    /// Show the page a link names; a voice that isn't installed but is in
+    /// the catalog is offered for download.
+    fn open_route(&mut self, mut r: Route) {
+        self.links.awaiting = None;
+        self.links.offer = None;
+        if !self.listed {
+            self.links.pending = Some(r);
+            return;
+        }
+        if let Some(name) = r.voice().map(str::to_string) {
+            let Some(installed) = self.installed_voice(&name).map(|v| v.name.clone()) else {
+                match INSTALLERS.iter().find(|i| i.voice.eq_ignore_ascii_case(&name)) {
+                    Some(installer) => self.links.offer = Some(Offer { installer, route: r }),
+                    None => self.error = Some(format!("No voice called “{name}”: it isn't installed and isn't in the catalog")),
+                }
+                if self.voice.is_none() && self.loading.is_none() {
+                    self.pick_default();
+                }
+                return;
+            };
+            match &mut r {
+                Route::Speak { voice, .. } => *voice = Some(installed.clone()),
+                Route::Explore { voice, .. } => *voice = installed.clone(),
+                Route::Voices => {}
+            }
+            self.ensure_chosen(&installed);
+        }
+        match r {
+            Route::Voices => self.tab = Tab::Voices,
+            Route::Speak { text, .. } => {
+                self.tab = Tab::Speak;
+                let text = match text {
+                    Some(t) => {
+                        // the voice on its way must not swap the linked text
+                        // for its sample because it equals the old voice's
+                        if self.loading.is_some() {
+                            self.last_sample.clear();
+                        }
+                        t
+                    }
+                    None if self.voice.is_some() && self.loading.is_none() => self.last_sample.clone(),
+                    // filled with the sample once the voice has loaded
+                    None => String::new(),
+                };
+                if text != self.text {
+                    self.text = text;
+                    if self.loading.is_none() {
+                        self.player.stop();
+                        self.analyse();
+                    }
+                }
+            }
+            Route::Explore { voice, sentences, phone, sentence } => {
+                self.tab = Tab::Explore;
+                if self.explore.index.as_ref().is_some_and(|(n, _)| n.eq_ignore_ascii_case(&voice)) {
+                    if self.explore.phone != phone {
+                        self.explore.page = 0;
+                    }
+                    self.explore.sentences = sentences;
+                    self.explore.phone = phone;
+                    self.explore.unit = sentence;
+                } else {
+                    // `explore_index` keeps the selection when it builds the index
+                    self.explore = Explore { sentences, phone, unit: sentence, ..Default::default() };
+                }
+            }
+        }
+    }
+
+    /// Load `name` unless it is loaded or loading.
+    fn ensure_chosen(&mut self, name: &str) {
+        let loaded = self.voice.as_ref().is_some_and(|v| v.descriptor.name.eq_ignore_ascii_case(name));
+        let coming = self.loading.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(name));
+        if !loaded && !coming {
+            self.choose(name);
+        }
+    }
+
+    /// The page shown.
+    fn current_route(&self) -> Route {
+        match (self.tab, &self.chosen) {
+            (Tab::Speak, _) => Route::Speak {
+                voice: self.chosen.clone(),
+                text: (!self.text.trim().is_empty() && self.text != self.last_sample).then(|| self.text.clone()),
+            },
+            (Tab::Explore, Some(voice)) => Route::Explore {
+                voice: voice.clone(),
+                sentences: self.explore.sentences,
+                phone: self.explore.phone.clone(),
+                sentence: self.explore.unit,
+            },
+            (Tab::Voices | Tab::Explore, _) => Route::Voices,
+        }
+    }
+
+    /// A link's voice isn't installed: offer to download it.
+    fn offer_window(&mut self, ctx: &egui::Context) {
+        let Some(offer) = &self.links.offer else { return };
+        let inst = offer.installer;
+        let can_fetch = self.mirror().is_some();
+        let (mut download, mut dismiss) = (false, false);
+        egui::Window::new("Voice not installed")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(format!("This link uses {} ({}, {}), which isn't installed.", inst.label, inst.language, inst.gender.to_lowercase()));
+                ui.label(format!("Download it from the voice mirror? {}", catalog::size_label(inst.size)));
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    download = ui
+                        .add_enabled(can_fetch, egui::Button::new(RichText::new("Download").color(GROUND).strong()).fill(AMBER))
+                        .on_disabled_hover_text("No voice mirror is set: set one in Settings, or import the installer in Voices.")
+                        .clicked();
+                    dismiss = ui.button("Not now").clicked();
+                });
+            });
+        if download {
+            if let Some(o) = self.links.offer.take() {
+                self.queue_download(o.installer);
+                self.tab = Tab::Voices;
+                self.links.awaiting = Some(o.route);
+            }
+        } else if dismiss {
+            self.links.offer = None;
+        }
+    }
+
+    /// Open the address bar's link when it changes from outside, and write
+    /// the page shown to it: a new history entry for another page, the same
+    /// entry (at most every 0.5 s) for an edited text. This runs after the
+    /// page was drawn, so a route opened here draws on another frame.
+    fn sync_url(&mut self, ctx: &egui::Context) {
+        let Some(window) = web_sys::window() else { return };
+        let hash = window.location().hash().unwrap_or_default();
+        if self.links.written.as_deref() != Some(hash.as_str()) {
+            // first load, back/forward, an edited or pasted address
+            self.links.written = Some(hash.clone());
+            self.links.replace_next = true;
+            if let Some(r) = route::parse(&hash) {
+                self.open_route(r);
+                ctx.request_repaint();
+            }
+        }
+        if self.listed {
+            if let Some(r) = self.links.pending.take() {
+                self.open_route(r);
+                ctx.request_repaint();
+            }
+        }
+        if self.links.awaiting.is_some() && self.tab != Tab::Voices {
+            self.links.awaiting = None;
+        }
+        let landed = self.links.awaiting.as_ref().and_then(Route::voice).is_some_and(|v| self.installed_voice(v).is_some());
+        if landed {
+            if let Some(r) = self.links.awaiting.take() {
+                self.open_route(r);
+                ctx.request_repaint();
+            }
+        }
+        // a link's address stays while its voice loads or its offer is open
+        if !self.listed || self.loading.is_some() || self.links.pending.is_some() || self.links.offer.is_some() {
+            return;
+        }
+        let current = self.current_route();
+        let want = route::to_hash(&current);
+        if self.links.written.as_ref() == Some(&want) {
+            self.links.replace_next = false;
+            return;
+        }
+        let text_only = self.links.written.as_deref().and_then(route::parse).is_some_and(|w| w.same_page(&current));
+        let now = ctx.input(|i| i.time);
+        let since = now - self.links.last_write;
+        if text_only && since < 0.5 {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(0.5 - since));
+            return;
+        }
+        let Ok(history) = window.history() else { return };
+        let null = wasm_bindgen::JsValue::NULL;
+        let written = if self.links.replace_next || text_only {
+            history.replace_state_with_url(&null, "", Some(&want))
+        } else {
+            history.push_state_with_url(&null, "", Some(&want))
+        };
+        // on failure the next frame tries again
+        if written.is_ok() {
+            self.links.written = Some(want);
+            self.links.replace_next = false;
+            self.links.last_write = now;
+        }
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_no += 1;
@@ -1731,6 +1984,11 @@ impl eframe::App for App {
             }
             Tab::Explore => self.explore_tab(ui),
         });
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.offer_window(ctx);
+            self.sync_url(ctx);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.screenshot(ctx);
         if let Some(q) = self.quit_after {

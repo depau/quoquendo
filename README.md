@@ -57,6 +57,11 @@ The app and the voices are served by one Cloudflare Worker over one R2
 bucket, deployed from `main` (`.github/workflows/site.yml`; setup in
 `mirror/README.md`).
 
+The address bar follows the page, so it can be shared and back/forward work:
+`#/speak/Roberto` (with `?text=…` when the text isn't the voice's sample),
+`#/voices`, and `#/explore/Roberto` (with `list=sentences`, `phone=a`,
+`sentence=12`). A link to a voice that isn't installed offers to download it.
+
 ### On Android
 
 `android/` is a system text-to-speech engine: install it, pick Quoquendo in
