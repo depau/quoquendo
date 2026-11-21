@@ -2163,6 +2163,26 @@ when a speed/pitch change asks for it.
   26 more voices than the pack (Veena, Lisheng, Otoya, Laila…); none was
   found as 7.x data. The pack's `Loquendo 6/` Juan, Montserrat, Saskia,
   Silvana and Valentina are LTTS 6 (6.0/6.1).
+  Measured against her own 7.2 engine under Wine (its installer's whole
+  prefix): it speaks her fine, but gives no unit-selection events — probing
+  `ttsEnableEvent` ids 0–1023 turns up only 0, 1, 2, 3, 5, 6, 18, 19 (7.0's
+  text and encoding events, ids 20 and 21, shifted to 18 and 19), and the
+  new `ttsEnableAllEvents`/`ttsAllowReservedEvents` exports bring no piece
+  events (the former crashes: privileged instruction). So her reference is
+  reconstructed from the decode trace alone (`LOQ_TRACE_DECODE`): the 7.2
+  `LTTS7CodecMsx.dll` export table sits at rva 0x15ae8 (7.0: 0x15ae0),
+  ELQDecode's slot 0x10015b24 (fn 0x100027e0); each `D` request is one
+  half-phone, and its position plus the decoder's built-in delay (64 samples
+  for Codec210, 88 for CodecMsx — calibrated on Roberto and Alan, whose real
+  pieces the grouping of consecutive same-unit halves reproduces exactly,
+  15/15) is the half's start in the bank, pinning it in the `.sde`. The
+  reconstructed pieces and spans feed the same `19 `/`M ` reference format,
+  cross-checked by the decoder itself: every one of her 1 930 requests is
+  bit-identical to ours. On `oracle/bench-it.txt`: FON 100% of sounds and
+  words, CAT 40.2% of half-sounds, replay 32.8% of samples identical —
+  the picker's own choices, the Italian language data being the same as
+  7.0's. LinLin's Chinese module is ARM-only (above), so nothing of the kind
+  is possible for her.
 - Jordi (Catalan), Empar (Valencian) and Carmela (Galician) have no module
   in their voice installers either; theirs come in Loquendo's separate
   language distributions (`Catalan & Valencian Distribution.exe`,

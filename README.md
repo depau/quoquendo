@@ -227,15 +227,17 @@ original:
 | Dmitri, Olga | Russian | 100% | 100% | 100% |
 | Jordi | Catalan | 82% | 99% | 100% |
 | Empar | Valencian | 86% | 100% | 100% |
-| Carmela | Galician | 83% | 99% | 100% |
+| Federica | Italian | 100% | 40% | 33% |
 
 Catalan, Valencian and Galician have no ported language module: their text
 rules are built in (MECHANICS.md §11), so their sounds score lower while
-everything after the transcription still matches. Federica (Italian) and
-Linlin (Chinese) cannot be scored against the original at all: Federica's
-voice library is built for the 7.2 engine and never loads in the 7.0 one
-(`ttsLoadPersona` error 4), and no x86 Chinese language module exists
-(MECHANICS.md §11).
+everything after the transcription still matches. Federica (Italian) needs
+the 7.2 engine, which the tracing oracle does not support: her reference was
+measured by reconstructing the pieces she played from her decoder requests
+(MECHANICS.md §11) — every request is one half-phone, its position pins the
+exact half in the voice banks — so her scores are exact, only her choice of
+pieces differs from ours. Linlin (Chinese) cannot be scored against the
+original at all: no x86 Chinese language module exists (MECHANICS.md §11).
 
 The pronunciation of these languages is ported from the original's own
 language modules and each voice's own phone rules (MECHANICS.md §4b–§4n;
