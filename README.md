@@ -1,4 +1,4 @@
-# quoquendo
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo.svg"><img src="assets/brand/logo-light.svg" alt="quoquendo" height="72"></picture></h1>
 
 The Loquendo 7 (LTTS7) text-to-speech engine rebuilt from its own code, for
 its original voices: Roberto (the Italian station voice), Allison, Bernard,

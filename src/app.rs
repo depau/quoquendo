@@ -215,6 +215,7 @@ pub struct App {
     links: Links,
     frame_no: u64,
     quit_after: Option<u64>,
+    logo: egui::TextureHandle,
 }
 
 /// What the app was started with.
@@ -258,6 +259,13 @@ impl App {
         style(&cc.egui_ctx);
         let get = |key: &str| cc.storage.and_then(|s| s.get_string(key));
         let (tx, rx) = channel();
+        // the header's brand, uploaded once: shown 20 px tall in the bar
+        let logo = {
+            let image = image::load_from_memory(include_bytes!("../assets/brand/logo-header.png")).expect("logo-header.png").into_rgba8();
+            let (w, h) = (image.width() as usize, image.height() as usize);
+            let rgba = image.into_raw();
+            cc.egui_ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba), egui::TextureOptions::LINEAR)
+        };
         let mut app = App {
             tab: Tab::Speak,
             tx: store::Tx::new(tx, cc.egui_ctx.clone()),
@@ -298,6 +306,7 @@ impl App {
             links: Links::default(),
             frame_no: 0,
             quit_after: None,
+            logo,
         };
         #[cfg(not(target_arch = "wasm32"))]
         if app.screenshot.is_some() {
@@ -611,7 +620,7 @@ impl App {
         egui::TopBottomPanel::top("head").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Quoquendo").strong().size(17.0).color(AMBER));
+                ui.add(egui::Image::new(&self.logo).max_height(20.0));
                 ui.label(RichText::new(format!("v{VERSION}")).small().color(MUTED));
                 ui.add_space(8.0);
                 ui.selectable_value(&mut self.tab, Tab::Speak, "Speak");

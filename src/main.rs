@@ -28,7 +28,10 @@ fn main() -> eframe::Result<()> {
         std::process::exit(code);
     }
     let mut native = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1180.0, 860.0]).with_title("Quoquendo"),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1180.0, 860.0])
+            .with_title("Quoquendo")
+            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/brand/icon.png")).expect("icon.png")),
         ..Default::default()
     };
     if opts.screenshot.is_some() {
