@@ -1,3 +1,5 @@
+# local secrets (Cloudflare token for the mirror)
+/.env
 /target
 /shots
 *.wav

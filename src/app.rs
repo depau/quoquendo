@@ -936,6 +936,11 @@ impl App {
             let mut keep = false;
             let mut choose = None;
             let mut explore = None;
+            // a voice missing its language: the mirror holds the language
+            // folder, and a mirror download fetches only what isn't stored
+            let mut fetch_language: Option<&'static Installer> = None;
+            let has_mirror = self.mirror().is_some();
+            let queued: Vec<&str> = self.downloads.iter().map(|d| d.installer.file).collect();
             let mut rows: Vec<&InstalledVoice> = self.installed.iter().collect();
             self.sort_installed.apply(&mut rows, |v, col| match col {
                 Col::Voice => text_key(&v.name),
@@ -958,12 +963,18 @@ impl App {
                     ui.label(RichText::new(&v.gender).color(MUTED));
                     match (&v.unsupported, &v.language_missing) {
                         (Some(u), _) => ui.label(RichText::new(format!("{u} — unsupported yet")).color(MUTED)),
-                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data: add any {t} voice or language distribution, or download it from the mirror")).color(AMBER)),
+                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data: get it from the mirror, or import a {t} voice or the {t} language distribution")).color(AMBER)),
                         (None, None) => ui.label(RichText::new(format!("Ready · {}", catalog::size_label(v.bytes))).color(GREEN)),
                     };
                     ui.horizontal(|ui| {
                         if v.can_speak() && ui.button("Explore").on_hover_text("Hear this voice's recordings, phone by phone and sentence by sentence").clicked() {
                             explore = Some(v.name.clone());
+                        }
+                        let installer = catalog::installer_for(&v.name).filter(|i| !queued.contains(&i.file));
+                        if let (Some(inst), Some(_), None, true) = (installer, &v.language_missing, &v.root, has_mirror) {
+                            if ui.button("Get language data").on_hover_text("Download this voice's language folder from the voice mirror").clicked() {
+                                fetch_language = Some(inst);
+                            }
                         }
                         if v.root.is_some() {
                             ui.label(RichText::new("other installation").small().color(MUTED));
@@ -984,6 +995,9 @@ impl App {
             });
             if keep {
                 self.confirm_delete = None;
+            }
+            if let Some(inst) = fetch_language {
+                self.queue_download(inst);
             }
             if let Some(name) = delete {
                 self.confirm_delete = None;

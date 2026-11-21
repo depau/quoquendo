@@ -37,6 +37,11 @@ jobs:
           path: installers
           key: installers-${{ hashFiles('crates/quoquendo/src/catalog.rs') }}
           restore-keys: installers-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install wrangler
+        run: npm install -g wrangler@4
       - name: Download and unpack every installer
         run: |
           set -euo pipefail
@@ -51,13 +56,20 @@ jobs:
             fi
             ./target/release/quoquendo --unpack "installers/$f" out/LTTS7
           done < installers.txt
+      # Catalan, Valencian and Galician come in no voice installer: their
+      # language distributions, on no public site, were put once under the
+      # bucket's distributions/ (which the Worker doesn't serve)
+      - name: Language distributions
+        run: |
+          set -euo pipefail
+          for f in "Catalan & Valencian Distribution.exe" "Galician Distribution.exe"; do
+            if [ ! -s "installers/$f" ]; then
+              wrangler r2 object get "$BUCKET/distributions/$f" --file "installers/$f" --remote
+            fi
+            ./target/release/quoquendo --unpack "installers/$f" out/LTTS7
+          done
       - name: Catalog
         run: ./target/release/quoquendo --mirror-catalog out/LTTS7 out/catalog.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install wrangler
-        run: npm install -g wrangler@4
       # only the files whose checksum differs from the catalog already on the
       # mirror (every one, the first time); the catalog last, so the mirror
       # never lists a file it doesn't hold yet

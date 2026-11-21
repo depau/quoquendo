@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-pub use quoquendo::catalog::{archive_url, unsupported, Installer, INSTALLERS};
+pub use quoquendo::catalog::{archive_url, installer_for, unsupported, Installer, INSTALLERS};
 
 /// The mirror built in (`QQ_MIRROR_URL` at build time).
 pub const DEFAULT_MIRROR: Option<&str> = option_env!("QQ_MIRROR_URL");

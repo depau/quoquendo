@@ -18,10 +18,17 @@ are cached for a year (they never change under a name); `catalog.json`,
 `index.html` and the unpack worker's files for 5 minutes.
 
 The mirror workflow downloads all 47 installers from archive.org (kept in
-the Actions cache for the next run), unpacks them with `quoquendo --unpack`
-and uploads the LTTS7 tree (about 2.1 GB): only the files whose sha256
-differs from the catalog already on the mirror, then the catalog. Both
-workflows deploy the Worker.
+the Actions cache for the next run), and the Catalan & Valencian and
+Galician language distributions from the bucket's `distributions/` (on no
+public site, so put there by hand; the Worker doesn't serve that prefix):
+
+```sh
+npx wrangler@4 r2 object put "quoquendo/distributions/Galician Distribution.exe" --file "Galician Distribution.exe" --remote
+```
+
+It unpacks them with `quoquendo --unpack` and uploads the LTTS7 tree
+(about 2.1 GB): only the files whose sha256 differs from the catalog
+already on the mirror, then the catalog. Both workflows deploy the Worker.
 
 ## One-time setup
 
