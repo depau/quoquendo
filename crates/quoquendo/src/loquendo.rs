@@ -490,6 +490,12 @@ impl VoiceDescriptor {
     pub fn sample_text(&self) -> String {
         let demo = self.demo_sentence.trim();
         let mut text = if demo.is_empty() { self.language().sample_sentence().to_string() } else { demo.to_string() };
+        // a `.vde` holds Latin-1, so a Chinese demo sentence is typed pinyin
+        // (`wo3 jiao4 lin2 lin2, …`): the words it says, written as they are
+        // written (`Chinese.chd` reads them the same)
+        if self.language() == crate::g2p::Language::Chinese && !demo.is_empty() {
+            text = "我叫琳琳，我是Loquendo的女声录音员，我的母语是汉语。".to_string();
+        }
         if self.language() == crate::g2p::Language::Italian {
             if !text.ends_with(['.', '!', '?']) {
                 text.push('.');
