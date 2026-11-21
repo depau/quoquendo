@@ -2,6 +2,7 @@ name: android
 
 # A nightly of every push to main: the `nightly` GitHub release, replaced each
 # time, holding quoquendo-nightly-<date>-<sha>.apk (eu.depau.quoquendo.nightly).
+# Without the signing secrets it only builds a debug APK as an artifact.
 
 on:
   push:
@@ -24,40 +25,59 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS || vars.KEY_ALIAS }}
+      SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      QQ_MIRROR_URL: ${{ vars.QQ_MIRROR_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-ndk
-        run: cargo install --locked cargo-ndk
+        with:
+          cache-on-failure: true
+      # built once, then restored from the cache
+      - uses: taiki-e/cache-cargo-install-action@v2
+        with:
+          tool: cargo-ndk
       - name: Build
+        id: build
         env:
-          SIGNING_KEY_ALIAS: ${{ vars.KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          SIGNING_STORE_FILE: ${{ github.workspace }}/release.keystore
-          QQ_MIRROR_URL: ${{ vars.QQ_MIRROR_URL }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
         run: |
           set -euo pipefail
-          # the same key every time, or installed nightlies can't update
-          [ -n "$SIGNING_KEY_ALIAS" ] || { echo "::error::set the KEYSTORE, KEYSTORE_PASSWORD, KEY_PASSWORD secrets and the KEY_ALIAS variable"; exit 1; }
-          echo "${{ secrets.KEYSTORE }}" | base64 -d > release.keystore
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          mkdir -p nightly
+          if [ -z "$KEYSTORE" ] || [ -z "$SIGNING_KEY_ALIAS" ]; then
+            # the same key every time, or installed nightlies can't update
+            echo "::warning::no signing key (secrets KEYSTORE, KEYSTORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS): debug build only, nothing published"
+            (cd android && ./gradlew assembleDebug --stacktrace)
+            mv android/app/build/outputs/apk/debug/app-debug.apk nightly/quoquendo-debug.apk
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          export SIGNING_STORE_FILE="$RUNNER_TEMP/release.keystore"
           version_code=$(( $(git show -s --format=%ct HEAD) / 60 ))
           version_name="0.1.0-nightly.${GITHUB_SHA::7}"
-          cd android
-          ./gradlew assembleRelease -Pnightly=true -PversionCode="$version_code" -PversionName="$version_name" --stacktrace
-          cd ..
-          rm release.keystore
-          mkdir -p nightly
+          (cd android && ./gradlew assembleRelease -Pnightly=true -PversionCode="$version_code" -PversionName="$version_name" --stacktrace)
+          rm "$SIGNING_STORE_FILE"
           mv android/app/build/outputs/apk/release/app-release.apk "nightly/quoquendo-nightly-$(date -u +%Y%m%d)-${GITHUB_SHA::7}.apk"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quoquendo-android
+          path: nightly/*.apk
+          compression-level: 0
       - name: Publish the nightly release
+        if: steps.build.outputs.signed == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -2,6 +2,11 @@ name = "quoquendo"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
 
+# quoquendo.depau.eu; the workers.dev address stays on too (a route alone
+# would turn it off)
+routes = [{ pattern = "quoquendo.depau.eu", custom_domain = true }]
+workers_dev = true
+
 [[r2_buckets]]
 binding = "VOICES"
 bucket_name = "quoquendo"

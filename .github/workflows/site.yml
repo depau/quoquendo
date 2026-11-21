@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: site
+  group: cloudflare-site
   cancel-in-progress: true
 
 jobs:
@@ -25,11 +25,26 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Install trunk
-        run: cargo install --locked trunk
+        with:
+          cache-on-failure: true
+      # a prebuilt trunk instead of `cargo install` (7 minutes)
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      # the wasm-bindgen and wasm-opt trunk downloads
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/trunk
+          key: trunk-tools-${{ hashFiles('Cargo.lock') }}
+          restore-keys: trunk-tools-
       # the app fetches voices from the site it is served from
       - name: Build
         run: trunk build --release --public-url /
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install wrangler
+        run: npm install -g wrangler@4
       # hashed files first, index.html last: a visitor never gets an
       # index.html whose files aren't there yet
       - name: Upload to R2
@@ -37,9 +52,9 @@ jobs:
           set -euo pipefail
           cd dist
           find . -type f ! -name index.html ! -name '.*' -printf '%P\n' | sort | while IFS= read -r p; do
-            npx --yes wrangler@3 r2 object put "$BUCKET/site/$p" --file "$p" --remote
+            wrangler r2 object put "$BUCKET/site/$p" --file "$p" --remote
           done
-          npx --yes wrangler@3 r2 object put "$BUCKET/site/index.html" --file index.html --content-type 'text/html; charset=utf-8' --remote
+          wrangler r2 object put "$BUCKET/site/index.html" --file index.html --content-type 'text/html; charset=utf-8' --remote
       - name: Deploy the Worker
         working-directory: mirror/worker
-        run: npx --yes wrangler@3 deploy
+        run: wrangler deploy

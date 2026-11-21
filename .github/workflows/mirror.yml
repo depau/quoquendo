@@ -1,7 +1,14 @@
 name: mirror
 
+# The voices: every installer of the pack unpacked into the LTTS7 tree and
+# uploaded to R2 under v1/, with v1/catalog.json. Run by hand.
+
 on:
   workflow_dispatch:
+
+concurrency:
+  group: cloudflare-mirror
+  cancel-in-progress: false
 
 jobs:
   mirror:
@@ -10,35 +17,61 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BUCKET: quoquendo
+      MIRROR: ${{ vars.QQ_MIRROR_URL }}
     steps:
       - uses: actions/checkout@v4
+      # the CLI is the desktop app's binary: rodio links ALSA
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Build
         run: cargo build --release --bin quoquendo
+      # the pack's installers never change: keep them between runs instead of
+      # fetching 2.5 GB from archive.org each time
+      - name: Installers cache
+        uses: actions/cache@v4
+        with:
+          path: installers
+          key: installers-${{ hashFiles('crates/quoquendo/src/catalog.rs') }}
+          restore-keys: installers-
       - name: Download and unpack every installer
         run: |
           set -euo pipefail
-          mkdir -p out/LTTS7
+          mkdir -p installers out/LTTS7
           ./target/release/quoquendo --list-installers > installers.txt
           while IFS= read -r f; do
             [ -n "$f" ] || continue
-            enc=$(jq -rn --arg s "$f" '$s|@uri')
-            echo "::group::$f"
-            curl -fL --retry 3 -o "$f" "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/$enc"
-            ./target/release/quoquendo --unpack "$f" out/LTTS7
-            rm "$f"
-            echo "::endgroup::"
+            if [ ! -s "installers/$f" ]; then
+              enc=$(jq -rn --arg s "$f" '$s|@uri')
+              curl -fL --retry 5 --retry-all-errors -o "installers/$f" \
+                "https://archive.org/download/text-to-speech-oddcast-voices-pack-2024/Loquendo%207/$enc"
+            fi
+            ./target/release/quoquendo --unpack "installers/$f" out/LTTS7
           done < installers.txt
       - name: Catalog
         run: ./target/release/quoquendo --mirror-catalog out/LTTS7 out/catalog.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install wrangler
+        run: npm install -g wrangler@4
+      # only the files whose checksum differs from the catalog already on the
+      # mirror (every one, the first time); the catalog last, so the mirror
+      # never lists a file it doesn't hold yet
       - name: Upload to R2
         run: |
           set -euo pipefail
+          files='[.voices[].files[], (.languages[]?.files[])] | unique_by(.path) | .[] | "\(.path)\t\(.sha256)"'
+          jq -r "$files" out/catalog.json | sort > new.tsv
+          { curl -fsS "${MIRROR%/}/v1/catalog.json" | jq -r "$files" || true; } | sort > old.tsv
+          comm -23 new.tsv old.tsv | cut -f1 > upload.txt
+          echo "$(wc -l < upload.txt) of $(wc -l < new.tsv) files to upload"
           cd out/LTTS7
-          find . -type f ! -path ./installers.json -printf '%P\n' | sort | while IFS= read -r p; do
-            npx --yes wrangler@3 r2 object put "$BUCKET/v1/$p" --file "$p" --remote
-          done
-          npx --yes wrangler@3 r2 object put "$BUCKET/v1/catalog.json" --file ../catalog.json --content-type application/json --remote
+          xargs -a ../../upload.txt -P 8 -I{} wrangler r2 object put "$BUCKET/v1/{}" --file "{}" --remote
+          wrangler r2 object put "$BUCKET/v1/catalog.json" --file ../catalog.json --content-type application/json --remote
       - name: Deploy the Worker
         working-directory: mirror/worker
-        run: npx --yes wrangler@3 deploy
+        run: wrangler deploy
