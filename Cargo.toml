@@ -6,6 +6,8 @@ name = "quoquendo-app"
 version = "0.1.0"
 edition = "2021"
 description = "Window and command line for quoquendo, the Loquendo 7 (LTTS7) voice engine rebuilt"
+# `cargo run` starts the app (src/bin/ holds helper binaries)
+default-run = "quoquendo"
 
 [[bin]]
 name = "quoquendo"
