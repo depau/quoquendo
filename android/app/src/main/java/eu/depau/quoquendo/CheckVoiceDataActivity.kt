@@ -53,9 +53,7 @@ class SampleTextActivity : Activity() {
             val voices = VoiceStore(this).installed().filter { it.speakable }
             val locales = voices.flatMap { it.locales }.filter { it.language.equals(lang, true) || it.isO3LanguageOrNull().equals(lang, true) }
             val locale = locales.firstOrNull { it.country.equals(country, true) } ?: locales.firstOrNull()
-            locale?.let {
-                VoiceStore.defaultFor(voices, it, VoiceStore.prefs(this).getString(VoiceStore.defaultVoiceKey(it), null))?.demoSentence
-            }
+            locale?.let { VoiceStore.appVoiceFor(voices, it, VoiceStore.prefs(this))?.demoSentence }
         } catch (e: Exception) {
             Log.e(VoiceStore.TAG, "listing voices failed", e)
             null

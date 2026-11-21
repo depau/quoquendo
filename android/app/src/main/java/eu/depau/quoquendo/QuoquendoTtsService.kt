@@ -10,6 +10,30 @@ import android.util.Log
 import java.util.Locale
 import java.util.MissingResourceException
 
+/**
+ * Speech the app has rendered already (Try it's preview), handed to the
+ * service in this same process: the speak params' [KEY] names it, and the
+ * service plays it instead of rendering the text again.
+ */
+object Prerendered {
+    const val KEY = "eu.depau.quoquendo.prerendered"
+
+    private class Entry(val token: String, val text: String, val audio: Rendered)
+
+    @Volatile private var entry: Entry? = null
+
+    fun put(token: String, text: String, audio: Rendered) {
+        entry = Entry(token, text, audio)
+    }
+
+    /** The audio put under [token] for [text], once. */
+    fun take(token: String, text: String): Rendered? = synchronized(this) {
+        val e = entry?.takeIf { it.token == token && it.text == text } ?: return null
+        entry = null
+        e.audio
+    }
+}
+
 /** quoquendo as an Android text-to-speech engine. */
 class QuoquendoTtsService : TextToSpeechService() {
     private lateinit var store: VoiceStore
@@ -42,7 +66,7 @@ class QuoquendoTtsService : TextToSpeechService() {
         val now = System.currentTimeMillis()
         if (now - cachedAt > 2000) {
             cached = try {
-                store.installed().filter { it.speakable }
+                store.installed().filter { it.speakable }.also { VoiceStore.migrateChoices(VoiceStore.prefs(this), it) }
             } catch (e: Exception) {
                 Log.e(TAG, "listing voices failed", e)
                 emptyList()
@@ -70,20 +94,20 @@ class QuoquendoTtsService : TextToSpeechService() {
         else TextToSpeech.LANG_COUNTRY_AVAILABLE
     }
 
-    /** The best (voice, locale, level) for a request, or null. */
+    /**
+     * The (voice, locale, level) a request gets, or null: the voice chosen in
+     * Settings for the language, in every region, at the level its own
+     * locales match; else the strongest match, preferring a voice with its
+     * language data.
+     */
     private fun best(lang: String?, country: String?, variant: String?): Triple<InstalledVoice, Locale, Int>? {
-        val prefs = VoiceStore.prefs(this)
-        return voices().flatMap { v -> v.locales.map { Triple(v, it, level(it, lang, country, variant)) } }
+        val voices = voices()
+        val matches = voices.flatMap { v -> v.locales.map { Triple(v, it, level(it, lang, country, variant)) } }
             .filter { it.third >= TextToSpeech.LANG_AVAILABLE }
-            // the strongest match; among equals, the voice chosen in Settings for
-            // its locale, then one whose language data is present
-            .maxWithOrNull(
-                compareBy(
-                    { it.third },
-                    { prefs.getString(VoiceStore.defaultVoiceKey(it.second), null) == it.first.name },
-                    { !it.first.languageMissing },
-                ),
-            )
+        val first = matches.firstOrNull() ?: return null
+        val chosen = VoiceStore.chosenFor(voices, first.second.language, VoiceStore.prefs(this))
+        return matches.filter { chosen == null || it.first == chosen }
+            .maxWithOrNull(compareBy({ it.third }, { !it.first.languageMissing }))
     }
 
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
@@ -165,22 +189,26 @@ class QuoquendoTtsService : TextToSpeechService() {
         stopped = false
         val text = request.charSequenceText?.toString().orEmpty()
         Log.i(TAG, "onSynthesizeText voice=${request.voiceName} lang=${request.language}-${request.country} chars=${text.length}")
-        val (samples, rate) = try {
+        val speech = request.params?.getString(Prerendered.KEY)?.let { Prerendered.take(it, text) } ?: try {
             synchronized(lock) {
                 val wanted = byVoiceName(request.voiceName)?.first
                     ?: best(request.language, request.country, request.variant)?.first
                     ?: throw IllegalStateException("no installed voice speaks ${request.language}-${request.country}")
                 if (!load(wanted.name)) throw IllegalStateException("could not load ${wanted.name}")
                 // rate and pitch from the request are ignored: the engine has no speed or pitch control yet
-                Native.synthesize(handle, text) to Native.sampleRate(handle)
+                Native.synthesize(handle, text, VoiceStore.smoothJoins(VoiceStore.prefs(this)))
             }
         } catch (e: Exception) {
             Log.e(TAG, "synthesis failed", e)
             callback.error(TextToSpeech.ERROR_SYNTHESIS)
             return
         }
-        Log.i(TAG, "synthesized ${samples.size} samples at $rate Hz")
-        if (callback.start(rate, AudioFormat.ENCODING_PCM_16BIT, 1) != TextToSpeech.SUCCESS) return
+        val samples = speech.pcm
+        Log.i(TAG, "synthesized ${samples.size} samples at ${speech.rate} Hz")
+        if (callback.start(speech.rate, AudioFormat.ENCODING_PCM_16BIT, 1) != TextToSpeech.SUCCESS) return
+        // each word's start, reported to the app as playback reaches it (onRangeStart)
+        val m = speech.marks
+        for (i in 0 until m.size / 3) callback.rangeStart(m[3 * i], m[3 * i + 1], m[3 * i + 2])
         val bytes = ByteArray(samples.size * 2)
         for (i in samples.indices) {
             val s = samples[i].toInt()

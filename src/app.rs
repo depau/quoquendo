@@ -1,19 +1,25 @@
 //! The window, the same on the desktop and in the browser: a Speak tab
-//! (voice, text, Speak/Stop/Save WAV or MP3, and behind a toggle what the engine
-//! did with the text) and a Voices tab (the library: installed voices,
-//! downloads, the pack's catalog). Developer mode (desktop only, off by
-//! default) adds the voice's details, the stage selectors and the
-//! comparison with the original engine.
+//! (voice, text, Speak/Stop, Save in a chosen format, and what the engine
+//! makes of the text: its sounds, the recorded pieces and the audio,
+//! previewed while typing and followed while speaking) and a Voices tab (the
+//! library: installed voices, downloads, the pack's catalog). Advanced mode
+//! adds the voice's details and the stage selectors; Original engine (Wine)
+//! mode (desktop only) adds the original engine beside ours.
+
+mod modes;
+mod speak;
 
 use crate::audio::Player;
 use crate::catalog::{self, Installer, INSTALLERS};
 use crate::store::{self, InstalledVoice, StoreEvent};
 use eframe::egui::{self, Color32, RichText};
-use quoquendo::g2p::{self, Language};
-#[cfg(not(target_arch = "wasm32"))]
+use quoquendo::export::Format;
+use quoquendo::g2p::Language;
 use quoquendo::loquendo;
-use quoquendo::synth::{self, Settings};
+use quoquendo::synth::Settings;
+use speak::{Preview, Track, Want};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use crate::route::{self, Route};
 
@@ -30,6 +36,11 @@ const AMBER: Color32 = Color32::from_rgb(0xe9, 0xb2, 0x4c);
 const GREEN: Color32 = Color32::from_rgb(0x8b, 0xc9, 0x6e);
 const RED: Color32 = Color32::from_rgb(0xe8, 0x70, 0x5f);
 const LILAC: Color32 = Color32::from_rgb(0xc9, 0xa8, 0xff);
+/// a waveform's part not played yet
+const WAVE_DIM: Color32 = Color32::from_rgb(0x72, 0x6e, 0x65);
+/// the original engine's waveform
+#[cfg(not(target_arch = "wasm32"))]
+const WAVE_ORIGINAL: Color32 = Color32::from_rgb(0xb3, 0xad, 0xa0);
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -132,23 +143,54 @@ impl Sort {
     }
 }
 
-/// The developer tools' state (desktop only).
+/// The desktop's own state: commands, and the original engine under Wine.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 struct Dev {
-    on: bool,
+    /// Original engine (Wine) mode
+    original: bool,
     engine_dir: String,
     /// other LTTS7 trees whose voices are listed too
     roots: Vec<std::path::PathBuf>,
+    /// the pronunciation and piece picking picked (joining is `App::settings`)
     stages: crate::dev::pipeline::Stages,
     fon_command: String,
-    language: Option<Language>,
-    /// the original engine's results, by text
-    refs: std::collections::HashMap<String, crate::dev::oracle::Reference>,
-    /// a background run of the original engine; `true` = then compare
-    job: Option<(std::thread::JoinHandle<Result<Vec<crate::dev::oracle::Reference>, String>>, bool)>,
+    /// the original engine's results and failures
+    refs: std::collections::HashMap<TextKey, crate::dev::oracle::Reference>,
+    ref_errors: std::collections::HashMap<TextKey, String>,
+    /// a run of the original engine, one at a time
+    job: Option<OracleJob>,
     report: Option<String>,
     extras: Vec<(String, usize, usize)>,
+    /// the original engine's audio, ready to play
+    original_samples: Option<(TextKey, Arc<Vec<f32>>)>,
+}
+
+/// A voice and a text it says.
+#[cfg(not(target_arch = "wasm32"))]
+type TextKey = (String, String);
+
+/// The original engine running under Wine on some texts.
+#[cfg(not(target_arch = "wasm32"))]
+struct OracleJob {
+    voice: String,
+    texts: Vec<String>,
+    handle: std::thread::JoinHandle<Result<Vec<crate::dev::oracle::Reference>, String>>,
+    /// then compare its results with ours in a report
+    compare: bool,
+    /// `ctx.input(|i| i.time)` when it started
+    started: f64,
+}
+
+/// `--screenshot`: where to save it, and what to show.
+#[cfg(not(target_arch = "wasm32"))]
+struct Screenshot {
+    path: std::path::PathBuf,
+    /// the speech shown playing at this moment (s)
+    play_at: Option<f64>,
+    /// the frame everything to show was ready
+    settled: Option<u64>,
+    asked: bool,
 }
 
 /// A link to a voice that isn't installed: the catalog entry and the link.
@@ -183,7 +225,7 @@ pub struct App {
     listed: bool,
     /// the voice picked (persisted), and the one loaded
     chosen: Option<String>,
-    voice: Option<quoquendo::Voice>,
+    voice: Option<Arc<quoquendo::Voice>>,
     loading: Option<String>,
     downloads: Vec<Download>,
     unpacking: Option<String>,
@@ -198,19 +240,37 @@ pub struct App {
     text: String,
     last_sample: String,
     settings: Settings,
-    targets: Vec<synth::TargetPhrase>,
-    plan: Vec<synth::Phrase>,
-    speech: Option<synth::Speech>,
+    /// Advanced mode
+    advanced: bool,
+    /// the pronunciation's language when it isn't the voice's own (Advanced)
+    language: Option<Language>,
+    format: Format,
+    /// the text analysed and rendered, and the last one that failed
+    preview: Option<Preview>,
+    failed: Option<(Want, String)>,
+    /// what the preview should be made from, and since when
+    pending: Option<(Want, f64)>,
+    /// a preview being made
+    #[cfg(not(target_arch = "wasm32"))]
+    job: Option<(Want, std::thread::JoinHandle<Result<Preview, String>>)>,
+    /// Speak was pressed before the preview had caught up with the text
+    speak_queued: bool,
     player: Player,
-    show_curtain: bool,
+    playing: Option<Track>,
+    /// a moment the speech shows as playing without playing it (screenshots)
+    pinned: Option<f64>,
+    /// the piece the Pieces list last scrolled to while speaking
+    followed_piece: Option<usize>,
     explore: Explore,
     status: String,
+    /// the status when it reports a success
+    status_good: Option<String>,
     error: Option<String>,
 
     #[cfg(not(target_arch = "wasm32"))]
     dev: Dev,
     #[cfg(not(target_arch = "wasm32"))]
-    screenshot: Option<std::path::PathBuf>,
+    screenshot: Option<Screenshot>,
     #[cfg(target_arch = "wasm32")]
     links: Links,
     frame_no: u64,
@@ -222,9 +282,13 @@ pub struct App {
 #[derive(Default)]
 pub struct Launch {
     #[cfg(not(target_arch = "wasm32"))]
-    pub dev: bool,
+    pub advanced: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub original: bool,
     #[cfg(not(target_arch = "wasm32"))]
     pub screenshot: Option<std::path::PathBuf>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub play_at: Option<f64>,
 }
 
 /// The app's own dark look. egui keeps a light and a dark style and follows
@@ -257,7 +321,14 @@ fn style(ctx: &egui::Context) {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, launch: Launch) -> App {
         style(&cc.egui_ctx);
-        let get = |key: &str| cc.storage.and_then(|s| s.get_string(key));
+        // a screenshot shows the defaults and the launch options, not this
+        // computer's saved settings
+        #[cfg(not(target_arch = "wasm32"))]
+        let fresh = launch.screenshot.is_some();
+        #[cfg(target_arch = "wasm32")]
+        let fresh = false;
+        let get = |key: &str| cc.storage.filter(|_| !fresh).and_then(|s| s.get_string(key));
+        let on = |key: &str| get(key).is_some_and(|v| v == "true");
         let (tx, rx) = channel();
         // the header's brand, uploaded once: shown 20 px tall in the bar
         let logo = {
@@ -287,21 +358,35 @@ impl App {
             text: get("text").unwrap_or_default(),
             last_sample: String::new(),
             settings: Settings::default(),
-            targets: Vec::new(),
-            plan: Vec::new(),
-            speech: None,
+            advanced: on("advanced"),
+            language: None,
+            format: get("save_format").and_then(|e| Format::from_ext(&e)).unwrap_or(Format::Flac),
+            preview: None,
+            failed: None,
+            pending: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            job: None,
+            speak_queued: false,
             player: Player::new(),
-            show_curtain: get("show_curtain").is_some_and(|v| v == "true"),
+            playing: None,
+            pinned: None,
+            followed_piece: None,
             explore: Explore::default(),
             status: "Looking for voices…".into(),
+            status_good: None,
             error: None,
             #[cfg(not(target_arch = "wasm32"))]
             dev: Dev {
-                on: launch.dev || get("dev_mode").is_some_and(|v| v == "true"),
+                original: on("original_engine"),
                 ..Default::default()
             },
             #[cfg(not(target_arch = "wasm32"))]
-            screenshot: launch.screenshot.clone(),
+            screenshot: launch.screenshot.clone().map(|path| Screenshot {
+                path,
+                play_at: launch.play_at,
+                settled: None,
+                asked: false,
+            }),
             #[cfg(target_arch = "wasm32")]
             links: Links::default(),
             frame_no: 0,
@@ -309,10 +394,9 @@ impl App {
             logo,
         };
         #[cfg(not(target_arch = "wasm32"))]
-        if app.screenshot.is_some() {
-            app.dev.on = true;
-            app.show_curtain = true;
-            app.quit_after = Some(400);
+        {
+            app.dev.original |= launch.original;
+            app.advanced |= launch.advanced || app.dev.original;
         }
         #[cfg(target_arch = "wasm32")]
         let _ = launch;
@@ -320,9 +404,15 @@ impl App {
         app
     }
 
-    fn dev_on(&self) -> bool {
+    /// Advanced mode, on its own or under Original engine (Wine) mode.
+    fn advanced(&self) -> bool {
+        self.advanced || self.original()
+    }
+
+    /// Original engine (Wine) mode (desktop only).
+    fn original(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
-        return self.dev.on;
+        return self.dev.original;
         #[cfg(target_arch = "wasm32")]
         false
     }
@@ -339,7 +429,7 @@ impl App {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let mut roots = self.dev.roots.clone();
-            if self.dev.on {
+            if self.dev.original {
                 for c in crate::dev::engines::engine_candidates() {
                     if loquendo::resolve_data_dir(&c).is_some() && !roots.contains(&c) {
                         roots.push(c);
@@ -363,11 +453,11 @@ impl App {
     fn choose(&mut self, name: &str) {
         let Some(v) = self.installed_voice(name).cloned() else { return };
         self.player.stop();
+        self.playing = None;
         self.chosen = Some(v.name.clone());
         self.voice = None;
-        self.speech = None;
-        self.targets.clear();
-        self.plan.clear();
+        self.preview = None;
+        self.failed = None;
         self.loading = Some(v.name.clone());
         self.status = format!("Loading {}…", v.name);
         store::load(&v, self.tx.clone());
@@ -386,11 +476,7 @@ impl App {
         match pick {
             Some(p) => self.choose(&p),
             None => {
-                self.status = if count == 0 {
-                    "No voices yet: get one in the Voices tab.".into()
-                } else {
-                    format!("{count} voices, none can speak yet")
-                };
+                self.status = if count == 0 { String::new() } else { format!("{count} voices, none can speak yet") };
                 if count == 0 {
                     self.tab = Tab::Voices;
                 }
@@ -427,18 +513,14 @@ impl App {
                             self.text = sample.clone();
                         }
                         self.last_sample = sample;
+                        self.language = None;
                         #[cfg(not(target_arch = "wasm32"))]
                         {
-                            self.dev.language = None;
                             self.dev.extras = loquendo::load_extras(&voice.descriptor.voice_path).sets;
                         }
-                        self.error = voice
-                            .language_missing
-                            .as_ref()
-                            .map(|t| format!("{} needs {t} language data: add any {t} voice or the {t} language distribution", voice.descriptor.name));
-                        self.status = format!("{} ready", voice.descriptor.name);
-                        self.voice = Some(*voice);
-                        self.analyse();
+                        self.error = voice.language_missing.as_ref().map(|t| format!("{} needs {t} language data", voice.descriptor.name));
+                        self.status.clear();
+                        self.voice = Some(Arc::new(*voice));
                     }
                 }
                 StoreEvent::Fetched { file, bytes } => {
@@ -480,9 +562,10 @@ impl App {
                     if self.chosen.as_deref() == Some(name.as_str()) {
                         self.chosen = None;
                         self.voice = None;
-                        self.speech = None;
-                        self.targets.clear();
-                        self.plan.clear();
+                        self.preview = None;
+                        self.failed = None;
+                        self.player.stop();
+                        self.playing = None;
                     }
                     self.status = format!("Deleted {name}");
                     self.relist();
@@ -504,107 +587,14 @@ impl App {
                 store::download(d.installer, catalog::effective_mirror(&self.mirror_url), self.tx.clone(), d.cancel.clone());
             }
         }
-        if self.unpacking.is_some() || self.loading.is_some() || !self.downloads.is_empty() || self.player.is_playing() {
+        if self.unpacking.is_some() || self.loading.is_some() || !self.downloads.is_empty() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-    }
-
-    /// The front end in use: the voice's own, or (developer mode) the rules
-    /// of another language.
-    fn frontend(&self) -> Option<g2p::Frontend> {
-        let v = self.voice.as_ref()?;
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(l) = self.dev.language.filter(|_| self.dev.on) {
-            return Some(g2p::Frontend::rules(l));
+        if self.playing.is_some() && self.pinned.is_none() && self.player.position().is_none() {
+            self.playing = None;
         }
-        Some(v.frontend.clone())
-    }
-
-    /// FON and CAT for the text.
-    fn analyse(&mut self) {
-        self.speech = None;
-        let Some(fe) = self.frontend() else { return };
-        let Some(voice) = &self.voice else { return };
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use crate::dev::{oracle, pipeline};
-            let stages = if self.dev.on { self.dev.stages.clone() } else { pipeline::Stages::default() };
-            let reference = match self.dev.refs.get(&self.text) {
-                Some(r) => Some(r.clone()),
-                None if stages.need_original() => {
-                    self.targets.clear();
-                    self.plan.clear();
-                    let (name, texts) = (voice.descriptor.name.clone(), vec![self.text.clone()]);
-                    if self.dev.job.is_none() {
-                        self.dev.job = Some((std::thread::spawn(move || oracle::run_many(&name, &texts)), false));
-                        self.status = "Asking the original engine (under Wine)…".into();
-                    }
-                    return;
-                }
-                None => None,
-            };
-            match pipeline::run(&self.text, &fe, &voice.descriptor.name, &voice.db, &stages, reference) {
-                Ok(run) => {
-                    self.targets = run.targets;
-                    self.plan = run.plan;
-                }
-                Err(e) => {
-                    self.plan.clear();
-                    self.error = Some(e);
-                }
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.targets = synth::from_tokens(&g2p::analyse(&self.text, &fe));
-            self.plan = synth::select_all(&voice.db, &self.targets);
-        }
-    }
-
-    fn render(&mut self) -> bool {
-        if self.voice.is_none() {
-            self.error = Some("Pick a voice first.".into());
-            return false;
-        }
-        if self.plan.is_empty() {
-            self.analyse();
-        }
-        let Some(voice) = &self.voice else { return false };
-        match synth::render(&self.plan, &voice.db, self.settings) {
-            Ok(s) => {
-                self.status = format!("{:.2} s of speech · {} samples at {} Hz", s.duration_s(), s.samples.len(), s.rate);
-                self.speech = Some(s);
-                true
-            }
-            Err(e) => {
-                self.error = Some(e);
-                false
-            }
-        }
-    }
-
-    fn speak(&mut self) {
-        if self.speech.is_none() && !self.render() {
-            return;
-        }
-        if let Some(s) = &self.speech {
-            match self.player.play(s) {
-                Ok(()) => self.status = format!("Speaking… {:.2} s", s.duration_s()),
-                Err(e) => self.error = Some(e),
-            }
-        }
-    }
-
-    fn save(&mut self, format: crate::audio::Format) {
-        if self.speech.is_none() && !self.render() {
-            return;
-        }
-        if let Some(s) = &self.speech {
-            match crate::audio::save(s, format) {
-                Ok(Some(p)) => self.status = format!("Saved {p}"),
-                Ok(None) => {}
-                Err(e) => self.error = Some(e),
-            }
+        if self.playing.is_some() {
+            ctx.request_repaint();
         }
     }
 
@@ -629,26 +619,33 @@ impl App {
                     self.tab = Tab::Voices;
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                if self.dev.on {
+                if self.dev.original {
                     ui.separator();
                     ui.label("LTTS7 folder");
-                    let edit = ui.add(
-                        egui::TextEdit::singleline(&mut self.dev.engine_dir)
-                            .desired_width(320.0)
-                            .hint_text("LTTS7 folder, or an installer .exe"),
-                    );
+                    let width = (ui.available_width() - 160.0).clamp(120.0, 320.0);
+                    let edit = ui.add(egui::TextEdit::singleline(&mut self.dev.engine_dir).desired_width(width).hint_text("LTTS7 folder or installer .exe"));
                     if ui.button("Load").clicked() || (edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
                         self.load_engine_dir();
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Settings", |ui| {
+                        let advanced = ui.checkbox(&mut self.advanced, "Advanced").changed();
                         #[cfg(not(target_arch = "wasm32"))]
-                        if ui.checkbox(&mut self.dev.on, "Developer mode").changed() {
-                            self.relist();
-                            self.analyse();
+                        {
+                            let original = ui.checkbox(&mut self.dev.original, "Original engine (Wine)").changed();
+                            if advanced && !self.advanced {
+                                self.dev.original = false;
+                            }
+                            if original && self.dev.original {
+                                self.advanced = true;
+                            }
+                            if advanced || original {
+                                self.relist();
+                            }
                         }
-                        ui.checkbox(&mut self.show_curtain, "Behind the curtain");
+                        #[cfg(target_arch = "wasm32")]
+                        let _ = advanced;
                         ui.separator();
                         ui.label("Voice mirror URL");
                         let fallback = catalog::effective_mirror("").unwrap_or_else(|| "none: archive.org only".into());
@@ -656,7 +653,6 @@ impl App {
                         ui.separator();
                         ui.hyperlink_to("About quoquendo", "https://github.com/depau/quoquendo");
                     });
-                    ui.hyperlink_to("GitHub", "https://github.com/depau/quoquendo").on_hover_text("quoquendo's source, issues and Android nightlies");
                 });
             });
             ui.add_space(2.0);
@@ -669,262 +665,51 @@ impl App {
                 if self.unpacking.is_some() || self.loading.is_some() {
                     ui.spinner();
                 }
-                match &self.error {
-                    Some(e) => {
-                        ui.label(RichText::new(e).color(RED));
-                        if ui.small_button("Dismiss").clicked() {
-                            self.error = None;
-                        }
+                let blocked = self.can_speak().filter(|_| self.tab == Tab::Speak);
+                let said = if let Some(e) = &self.error {
+                    ui.label(RichText::new(e).color(RED));
+                    if ui.small_button("Dismiss").clicked() {
+                        self.error = None;
                     }
-                    None => {
-                        ui.label(RichText::new(&self.status).color(MUTED));
-                    }
+                    true
+                } else if let (Some(b), Some(v)) = (blocked, &self.voice) {
+                    ui.label(RichText::new(format!("{} can't speak: {b}", v.descriptor.name)).color(AMBER));
+                    true
+                } else if !self.status.is_empty() {
+                    let good = self.status_good.as_ref() == Some(&self.status);
+                    ui.label(RichText::new(&self.status).color(if good { GREEN } else { MUTED }));
+                    true
+                } else {
+                    false
+                };
+                if said {
+                    ui.label(RichText::new("·").color(MUTED));
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.dev_on() {
-                        ui.label(RichText::new("developer mode").small().color(AMBER));
-                    }
-                    let stored: u64 = self.installed.iter().filter(|v| v.root.is_none()).map(|v| v.bytes).sum();
-                    ui.label(
-                        RichText::new(format!("{} voices installed · {} used", self.installed.len(), catalog::size_label(stored)))
-                            .small()
-                            .color(MUTED),
-                    );
-                });
-            });
-        });
-    }
-
-    fn speak_tab(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Voice");
-            let current = self
-                .chosen
-                .as_ref()
-                .and_then(|c| self.installed_voice(c))
-                .map(voice_label)
-                .unwrap_or_else(|| "pick a voice".into());
-            let mut pick = None;
-            egui::ComboBox::from_id_salt("voice").selected_text(current).width(300.0).show_ui(ui, |ui| {
-                for v in &self.installed {
-                    let label = match &v.unsupported {
-                        Some(u) => format!("{} — {u}", voice_label(v)),
-                        None => voice_label(v),
-                    };
-                    if ui.selectable_label(self.chosen.as_deref() == Some(v.name.as_str()), label).clicked() {
-                        pick = Some(v.name.clone());
-                    }
-                }
-            });
-            if let Some(p) = pick {
-                self.choose(&p);
-            }
-            if self.loading.is_some() {
-                ui.spinner();
-            }
-            if let Some(v) = &self.voice {
-                let codec = v.descriptor.bin_name.split('.').nth(2).unwrap_or("");
+                let stored: u64 = self.installed.iter().filter(|v| v.root.is_none()).map(|v| v.bytes).sum();
+                let place = if cfg!(target_arch = "wasm32") { "in this browser" } else { "used" };
                 ui.label(
-                    RichText::new(format!("{} Hz · {codec} · {} recorded sentences", v.descriptor.audio_rate, v.db.units.len()))
+                    RichText::new(format!("{} voices installed · {} {place}", self.installed.len(), catalog::size_label(stored)))
                         .small()
                         .color(MUTED),
                 );
-            }
-        });
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.dev.on {
-            self.dev_text_row(ui);
-        }
-        ui.add_space(4.0);
-        let edit = ui.add(
-            egui::TextEdit::multiline(&mut self.text)
-                .desired_rows(if self.show_curtain { 3 } else { 8 })
-                .desired_width(f32::INFINITY)
-                .hint_text("Type text in the voice's language…"),
-        );
-        if edit.changed() {
-            self.player.stop();
-            self.analyse();
-        }
-        ui.add_space(4.0);
-        let blocked = self.can_speak();
-        ui.horizontal(|ui| {
-            let ready = self.voice.is_some() && blocked.is_none();
-            let speak = egui::Button::new(RichText::new("  Speak  ").color(GROUND).strong()).fill(AMBER);
-            if ui.add_enabled(ready, speak).clicked() {
-                self.speak();
-            }
-            if ui.add_enabled(self.player.is_playing(), egui::Button::new("Stop")).clicked() {
-                self.player.stop();
-            }
-            for format in [crate::audio::Format::Wav, crate::audio::Format::Mp3] {
-                if ui.add_enabled(ready, egui::Button::new(format!("Save {}", format.ext().to_uppercase()))).clicked() {
-                    self.save(format);
-                }
-            }
-            ui.add_space(16.0);
-            ui.label("Volume");
-            if ui.add(egui::Slider::new(&mut self.settings.volume, 0.0..=1.0).fixed_decimals(2)).changed() {
-                self.speech = None;
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.checkbox(&mut self.show_curtain, "Behind the curtain");
-            });
-        });
-        if let Some(b) = &blocked {
-            ui.label(RichText::new(format!("This voice can't speak yet: {b}")).color(AMBER));
-        }
-        if self.player.is_playing() {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(RichText::new("Speaking…").color(GREEN));
-            });
-        }
-        ui.add_space(6.0);
-        if self.show_curtain {
-            egui::ScrollArea::vertical().id_salt("curtain").show(ui, |ui| self.curtain(ui));
-        } else {
-            ui.label(
-                RichText::new("Tick “Behind the curtain” to see how the sentence was built: its sounds, the recorded pieces chosen for them, and the joined waveform.")
-                    .small()
-                    .color(MUTED),
-            );
-        }
-    }
-
-    fn curtain(&mut self, ui: &mut egui::Ui) {
-        let Some(voice) = &self.voice else {
-            ui.label(RichText::new("Pick a voice to see what it does with the text.").color(MUTED));
-            return;
-        };
-        let db = &voice.db;
-        let who = &voice.descriptor.name;
-        let sounds: usize = self.targets.iter().map(|t| t.phones.len()).sum();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Sounds").strong());
-            ui.label(RichText::new(format!("· {sounds} sounds ·")).small().color(MUTED));
-            ui.label(RichText::new("green").small().color(GREEN));
-            ui.label(RichText::new(format!("recorded by {who},")).small().color(MUTED));
-            ui.label(RichText::new("red").small().color(RED));
-            ui.label(RichText::new("never recorded").small().color(MUTED));
-        });
-        egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 5.0;
-                for phrase in &self.targets {
-                    for (i, t) in phrase.phones.iter().enumerate() {
-                        if t.word_start && i > 0 {
-                            ui.label(RichText::new("|").color(MUTED));
-                        }
-                        let c = if db.knows_symbol(&t.sym) { GREEN } else { RED };
-                        ui.label(RichText::new(&t.sym).monospace().color(c));
-                    }
-                    let tune = match phrase.mood {
-                        Some('I') => " ?",
-                        Some('E') => " !",
-                        _ => "",
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mode = if self.original() {
+                        "Original engine (Wine)"
+                    } else if self.advanced {
+                        "Advanced"
+                    } else {
+                        ""
                     };
-                    ui.label(RichText::new(format!("pause {} ms{tune}", phrase.pause_ms)).monospace().small().color(MUTED));
-                }
-            });
-        });
-        ui.add_space(8.0);
-        let pieces: usize = self.plan.iter().map(|p| p.pieces.len()).sum();
-        let from: std::collections::BTreeSet<u32> = self.plan.iter().flat_map(|p| p.pieces.iter().map(|x| x.unit)).collect();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Pieces").strong());
-            ui.label(
-                RichText::new(format!("· {pieces} pieces from {} of {who}'s {} recorded sentences ·", from.len(), db.units.len()))
-                    .small()
-                    .color(MUTED),
-            );
-            ui.label(RichText::new("lilac").small().color(LILAC));
-            ui.label(RichText::new("= hard cut").small().color(MUTED));
-        });
-        let missing: Vec<&String> = self.plan.iter().flat_map(|p| &p.missing).collect();
-        if !missing.is_empty() {
-            let list: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
-            ui.label(RichText::new(format!("never recorded by {who}, skipped: {}", list.join(", "))).color(RED));
-        }
-        let rate = db.audio_rate() as f32;
-        let mut play = None;
-        egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            egui::ScrollArea::vertical().id_salt("pieces").max_height(260.0).show(ui, |ui| {
-                egui::Grid::new("pieces_grid").num_columns(7).striped(true).spacing([18.0, 4.0]).show(ui, |ui| {
-                    for h in ["", "sounds", "sentence", "", "at", "length", "pitch"] {
-                        ui.label(RichText::new(h).small().color(MUTED));
-                    }
-                    ui.end_row();
-                    for phrase in &self.plan {
-                        for p in &phrase.pieces {
-                            let u = &db.units[p.unit as usize];
-                            if ui.small_button("▶").on_hover_text("Play this piece as recorded").clicked() {
-                                play = Some((p.unit, p.from, p.to));
-                            }
-                            ui.label(RichText::new(p.covers.join(" ")).monospace().color(if p.hard { LILAC } else { GREEN }));
-                            ui.label(RichText::new(format!("#{}", p.unit)).monospace().color(MUTED));
-                            let said: String = u.symbols[1..u.symbols.len().saturating_sub(1)].join(" ").chars().take(40).collect();
-                            ui.label(RichText::new(said).monospace().small().color(MUTED));
-                            ui.label(RichText::new(format!("{:.2} s", p.from as f32 / rate)).monospace());
-                            ui.label(RichText::new(format!("{:.0} ms", (p.to - p.from) as f32 * 1000.0 / rate)).monospace());
-                            ui.label(RichText::new(format!("{} Hz", p.pitch)).monospace());
-                            ui.end_row();
-                        }
-                        if phrase.pause_ms > 0 {
-                            let tune = match phrase.mood {
-                                Some('I') => "question ",
-                                Some('E') => "exclamation ",
-                                _ => "",
-                            };
-                            ui.label("");
-                            ui.label(RichText::new(format!("— {tune}pause {} ms", phrase.pause_ms)).small().color(MUTED));
-                            ui.end_row();
-                        }
-                    }
+                    ui.label(RichText::new(mode).small().color(MUTED));
                 });
             });
         });
-        if let Some((unit, from, to)) = play {
-            self.play_span(unit, from, to);
-            return;
-        }
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Audio").strong());
-            match &self.speech {
-                Some(s) => ui.label(RichText::new(format!("· {:.2} s · {} Hz · {} samples", s.duration_s(), s.rate, s.samples.len())).small().color(MUTED)),
-                None => ui.label(RichText::new("· press Speak or Save").small().color(MUTED)),
-            };
-        });
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 96.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect(rect, 3.0, GROUND, egui::Stroke::new(1.0f32, STROKE));
-        if let Some(s) = &self.speech {
-            let env = synth::envelope(s, (rect.width() as usize).saturating_sub(16).max(16));
-            let mid = rect.center().y;
-            for (i, v) in env.iter().enumerate() {
-                let x = rect.left() + 8.0 + i as f32;
-                let h = v * (rect.height() * 0.45);
-                painter.line_segment([egui::pos2(x, mid - h), egui::pos2(x, mid + h)], egui::Stroke::new(1.0f32, AMBER));
-            }
-        }
     }
 
     fn voices_tab(&mut self, ui: &mut egui::Ui) {
-        let ok = self.installed.iter().filter(|v| v.can_speak() && v.language_missing.is_none()).count();
-        let missing = self.installed.iter().filter(|v| v.language_missing.is_some() && v.can_speak()).count();
-        let unsupported = self.installed.iter().filter(|v| !v.can_speak()).count();
         ui.horizontal(|ui| {
             ui.heading("Installed");
-            ui.label(
-                RichText::new(format!(
-                    "· {} voices · {ok} speak, {missing} need language data, {unsupported} unsupported yet",
-                    self.installed.len()
-                ))
-                .color(MUTED),
-            );
+            ui.label(RichText::new(format!("· {} voices", self.installed.len())).color(MUTED));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add_enabled(self.unpacking.is_none(), egui::Button::new("Import installer .exe…")).clicked() {
                     store::pick_installer(self.tx.clone());
@@ -938,7 +723,7 @@ impl App {
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
             if self.installed.is_empty() {
-                ui.label(RichText::new(if self.listed { "No voices yet. Download one from the catalog below, or import a Loquendo 7 installer." } else { "Looking…" }).color(MUTED));
+                ui.label(RichText::new(if self.listed { "No voices installed yet" } else { "Looking…" }).color(MUTED));
                 return;
             }
             let mut delete = None;
@@ -965,23 +750,26 @@ impl App {
                 ui.label("");
                 ui.end_row();
                 for v in rows {
-                    if ui.link(&v.name).clicked() && v.can_speak() {
-                        choose = Some(v.name.clone());
-                    }
+                    ui.label(&v.name);
                     ui.label(&v.mother_tongue);
                     ui.label(RichText::new(&v.gender).color(MUTED));
                     match (&v.unsupported, &v.language_missing) {
                         (Some(u), _) => ui.label(RichText::new(format!("{u} — unsupported yet")).color(MUTED)),
-                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data: get it from the mirror, or import a {t} voice or the {t} language distribution")).color(AMBER)),
+                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data")).color(AMBER)),
                         (None, None) => ui.label(RichText::new(format!("Ready · {}", catalog::size_label(v.bytes))).color(GREEN)),
                     };
                     ui.horizontal(|ui| {
+                        if self.chosen.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&v.name)) {
+                            ui.add_enabled(false, egui::Button::new("In use"));
+                        } else if ui.add_enabled(v.can_speak(), egui::Button::new("Use")).clicked() {
+                            choose = Some(v.name.clone());
+                        }
                         if v.can_speak() && ui.button("Explore").on_hover_text("Hear this voice's recordings, phone by phone and sentence by sentence").clicked() {
                             explore = Some(v.name.clone());
                         }
                         let installer = catalog::installer_for(&v.name).filter(|i| !queued.contains(&i.file));
-                        if let (Some(inst), Some(_), None, true) = (installer, &v.language_missing, &v.root, has_mirror) {
-                            if ui.button("Get language data").on_hover_text("Download this voice's language folder from the voice mirror").clicked() {
+                        if let (Some(inst), Some(t), None, true) = (installer, &v.language_missing, &v.root, has_mirror) {
+                            if ui.button(format!("Get {t} data")).clicked() {
                                 fetch_language = Some(inst);
                             }
                         }
@@ -1026,11 +814,7 @@ impl App {
 
         if !self.downloads.is_empty() {
             ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.heading("Downloads");
-                let src = self.mirror().map(|m| format!("mirror {m}")).unwrap_or_else(|| "archive.org".into());
-                ui.label(RichText::new(format!("· {src}")).color(MUTED));
-            });
+            ui.heading("Downloads");
             let mut remove = None;
             let mut retry = None;
             let mut stop = None;
@@ -1109,12 +893,7 @@ impl App {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             ui.heading("Catalog");
-            let src = match self.mirror() {
-                Some(m) => format!("from {m}, archive.org as fallback"),
-                None if cfg!(target_arch = "wasm32") => "no voice mirror set: import installers you downloaded".into(),
-                None => "from archive.org".into(),
-            };
-            ui.label(RichText::new(format!("· {} Loquendo 7 installers · {src}", INSTALLERS.len())).color(MUTED));
+            ui.label(RichText::new(format!("· {} voices", INSTALLERS.len())).color(MUTED));
         });
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Filter by name or language").desired_width(220.0));
@@ -1217,12 +996,9 @@ impl App {
             return;
         };
         let pcm = bank.read(from as usize, to.saturating_sub(from) as usize);
-        let speech = synth::Speech {
-            samples: pcm.iter().map(|&s| s as f32 / 32768.0 * self.settings.volume).collect(),
-            rate: bank.rate,
-        };
-        match self.player.play(&speech) {
-            Ok(()) => self.status = format!("Playing {:.0} ms of the recordings", speech.duration_s() * 1000.0),
+        let samples: Vec<f32> = pcm.iter().map(|&s| s as f32 / 32768.0 * self.settings.volume).collect();
+        match self.player.play(&samples, bank.rate, 0.0) {
+            Ok(()) => self.playing = Some(Track::Clip),
             Err(e) => self.error = Some(e),
         }
     }
@@ -1535,221 +1311,6 @@ impl App {
         }
     }
 
-    fn dev_text_row(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Language");
-            let own = self.voice.as_ref().map(|v| v.descriptor.language()).unwrap_or(Language::Generic);
-            let current = self.dev.language.unwrap_or(own);
-            let label = if self.dev.language.is_some() { current.label().to_string() } else { format!("{} (from the voice)", current.label()) };
-            let mut pick = None;
-            egui::ComboBox::from_id_salt("lang").selected_text(label).show_ui(ui, |ui| {
-                for l in Language::ALL {
-                    if ui.selectable_label(current == l, l.label()).clicked() {
-                        pick = Some(l);
-                    }
-                }
-            });
-            if let Some(l) = pick {
-                self.dev.language = (l != own).then_some(l);
-                self.analyse();
-            }
-            if ui.button("voice's sentence").clicked() {
-                if let Some(v) = &self.voice {
-                    self.text = v.descriptor.sample_text();
-                    self.analyse();
-                }
-            }
-            if ui.button("Analyse").clicked() {
-                self.analyse();
-            }
-            if ui.button("Render").clicked() {
-                self.render();
-            }
-        });
-    }
-
-    /// The voice's details and inventory (developer mode).
-    fn dev_side(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("details").resizable(false).exact_width(320.0).show(ctx, |ui| {
-            egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                let Some(voice) = &self.voice else {
-                    ui.label(RichText::new("No voice loaded.").color(MUTED));
-                    return;
-                };
-                let v = &voice.descriptor;
-                let grid = |ui: &mut egui::Ui, id: &str, rows: Vec<(&str, String)>| {
-                    egui::Grid::new(id).num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {
-                        for (k, val) in rows {
-                            ui.label(RichText::new(k).color(MUTED));
-                            ui.add(egui::Label::new(RichText::new(val).monospace()).wrap());
-                            ui.end_row();
-                        }
-                    });
-                };
-                ui.heading("Voice details");
-                grid(
-                    ui,
-                    "vd",
-                    vec![
-                        ("Language", format!("{} (from the voice)", v.language().label())),
-                        ("MotherTongue", loquendo::from_latin1(&v.mother_tongue)),
-                        ("Description", loquendo::from_latin1(&v.description)),
-                        ("Gender / Age", format!("{} / {}", v.gender, v.age)),
-                        ("Library", v.library.clone()),
-                        ("BaseSpeed", v.base_speed.to_string()),
-                        ("BasePitch", v.base_pitch.to_string()),
-                        ("Sample rate", format!("{} Hz", v.audio_rate)),
-                        ("Gilded", if v.gilded { "yes" } else { "no" }.into()),
-                        ("Recordings file", v.bin_name.clone()),
-                    ],
-                );
-                ui.add_space(8.0);
-                ui.heading("Inventory");
-                let db = &voice.db;
-                let recordings = match &db.audio {
-                    Some(a) => {
-                        let secs = a.total_samples() / a.rate as usize;
-                        format!("{}:{:02}:{:02} of Speex, {} kbit/s, {} Hz", secs / 3600, secs / 60 % 60, secs % 60, a.bitrate / 1000, a.rate)
-                    }
-                    None => db.audio_error.clone().unwrap_or_else(|| "not found".into()),
-                };
-                grid(
-                    ui,
-                    "inv",
-                    vec![
-                        ("File", db.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()),
-                        ("Format", db.format.clone()),
-                        ("Recorded sentences", db.units.len().to_string()),
-                        ("Timed sounds", format!("{} (+2 edge silences each = {})", db.instance_count(), db.declared_instances)),
-                        (
-                            "Questions / excl.",
-                            format!(
-                                "{} / {}",
-                                db.units.iter().filter(|u| u.mood == Some('I')).count(),
-                                db.units.iter().filter(|u| u.mood == Some('E')).count()
-                            ),
-                        ),
-                        ("Alphabet", format!("{} symbols", db.alphabet().len())),
-                        ("Longest sentence", format!("{} sounds", db.longest_unit())),
-                        ("Recordings", recordings),
-                    ],
-                );
-                for (name, u, t) in &self.dev.extras {
-                    ui.label(RichText::new(format!("{name}: {u} units, {t} takes")).small().color(MUTED));
-                }
-                ui.add_space(8.0);
-                ui.heading("Language data");
-                let fe = &voice.frontend;
-                match &voice.language_missing {
-                    Some(t) => ui.label(RichText::new(format!("none: no {t} language folder")).color(AMBER)),
-                    None if fe.has_module() => ui.label("the original's language module, ported"),
-                    None => ui.label(format!("built-in rules, {} dictionary words", fe.dictionary_len())),
-                };
-            });
-        });
-    }
-
-    /// Stage selectors and the comparison (developer mode).
-    fn dev_bottom(&mut self, ctx: &egui::Context) {
-        use crate::dev::pipeline::{Cat, Fon};
-        egui::TopBottomPanel::bottom("stages").show(ctx, |ui| {
-            let before = (self.dev.stages.clone(), self.dev.fon_command.clone());
-            ui.horizontal(|ui| {
-                ui.label("Pronunciation");
-                let mut fon = match self.dev.stages.fon {
-                    Fon::Rules => 0,
-                    Fon::Original => 1,
-                    Fon::Command(_) => 2,
-                };
-                egui::ComboBox::from_id_salt("fon").selected_text(["Built-in rules", "Original engine (Wine)", "Command"][fon]).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut fon, 0, "Built-in rules");
-                    ui.selectable_value(&mut fon, 1, "Original engine (Wine)").on_hover_text(
-                        "Runs the real Loquendo engine as a separate program under Wine on this text and takes its pronunciation; Quoquendo's own code does the rest. No Loquendo code is loaded into Quoquendo.",
-                    );
-                    ui.selectable_value(&mut fon, 2, "Command");
-                });
-                if fon == 2 {
-                    ui.add(egui::TextEdit::singleline(&mut self.dev.fon_command).desired_width(200.0).hint_text("prints a transcription"));
-                }
-                self.dev.stages.fon = match fon {
-                    1 => Fon::Original,
-                    2 => Fon::Command(self.dev.fon_command.clone()),
-                    _ => Fon::Rules,
-                };
-                ui.separator();
-                ui.label("Piece picking");
-                let mut cat = self.dev.stages.cat;
-                egui::ComboBox::from_id_salt("cat")
-                    .selected_text(if cat == Cat::Builtin { "Built-in" } else { "Original engine (Wine)" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut cat, Cat::Builtin, "Built-in");
-                        ui.selectable_value(&mut cat, Cat::Original, "Original engine (Wine)").on_hover_text(
-                            "Runs the real Loquendo engine as a separate program under Wine and replays the recorded pieces it chose (with its own pronunciation) through Quoquendo's decoder and joining. No Loquendo code is loaded into Quoquendo.",
-                        );
-                    });
-                self.dev.stages.cat = cat;
-                ui.separator();
-                ui.label("Joining");
-                let mut join = self.settings.join;
-                egui::ComboBox::from_id_salt("sig")
-                    .selected_text(if join == synth::JoinStyle::Original { "Like the original" } else { "Smoothed" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut join, synth::JoinStyle::Original, "Like the original");
-                        ui.selectable_value(&mut join, synth::JoinStyle::Smooth, "Smoothed");
-                    });
-                if join != self.settings.join {
-                    self.settings.join = join;
-                    self.dev.stages.sig = join;
-                    self.speech = None;
-                }
-            });
-            if (self.dev.stages.clone(), self.dev.fon_command.clone()) != before && !matches!(&self.dev.stages.fon, Fon::Command(c) if c.is_empty()) {
-                self.analyse();
-            }
-            ui.horizontal(|ui| {
-                let busy = self.dev.job.is_some();
-                if ui.add_enabled(!busy && self.voice.is_some(), egui::Button::new("Compare with the original")).clicked() {
-                    if let Some(v) = &self.voice {
-                        let (name, texts) = (v.descriptor.name.clone(), vec![self.text.clone()]);
-                        self.dev.job = Some((std::thread::spawn(move || crate::dev::oracle::run_many(&name, &texts)), true));
-                    }
-                }
-                if busy {
-                    ui.spinner();
-                    ui.label(RichText::new("Comparing… the original engine is running under Wine; the report opens in a window when it finishes").color(MUTED));
-                }
-            });
-        });
-    }
-
-    fn poll_job(&mut self, ctx: &egui::Context) {
-        if self.dev.job.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(200));
-        }
-        if !self.dev.job.as_ref().is_some_and(|(h, _)| h.is_finished()) {
-            return;
-        }
-        let (handle, then_compare) = self.dev.job.take().unwrap();
-        match handle.join().unwrap_or_else(|_| Err("the original engine's run crashed".into())) {
-            Ok(refs) => {
-                if then_compare {
-                    if let Some(v) = &self.voice {
-                        let out = crate::dev::oracle::oracle_dir().map(|d| d.join("out/compare"));
-                        self.dev.report = Some(match crate::dev::pipeline::compare(&refs, v, out.as_deref()) {
-                            Ok((r, _)) => r,
-                            Err(e) => e,
-                        });
-                    }
-                }
-                for r in refs {
-                    self.dev.refs.insert(r.text.clone(), r);
-                }
-                self.analyse();
-            }
-            Err(e) => self.error = Some(e),
-        }
-    }
-
     fn report_window(&mut self, ctx: &egui::Context) {
         let Some(report) = self.dev.report.clone() else { return };
         let mut open = true;
@@ -1763,35 +1324,48 @@ impl App {
         }
     }
 
-    /// `--screenshot`: keep drawing while unfocused, then save and quit.
+    /// `--screenshot`: keep drawing while unfocused; once the preview (and
+    /// in Original engine mode the original's result) is ready, show it
+    /// playing at `--play-at` if asked, then save the picture and quit.
     fn screenshot(&mut self, ctx: &egui::Context) {
-        let Some(path) = self.screenshot.clone() else { return };
-        let settled = self.voice.is_some() && self.loading.is_none() && self.dev.job.is_none();
-        if settled && self.speech.is_none() && self.can_speak().is_none() {
-            self.render();
+        let Some(shot) = &mut self.screenshot else { return };
+        // drawn at the mockups' scale, whatever the screen's
+        if ctx.pixels_per_point() != 1.0 {
+            ctx.set_pixels_per_point(1.0);
         }
-        if (settled && self.frame_no > 60 || self.frame_no == 300) && self.quit_after.is_some_and(|q| q > self.frame_no + 10) {
+        let original_done = !self.dev.original || self.dev.job.is_none() && self.preview.as_ref().is_some_and(|p| {
+            let key = (p.want.voice.clone(), p.want.text.clone());
+            self.dev.refs.contains_key(&key) || self.dev.ref_errors.contains_key(&key)
+        });
+        let fresh = self.voice.is_some() && self.loading.is_none() && self.job.is_none() && self.pending.is_none() && self.preview.is_some();
+        if shot.settled.is_none() && (fresh && original_done || ctx.input(|i| i.time) > 120.0) {
+            shot.settled = Some(self.frame_no);
+            if let Some(t) = shot.play_at {
+                self.pinned = Some(t);
+                self.playing = Some(Track::Ours);
+            }
+        }
+        if !shot.asked && shot.settled.is_some_and(|f| self.frame_no > f + 30) {
+            shot.asked = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-            self.quit_after = Some(self.frame_no + 60);
         }
-        if let Some(shot) = ctx.input(|i| {
+        if let Some(image) = ctx.input(|i| {
             i.events.iter().find_map(|e| match e {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
                 _ => None,
             })
         }) {
+            let path = shot.path.clone();
             if let Some(dir) = path.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
-            let (w, h) = (shot.size[0], shot.size[1]);
-            let pixels: Vec<u8> = shot.pixels.iter().flat_map(|c| [c.r(), c.g(), c.b(), c.a()]).collect();
+            let (w, h) = (image.size[0], image.size[1]);
+            let pixels: Vec<u8> = image.pixels.iter().flat_map(|c| [c.r(), c.g(), c.b(), c.a()]).collect();
             match image::save_buffer(&path, &pixels, w as u32, h as u32, image::ColorType::Rgba8) {
-                Ok(_) => {
-                    self.status = format!("saved the screenshot to {}", path.display());
-                    self.quit_after = Some(self.frame_no + 2);
-                }
-                Err(e) => self.error = Some(format!("screenshot: {e}")),
+                Ok(_) => eprintln!("saved the screenshot to {}", path.display()),
+                Err(e) => eprintln!("screenshot: {e}"),
             }
+            self.quit_after = Some(self.frame_no + 2);
         }
         ctx.request_repaint();
     }
@@ -1849,7 +1423,6 @@ impl App {
                     self.text = text;
                     if self.loading.is_none() {
                         self.player.stop();
-                        self.analyse();
                     }
                 }
             }
@@ -1998,18 +1571,16 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_no += 1;
         self.poll(ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.poll_original(ctx);
+        self.schedule(ctx);
         self.top_bar(ctx);
         self.status_bar(ctx);
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.poll_job(ctx);
-            self.report_window(ctx);
-            if self.dev.on {
-                self.dev_bottom(ctx);
-                if self.tab == Tab::Speak {
-                    self.dev_side(ctx);
-                }
-            }
+        self.report_window(ctx);
+        if self.advanced() && self.tab == Tab::Speak {
+            self.stage_bar(ctx);
+            self.side_panel(ctx);
         }
         egui::CentralPanel::default().frame(egui::Frame::central_panel(&ctx.style()).fill(GROUND)).show(ctx, |ui| match self.tab {
             Tab::Speak => self.speak_tab(ui),
@@ -2038,9 +1609,15 @@ impl eframe::App for App {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        // a screenshot's launch options aren't the user's settings
         #[cfg(not(target_arch = "wasm32"))]
-        storage.set_string("dev_mode", self.dev.on.to_string());
-        storage.set_string("show_curtain", self.show_curtain.to_string());
+        if self.screenshot.is_some() {
+            return;
+        }
+        storage.set_string("advanced", self.advanced.to_string());
+        #[cfg(not(target_arch = "wasm32"))]
+        storage.set_string("original_engine", self.dev.original.to_string());
+        storage.set_string("save_format", self.format.ext().to_string());
         storage.set_string("voice", self.chosen.clone().unwrap_or_default());
         storage.set_string("text", self.text.clone());
         storage.set_string("mirror_url", self.mirror_url.clone());

@@ -284,14 +284,63 @@ class VoiceStore(context: Context) {
         /** The app's settings, shared by the app and the TTS service. */
         fun prefs(context: Context): SharedPreferences = context.getSharedPreferences("quoquendo", Context.MODE_PRIVATE)
 
-        /** The settings key naming the voice apps get for [locale] when several speak it. */
-        fun defaultVoiceKey(locale: Locale) = "$DEFAULT_VOICE${locale.toLanguageTag()}"
-        const val DEFAULT_VOICE = "default_voice."
+        const val ADVANCED = "advanced"
+        const val SMOOTH = "joining_smooth"
 
-        /** Among [voices], the one apps get for [locale]: [chosen] in Settings, else one with its language data. */
-        fun defaultFor(voices: List<InstalledVoice>, locale: Locale, chosen: String?): InstalledVoice? =
-            voices.filter { it.speakable && locale in it.locales }
-                .maxWithOrNull(compareBy({ it.name == chosen }, { !it.languageMissing }))
+        /** Whether pieces are joined smoothly: Advanced's Joining, for everything Quoquendo speaks. */
+        fun smoothJoins(prefs: SharedPreferences) = prefs.getBoolean(ADVANCED, false) && prefs.getBoolean(SMOOTH, false)
+
+        /** The settings key naming the voice apps get for every region of [language] (`en`). */
+        fun voiceForKey(language: String) = "$VOICE_FOR$language"
+        private const val VOICE_FOR = "voice_for."
+
+        /** Before per-language choices: the voice apps got for one locale tag. */
+        private const val OLD_DEFAULT_VOICE = "default_voice."
+
+        /** The voices among [voices] that speak [language] (`en`). */
+        fun speakers(voices: List<InstalledVoice>, language: String): List<InstalledVoice> =
+            voices.filter { v -> v.speakable && v.locales.any { it.language == language } }
+
+        /** How many regions [voices] speak [language] in. */
+        fun regions(voices: List<InstalledVoice>, language: String): Int =
+            speakers(voices, language).flatMap { v -> v.locales.filter { it.language == language } }.map { it.country }.distinct().size
+
+        /** The voice chosen for [language] in Settings, while it is installed and speaks it. */
+        fun chosenFor(voices: List<InstalledVoice>, language: String, prefs: SharedPreferences): InstalledVoice? =
+            prefs.getString(voiceForKey(language), null)?.let { name -> speakers(voices, language).firstOrNull { it.name == name } }
+
+        /** Among [voices], the one of [locale]'s own region apps get when no voice is chosen for its language: one with its language data. */
+        fun regionalFor(voices: List<InstalledVoice>, locale: Locale): InstalledVoice? =
+            voices.filter { it.speakable && locale in it.locales }.maxWithOrNull(compareBy { !it.languageMissing })
+
+        /** The voice apps get for [locale]: the one chosen for its language, else its region's. */
+        fun appVoiceFor(voices: List<InstalledVoice>, locale: Locale, prefs: SharedPreferences): InstalledVoice? =
+            chosenFor(voices, locale.language, prefs) ?: regionalFor(voices, locale)
+
+        /** Every per-language choice: language (`en`) to voice name. */
+        fun choices(prefs: SharedPreferences): Map<String, String> =
+            prefs.all.mapNotNull { (k, v) -> if (k.startsWith(VOICE_FOR) && v is String) k.removePrefix(VOICE_FOR) to v else null }.toMap()
+
+        /**
+         * Turn the old per-locale choices into per-language ones: a language
+         * whose old choices all name one voice, spoken in a single region,
+         * keeps it; a per-language choice already made wins. The old keys go.
+         */
+        fun migrateChoices(prefs: SharedPreferences, voices: List<InstalledVoice>) {
+            val old = prefs.all.mapNotNull { (k, v) ->
+                if (k.startsWith(OLD_DEFAULT_VOICE) && v is String) k to (Locale.forLanguageTag(k.removePrefix(OLD_DEFAULT_VOICE)).language to v) else null
+            }
+            if (old.isEmpty()) return
+            val edit = prefs.edit()
+            for ((language, choices) in old.map { it.second }.groupBy({ it.first }, { it.second })) {
+                val names = choices.distinct()
+                if (!prefs.contains(voiceForKey(language)) && names.size == 1 && regions(voices, language) <= 1) {
+                    edit.putString(voiceForKey(language), names[0])
+                }
+            }
+            for ((key, _) in old) edit.remove(key)
+            edit.apply()
+        }
     }
 }
 

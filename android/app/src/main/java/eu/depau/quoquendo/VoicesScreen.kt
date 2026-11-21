@@ -170,7 +170,7 @@ fun VoicesScreen(model: MainModel, query: String?, modifier: Modifier) {
         if (model.installed.isEmpty()) {
             item {
                 Text(
-                    "No voices installed yet. Download one of the ${model.catalog.size} Loquendo 7 voices below, or import an installer .exe you already have.",
+                    "No voices installed yet",
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -329,15 +329,11 @@ private fun DeleteDialog(model: MainModel, v: InstalledVoice, onDismiss: () -> U
     androidx.compose.runtime.LaunchedEffect(v) {
         bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { model.store.bytesOf(v) }
     }
-    val sharer = model.installed.firstOrNull { it.name != v.name && it.languageFolder != null && it.languageFolder == v.languageFolder }
-    val language = v.languageFolder?.let { f ->
-        if (sharer != null) "$f language data stays, because ${sharer.name} uses it too. " else "$f language data stays. "
-    } ?: ""
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
         title = { Text("Delete ${v.name}?") },
-        text = { Text("Frees ${bytes?.let { size(it) } ?: "…"}. ${language}You can download ${v.name} again from the catalog.") },
+        text = { Text("Frees ${bytes?.let { size(it) } ?: "…"}.") },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         confirmButton = {
             TextButton(onClick = { model.delete(v); onDismiss() }) {
@@ -354,8 +350,7 @@ private fun ImportDialog(state: Import, onCancel: () -> Unit) {
         title = { Text("Importing ${state.name.replace(" - ", " – ")}") },
         text = {
             Column {
-                Text("Unpacking the installer and copying the voice to Quoquendo's storage. This takes a few seconds.")
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(8.dp))
                 if (state.unpacking || state.total <= 0) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.primaryContainer)
                 } else {

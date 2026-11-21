@@ -1,88 +1,80 @@
 //! Playing speech and saving it: rodio and a file dialog on the desktop, Web
 //! Audio and a download in the browser.
 
-use quoquendo::synth::{self, Speech};
+use quoquendo::export::{encode, Format, Tagged};
+use quoquendo::synth::Speech;
 
-/// What Save writes.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Format {
-    Wav,
-    Mp3,
-}
-
-impl Format {
-    pub fn ext(self) -> &'static str {
-        match self {
-            Format::Wav => "wav",
-            Format::Mp3 => "mp3",
-        }
-    }
-
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    fn mime(self) -> &'static str {
-        match self {
-            Format::Wav => "audio/wav",
-            Format::Mp3 => "audio/mpeg",
-        }
-    }
-
-    fn bytes(self, speech: &Speech) -> Result<Vec<u8>, String> {
-        match self {
-            Format::Wav => Ok(synth::to_wav_bytes(speech)),
-            Format::Mp3 => synth::to_mp3_bytes(speech),
-        }
-    }
+/// What was saved: the file's name and its size in bytes.
+pub struct Saved {
+    pub name: String,
+    pub bytes: usize,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub struct Player {
-    out: Option<(rodio::OutputStream, rodio::Sink)>,
+    /// opened on the first play and kept, so switching tracks starts at once
+    out: Option<(rodio::OutputStream, rodio::OutputStreamHandle)>,
+    sink: Option<rodio::Sink>,
+    /// where in its samples the playing track started (s)
+    offset: f64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Player {
     pub fn new() -> Player {
-        Player { out: None }
+        Player { out: None, sink: None, offset: 0.0 }
     }
 
-    pub fn play(&mut self, speech: &Speech) -> Result<(), String> {
+    /// Play `samples` from `from` seconds in.
+    pub fn play(&mut self, samples: &[f32], rate: u32, from: f64) -> Result<(), String> {
         self.stop();
-        let (stream, handle) = rodio::OutputStream::try_default().map_err(|e| format!("no audio output device ({e}): use Save WAV instead"))?;
-        let sink = rodio::Sink::try_new(&handle).map_err(|e| format!("audio output: {e}"))?;
-        let samples: Vec<f32> = speech.samples.clone();
-        sink.append(rodio::buffer::SamplesBuffer::new(1, speech.rate, samples));
+        if self.out.is_none() {
+            self.out = Some(rodio::OutputStream::try_default().map_err(|e| format!("No sound device found ({e})"))?);
+        }
+        let (_, handle) = self.out.as_ref().unwrap();
+        let sink = rodio::Sink::try_new(handle).map_err(|e| format!("audio output: {e}"))?;
+        let start = ((from.max(0.0) * rate as f64) as usize).min(samples.len());
+        sink.append(rodio::buffer::SamplesBuffer::new(1, rate, samples[start..].to_vec()));
         sink.play();
-        self.out = Some((stream, sink));
+        self.offset = start as f64 / rate as f64;
+        self.sink = Some(sink);
         Ok(())
     }
 
     pub fn stop(&mut self) {
-        if let Some((_, sink)) = self.out.take() {
+        if let Some(sink) = self.sink.take() {
             sink.stop();
         }
     }
 
-    pub fn is_playing(&self) -> bool {
-        self.out.as_ref().is_some_and(|(_, s)| !s.empty())
+    /// Where the playing track is (s), None when nothing plays.
+    pub fn position(&self) -> Option<f64> {
+        let sink = self.sink.as_ref().filter(|s| !s.empty())?;
+        Some(self.offset + sink.get_pos().as_secs_f64())
     }
 }
 
-/// Ask where to save, then write the speech there. Returns the path written.
+/// Ask where to save, then write the speech there.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn save(speech: &Speech, format: Format) -> Result<Option<String>, String> {
+pub fn save(speech: &Speech, format: Format, tags: &Tagged) -> Result<Option<Saved>, String> {
     let ext = format.ext();
-    let Some(path) = rfd::FileDialog::new().set_file_name(format!("quoquendo.{ext}")).add_filter(ext.to_uppercase(), &[ext]).save_file() else {
+    let Some(path) = rfd::FileDialog::new().set_file_name(format!("quoquendo.{ext}")).add_filter(format.label(), &[ext]).save_file() else {
         return Ok(None);
     };
-    std::fs::write(&path, format.bytes(speech)?).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Some(path.display().to_string()))
+    let bytes = encode(speech, format, Some(tags))?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().to_string());
+    Ok(Some(Saved { name, bytes: bytes.len() }))
 }
 
 #[cfg(target_arch = "wasm32")]
 pub struct Player {
     ctx: Option<web_sys::AudioContext>,
     source: Option<web_sys::AudioBufferSourceNode>,
-    ends_at: f64,
+    /// the context's time when the track's sample `offset` played
+    started_at: f64,
+    offset: f64,
+    duration: f64,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -91,11 +83,14 @@ impl Player {
         Player {
             ctx: None,
             source: None,
-            ends_at: 0.0,
+            started_at: 0.0,
+            offset: 0.0,
+            duration: 0.0,
         }
     }
 
-    pub fn play(&mut self, speech: &Speech) -> Result<(), String> {
+    /// Play `samples` from `from` seconds in.
+    pub fn play(&mut self, samples: &[f32], rate: u32, from: f64) -> Result<(), String> {
         let js = |e: wasm_bindgen::JsValue| format!("audio: {e:?}");
         self.stop();
         // made on the first Speak, a user gesture, so the browser lets it play
@@ -104,16 +99,18 @@ impl Player {
         }
         let ctx = self.ctx.as_ref().unwrap();
         let _ = ctx.resume();
-        let n = speech.samples.len().max(1) as u32;
-        let buffer = ctx.create_buffer(1, n, speech.rate as f32).map_err(js)?;
-        let mut samples = speech.samples.clone();
+        let n = samples.len().max(1) as u32;
+        let buffer = ctx.create_buffer(1, n, rate as f32).map_err(js)?;
+        let mut samples = samples.to_vec();
         samples.resize(n as usize, 0.0);
         buffer.copy_to_channel(&samples, 0).map_err(js)?;
         let source = ctx.create_buffer_source().map_err(js)?;
         source.set_buffer(Some(&buffer));
         source.connect_with_audio_node(&ctx.destination()).map_err(js)?;
-        source.start().map_err(js)?;
-        self.ends_at = ctx.current_time() + n as f64 / speech.rate as f64;
+        self.duration = n as f64 / rate as f64;
+        self.offset = from.clamp(0.0, self.duration);
+        source.start_with_when_and_grain_offset(0.0, self.offset).map_err(js)?;
+        self.started_at = ctx.current_time();
         self.source = Some(source);
         Ok(())
     }
@@ -125,21 +122,21 @@ impl Player {
         }
     }
 
-    pub fn is_playing(&self) -> bool {
-        match (&self.ctx, &self.source) {
-            (Some(ctx), Some(_)) => ctx.current_time() < self.ends_at,
-            _ => false,
-        }
+    /// Where the playing track is (s), None when nothing plays.
+    pub fn position(&self) -> Option<f64> {
+        let ctx = self.ctx.as_ref()?;
+        self.source.as_ref()?;
+        let at = self.offset + (ctx.current_time() - self.started_at).max(0.0);
+        (at < self.duration).then_some(at)
     }
 }
 
-/// Download the speech (`quoquendo.wav` / `.mp3`) through a link the page
-/// clicks.
+/// Download the speech (`quoquendo.<ext>`) through a link the page clicks.
 #[cfg(target_arch = "wasm32")]
-pub fn save(speech: &Speech, format: Format) -> Result<Option<String>, String> {
+pub fn save(speech: &Speech, format: Format, tags: &Tagged) -> Result<Option<Saved>, String> {
     use wasm_bindgen::JsCast;
     let js = |e: wasm_bindgen::JsValue| format!("save: {e:?}");
-    let bytes = format.bytes(speech)?;
+    let bytes = encode(speech, format, Some(tags))?;
     let array = js_sys::Uint8Array::from(bytes.as_slice());
     let parts = js_sys::Array::of1(&array);
     let options = web_sys::BlobPropertyBag::new();
@@ -153,5 +150,5 @@ pub fn save(speech: &Speech, format: Format) -> Result<Option<String>, String> {
     a.set_download(&name);
     a.click();
     let _ = web_sys::Url::revoke_object_url(&url);
-    Ok(Some(name))
+    Ok(Some(Saved { name, bytes: bytes.len() }))
 }

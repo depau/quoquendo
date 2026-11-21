@@ -9,4 +9,7 @@ lzma-rs = { version = "0.3", features = ["stream"] }
 miniz_oxide = "0.8"
 # pure-Rust MPEG-1 Layer III encoder, for saving speech as MP3
 audio2mp3-core = "0.2"
-
+# pure-Rust FLAC encoder (no threads: it runs in browsers too)
+flacenc = { version = "0.5", default-features = false }
+# pure-Rust Opus encoder with Ogg encapsulation
+opus-pure = "0.2"

@@ -144,6 +144,25 @@ impl AudioBank {
         Ok(bank)
     }
 
+    /// Recordings of nothing at `rate`: every read is silence (for tests of
+    /// what is built around the audio).
+    #[cfg(test)]
+    pub(crate) fn silent(rate: u32) -> AudioBank {
+        AudioBank {
+            data: Vec::new(),
+            first_frame: 0,
+            frame_bytes: 0,
+            frame_samples: speex::FRAME_SAMPLES,
+            frames: 0,
+            rate,
+            bitrate: 0,
+            variant: Variant::Codec210,
+            key: 0,
+            books: None,
+            stream: std::sync::Mutex::new(Stream::new(speex::FRAME_SAMPLES)),
+        }
+    }
+
     pub fn total_samples(&self) -> usize {
         self.frames * self.frame_samples
     }
@@ -353,6 +372,8 @@ pub struct StreamResampler {
     first: bool,
     made: std::collections::VecDeque<i16>,
     owed: std::collections::VecDeque<usize>,
+    /// what each chunk got, in push order (chunks still owed are not here)
+    handed: Vec<usize>,
 }
 
 impl StreamResampler {
@@ -378,17 +399,25 @@ impl StreamResampler {
             first: true,
             made: Default::default(),
             owed: Default::default(),
+            handed: Vec::new(),
         }
     }
 
     /// One chunk in (0x10028ee0), what the engine hands on for it out.
     pub fn push(&mut self, chunk: &[i16]) -> Vec<i16> {
         if self.passthrough {
+            self.handed.push(chunk.len());
             return chunk.to_vec();
         }
         self.pending.extend_from_slice(chunk);
         self.owed.push_back((chunk.len() as f64 * self.factor).floor() as usize);
         self.run(false)
+    }
+
+    /// How many samples each chunk pushed so far was handed on, in push
+    /// order; the chunks still waiting for theirs are not listed yet.
+    pub fn handed(&self) -> &[usize] {
+        &self.handed
     }
 
     /// The end of a phrase (0x10028e40): nothing without input waiting;
@@ -417,6 +446,7 @@ impl StreamResampler {
             let k = owed.min(self.made.len());
             out.extend(self.made.drain(..k));
             self.owed.pop_front();
+            self.handed.push(k);
         }
         if last_call {
             // the queue is empty: what is left over is dropped (0x10024190)

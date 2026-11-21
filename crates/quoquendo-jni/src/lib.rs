@@ -4,13 +4,17 @@
 //! A voice store is an LTTS7 root (`data/…`, `bin/…`) on the device. Every
 //! export turns errors and panics into a `java.lang.RuntimeException`.
 
+use std::ops::Range;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use jni::objects::{JClass, JShortArray, JString};
-use jni::sys::{jbyteArray, jint, jlong, jshortArray, jstring};
+use jni::objects::{JClass, JObject, JString, JValue};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jshortArray, jstring, JNI_TRUE};
 use jni::JNIEnv;
-use quoquendo::{catalog, codec, synth, Voice, VoiceFiles};
+use quoquendo::export::{self, Format, Tagged};
+use quoquendo::g2p::{self, Language};
+use quoquendo::synth::{self, JoinStyle};
+use quoquendo::{catalog, codec, Speech, Utterance, Voice, VoiceFiles};
 use serde_json::{json, Value};
 
 /// Run `f`, turning an `Err` or a panic into a thrown `RuntimeException` and
@@ -38,6 +42,15 @@ fn guard<'l, T>(env: &mut JNIEnv<'l>, fallback: T, f: impl FnOnce(&mut JNIEnv<'l
 
 fn jstr(env: &mut JNIEnv, s: &JString) -> Result<String, String> {
     env.get_string(s).map(|s| s.into()).map_err(|e| e.to_string())
+}
+
+/// A nullable `String` argument.
+fn opt_jstr(env: &mut JNIEnv, s: &JString) -> Result<Option<String>, String> {
+    if s.is_null() {
+        Ok(None)
+    } else {
+        jstr(env, s).map(Some)
+    }
 }
 
 fn ret_string(env: &mut JNIEnv, s: String) -> Result<jstring, String> {
@@ -164,34 +177,108 @@ fn bank(voice: &Voice) -> Result<&codec::AudioBank, String> {
         .ok_or_else(|| db.audio_error.clone().unwrap_or_else(|| "this voice's recordings were not found".into()))
 }
 
-/// The rate `synthesize` returns: banks at another rate are resampled to the
-/// engine's output rate (`synth::render`).
-fn output_rate(voice: &Voice) -> u32 {
-    match &voice.db.audio {
-        Some(_) => codec::OUTPUT_RATE,
-        None => voice.db.audio_rate(),
+/// Waveform outline values per second of speech (`analyse`'s `envelope`).
+const ENVELOPE_PER_S: u32 = 100;
+
+fn settings(smooth: bool) -> synth::Settings {
+    synth::Settings {
+        volume: 1.0,
+        join: if smooth { JoinStyle::Smooth } else { JoinStyle::Original },
     }
 }
 
-fn analyse(voice: &Voice, text: &str) -> String {
+/// The languages whose reading can replace a voice's own: its own first,
+/// then those with built-in rules (the ported ones read nothing without
+/// their module).
+fn languages(voice: &Voice) -> Vec<Language> {
+    let own = voice.descriptor.language();
+    std::iter::once(own).chain(Language::ALL.into_iter().filter(|l| *l != own && !l.is_ported())).collect()
+}
+
+/// `text` read by `voice`, by another language's rules when `language`
+/// names one (`Language::label`).
+fn utterance(voice: &Voice, text: &str, language: Option<&str>) -> Utterance {
+    let other = language.and_then(|name| Language::ALL.into_iter().find(|l| l.label() == name)).filter(|l| *l != voice.descriptor.language());
+    match other {
+        Some(l) => voice.utterance_with(text, &g2p::Frontend::rules(l)),
+        None => voice.utterance(text),
+    }
+}
+
+/// What `analyse` shows and plays.
+struct Rendering {
+    utterance: Utterance,
+    plan: Vec<synth::Phrase>,
+    speech: Result<Speech, String>,
+}
+
+fn render(voice: &Voice, text: &str, smooth: bool, language: Option<&str>) -> Rendering {
+    let utterance = utterance(voice, text, language);
+    let plan = synth::select_all(&voice.db, &utterance.targets);
+    let speech = synth::render(&plan, &voice.db, settings(smooth));
+    Rendering { utterance, plan, speech }
+}
+
+/// Per spoken word, in order: its first sample and its UTF-16 range in
+/// `text`, flattened. A stretch of text several words share is marked once.
+fn marks(text: &str, words: &[Range<usize>], speech: &Speech) -> Vec<i32> {
+    let mut out: Vec<i32> = Vec::new();
+    for (w, span) in speech.timeline.word_spans() {
+        let Some(r) = words.get(w) else { continue };
+        let u = quoquendo::text::utf16_range(text, r.clone());
+        if out.len() >= 3 && out[out.len() - 2] == u.start as i32 && out[out.len() - 1] == u.end as i32 {
+            continue;
+        }
+        out.extend([span.start as i32, u.start as i32, u.end as i32]);
+    }
+    out
+}
+
+/// Peak of every `step` samples, in 0..1.
+fn peaks(samples: &[f32], step: usize) -> Vec<f32> {
+    samples.chunks(step.max(1)).map(|c| c.iter().fold(0.0f32, |a, s| a.max(s.abs())).min(1.0)).collect()
+}
+
+fn analyse_json(voice: &Voice, text: &str, r: &Rendering) -> String {
     let db = &voice.db;
-    let targets = voice.transcribe(text);
-    let phrases: Vec<Value> = targets
-        .iter()
-        .map(|p| {
-            let phones: Vec<Value> = p
-                .phones
-                .iter()
-                .map(|t| json!({ "sym": t.sym, "known": db.knows_symbol(&t.sym), "wordStart": t.word_start }))
-                .collect();
-            json!({ "phones": phones, "pauseMs": p.pause_ms, "mood": p.mood.map(String::from) })
-        })
-        .collect();
-    let plan = synth::select_all(db, &targets);
+    let speech = r.speech.as_ref().ok();
+    let secs = |sample: usize| speech.map_or(0.0, |s| sample as f64 / s.rate.max(1) as f64);
+    let sounds: Vec<Value> = match speech {
+        Some(s) => s
+            .timeline
+            .sounds
+            .iter()
+            .map(|t| {
+                json!({
+                    "sym": t.sym,
+                    "known": t.pause || db.knows_symbol(&t.sym),
+                    "atS": secs(t.span.start),
+                    "endS": secs(t.span.end),
+                    "word": t.word,
+                    "phrase": t.phrase,
+                    "wordStart": t.word_start,
+                    "pause": t.pause,
+                })
+            })
+            .collect(),
+        // nothing rendered: the sounds wanted, untimed
+        None => r
+            .utterance
+            .targets
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| {
+                p.phones.iter().map(move |t| {
+                    json!({ "sym": t.sym, "known": db.knows_symbol(&t.sym), "atS": 0, "endS": 0, "word": t.word, "phrase": i, "wordStart": t.word_start, "pause": false })
+                })
+            })
+            .collect(),
+    };
     // piece positions are samples of the recordings bank
     let rate = db.audio.as_ref().map_or(db.audio_rate(), |b| b.rate).max(1) as f32;
+    let out_spans = speech.map(|s| s.timeline.pieces.as_slice()).unwrap_or_default();
     let mut pieces = Vec::new();
-    for (i, phrase) in plan.iter().enumerate() {
+    for (i, phrase) in r.plan.iter().enumerate() {
         for p in &phrase.pieces {
             let sentence = db
                 .units
@@ -199,6 +286,7 @@ fn analyse(voice: &Voice, text: &str) -> String {
                 .and_then(|u| u.symbols.get(1..u.symbols.len().saturating_sub(1)))
                 .map(|s| s.join(" "))
                 .unwrap_or_default();
+            let out = out_spans.get(pieces.len()).cloned().unwrap_or(0..0);
             pieces.push(json!({
                 "phrase": i,
                 "covers": p.covers,
@@ -206,30 +294,134 @@ fn analyse(voice: &Voice, text: &str) -> String {
                 "sentence": sentence,
                 "from": p.from,
                 "to": p.to,
-                "atS": p.from as f32 / rate,
+                "recS": p.from as f32 / rate,
                 "lenMs": p.to.saturating_sub(p.from) as f32 * 1000.0 / rate,
                 "pitch": p.pitch,
                 "hard": p.hard,
+                "atS": secs(out.start),
+                "endS": secs(out.end),
             }));
         }
     }
     // per picked phrase: the pause after it and the sounds never recorded
-    let picked: Vec<Value> = plan
+    let picked: Vec<Value> = r
+        .plan
         .iter()
         .map(|p| json!({ "pauseMs": p.pause_ms, "mood": p.mood.map(String::from), "missing": p.missing }))
         .collect();
-    let audio = match synth::render(&plan, db, synth::Settings::default()) {
-        Ok(s) => json!({ "rate": s.rate, "samples": s.samples.len(), "seconds": s.duration_s(), "envelope": synth::envelope(&s, 256) }),
+    let spans: std::collections::HashMap<usize, Range<usize>> = speech.map(|s| s.timeline.word_spans().into_iter().collect()).unwrap_or_default();
+    let words: Vec<Value> = r
+        .utterance
+        .words
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            let u = quoquendo::text::utf16_range(text, w.clone());
+            match spans.get(&i) {
+                Some(s) => json!({ "start": u.start, "end": u.end, "at": s.start, "atS": secs(s.start), "endS": secs(s.end) }),
+                None => json!({ "start": u.start, "end": u.end, "at": null, "atS": null, "endS": null }),
+            }
+        })
+        .collect();
+    let audio = match &r.speech {
+        Ok(s) => {
+            let step = (s.rate / ENVELOPE_PER_S).max(1) as usize;
+            json!({ "rate": s.rate, "samples": s.samples.len(), "seconds": s.duration_s(), "step": step, "envelope": peaks(&s.samples, step) })
+        }
         Err(e) => json!({ "error": e }),
     };
     json!({
-        "phrases": phrases,
+        "sounds": sounds,
         "plan": picked,
         "pieces": pieces,
+        "words": words,
         "sentences": db.units.len(),
         "audio": audio,
     })
     .to_string()
+}
+
+/// What the Voice details section shows, and the languages it can read with.
+fn details_json(voice: &Voice) -> String {
+    let d = &voice.descriptor;
+    let db = &voice.db;
+    let recordings = match &db.audio {
+        Some(a) => {
+            let secs = a.total_samples() / a.rate.max(1) as usize;
+            format!("{}:{:02}:{:02} · Speex {} kbit/s", secs / 3600, secs / 60 % 60, secs % 60, a.bitrate / 1000)
+        }
+        None => db.audio_error.clone().unwrap_or_else(|| "not found".into()),
+    };
+    let language_data = match &voice.language_missing {
+        Some(t) => format!("None: no {t} language folder"),
+        None if voice.frontend.has_module() => "Original module, ported".into(),
+        None => format!("Built-in rules, {} dictionary words", voice.frontend.dictionary_len()),
+    };
+    json!({
+        "language": d.language().label(),
+        "languages": languages(voice).iter().map(|l| l.label()).collect::<Vec<_>>(),
+        "rows": [
+            ["Language", d.language().label()],
+            ["MotherTongue", quoquendo::loquendo::from_latin1(&d.mother_tongue)],
+            ["Gender / Age", format!("{} / {}", d.gender, d.age)],
+            ["Library", d.library],
+            ["Sample rate", format!("{} Hz", grouped(d.audio_rate as usize))],
+            ["Recorded sentences", grouped(db.units.len())],
+            ["Timed sounds", grouped(db.instance_count())],
+            ["Alphabet", format!("{} symbols", db.alphabet().len())],
+            ["Recordings", recordings],
+            ["Language data", language_data],
+        ],
+    })
+    .to_string()
+}
+
+/// `80 896`: thousands grouped with a space, as the app shows numbers.
+fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn formats_json() -> String {
+    let all: Vec<Value> =
+        Format::ALL.iter().map(|f| json!({ "ext": f.ext(), "label": f.label(), "hint": f.hint(), "mime": f.mime() })).collect();
+    Value::Array(all).to_string()
+}
+
+/// `text` spoken by `voice` as a file in the format with extension `ext`.
+fn export_file(voice: &Voice, text: &str, ext: &str, smooth: bool, language: Option<&str>) -> Result<Vec<u8>, String> {
+    let format = Format::from_ext(ext).ok_or_else(|| format!("no .{ext} format"))?;
+    let r = render(voice, text, smooth, language);
+    let speech = r.speech?;
+    let tags = Tagged {
+        text,
+        words: &r.utterance.words,
+        voice: &voice.descriptor.name,
+    };
+    export::encode(&speech, format, Some(&tags))
+}
+
+/// A `eu.depau.quoquendo.Rendered` of `speech`.
+fn rendered<'l>(env: &mut JNIEnv<'l>, speech: &Speech, marks: &[i32]) -> Result<JObject<'l>, String> {
+    let err = |e: jni::errors::Error| e.to_string();
+    let pcm = synth::to_pcm16(&speech.samples);
+    let pcm_array = env.new_short_array(pcm.len() as i32).map_err(err)?;
+    env.set_short_array_region(&pcm_array, 0, &pcm).map_err(err)?;
+    let marks_array = env.new_int_array(marks.len() as i32).map_err(err)?;
+    env.set_int_array_region(&marks_array, 0, marks).map_err(err)?;
+    env.new_object(
+        "eu/depau/quoquendo/Rendered",
+        "([SI[I)V",
+        &[JValue::Object(&pcm_array), JValue::Int(speech.rate as jint), JValue::Object(&marks_array)],
+    )
+    .map_err(err)
 }
 
 /// The voice behind a handle from `loadVoice`.
@@ -292,11 +484,6 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_freeVoice<'l>(mut env: JNI
     })
 }
 
-#[no_mangle]
-pub extern "system" fn Java_eu_depau_quoquendo_Native_sampleRate<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, handle: jlong) -> jint {
-    guard(&mut env, 0, |_| Ok(output_rate(voice(handle)?) as jint))
-}
-
 /// The recordings bank's own rate (44 000 for CodecMsx voices): the rate of `pieceSamples`.
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_audioRate<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, handle: jlong) -> jint {
@@ -332,37 +519,54 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_pieceSamples<'l>(
     })
 }
 
+/// `text` spoken by the voice for the TTS service: a `Rendered` with its
+/// words' marks.
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_synthesize<'l>(
     mut env: JNIEnv<'l>,
     _class: JClass<'l>,
     handle: jlong,
     text: JString<'l>,
-) -> jshortArray {
+    smooth: jboolean,
+) -> jobject {
     guard(&mut env, std::ptr::null_mut(), |env| {
         let text = jstr(env, &text)?;
-        let speech = voice(handle)?.say(&text)?;
-        let pcm = synth::to_pcm16(&speech.samples);
-        let array = env.new_short_array(pcm.len() as i32).map_err(|e| e.to_string())?;
-        env.set_short_array_region(&array, 0, &pcm).map_err(|e| e.to_string())?;
-        Ok(array.into_raw())
+        let r = render(voice(handle)?, &text, smooth == JNI_TRUE, None);
+        let speech = r.speech?;
+        let marks = marks(&text, &r.utterance.words, &speech);
+        Ok(rendered(env, &speech, &marks)?.into_raw())
     })
 }
 
-/// The 16-bit `pcm` at `rate` as an MP3 file (`synth::mp3_bytes`).
+/// `text` spoken by the voice as a file (`Format::from_ext(ext)`), with the
+/// text and its timing embedded.
 #[no_mangle]
-pub extern "system" fn Java_eu_depau_quoquendo_Native_encodeMp3<'l>(
+pub extern "system" fn Java_eu_depau_quoquendo_Native_export<'l>(
     mut env: JNIEnv<'l>,
     _class: JClass<'l>,
-    pcm: JShortArray<'l>,
-    rate: jint,
+    handle: jlong,
+    text: JString<'l>,
+    ext: JString<'l>,
+    smooth: jboolean,
+    language: JString<'l>,
 ) -> jbyteArray {
     guard(&mut env, std::ptr::null_mut(), |env| {
-        let n = env.get_array_length(&pcm).map_err(|e| e.to_string())? as usize;
-        let mut samples = vec![0i16; n];
-        env.get_short_array_region(&pcm, 0, &mut samples).map_err(|e| e.to_string())?;
-        let mp3 = synth::mp3_bytes(&samples, rate as u32)?;
-        Ok(env.byte_array_from_slice(&mp3).map_err(|e| e.to_string())?.into_raw())
+        let (text, ext, language) = (jstr(env, &text)?, jstr(env, &ext)?, opt_jstr(env, &language)?);
+        let bytes = export_file(voice(handle)?, &text, &ext, smooth == JNI_TRUE, language.as_deref())?;
+        Ok(env.byte_array_from_slice(&bytes).map_err(|e| e.to_string())?.into_raw())
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_formats<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>) -> jstring {
+    guard(&mut env, std::ptr::null_mut(), |env| ret_string(env, formats_json()))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_details<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>, handle: jlong) -> jstring {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let out = details_json(voice(handle)?);
+        ret_string(env, out)
     })
 }
 
@@ -379,17 +583,33 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_deleteVoice<'l>(
     })
 }
 
+/// `text` analysed and rendered: an `Analysed` with the analysis JSON and,
+/// when it could be rendered, its audio.
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_analyse<'l>(
     mut env: JNIEnv<'l>,
     _class: JClass<'l>,
     handle: jlong,
     text: JString<'l>,
-) -> jstring {
+    smooth: jboolean,
+    language: JString<'l>,
+) -> jobject {
     guard(&mut env, std::ptr::null_mut(), |env| {
-        let text = jstr(env, &text)?;
-        let out = analyse(voice(handle)?, &text);
-        ret_string(env, out)
+        let (text, language) = (jstr(env, &text)?, opt_jstr(env, &language)?);
+        let v = voice(handle)?;
+        let r = render(v, &text, smooth == JNI_TRUE, language.as_deref());
+        let json = env.new_string(analyse_json(v, &text, &r)).map_err(|e| e.to_string())?;
+        let audio = match &r.speech {
+            Ok(s) => rendered(env, s, &marks(&text, &r.utterance.words, s))?,
+            Err(_) => JObject::null(),
+        };
+        env.new_object(
+            "eu/depau/quoquendo/Analysed",
+            "(Ljava/lang/String;Leu/depau/quoquendo/Rendered;)V",
+            &[JValue::Object(&json), JValue::Object(&audio)],
+        )
+        .map(|o| o.into_raw())
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -414,5 +634,25 @@ mod tests {
         let v: Value = serde_json::from_str(&catalog_json()).unwrap();
         assert_eq!(v.as_array().unwrap().len(), catalog::INSTALLERS.len());
         assert!(v[0]["archiveUrl"].as_str().unwrap().starts_with("https://archive.org/"));
+    }
+
+    #[test]
+    fn peaks_cover_every_sample() {
+        assert_eq!(peaks(&[0.1, -0.5, 0.2, 0.3, -2.0], 2), vec![0.5, 0.3, 1.0]);
+    }
+
+    #[test]
+    fn thousands_grouped() {
+        assert_eq!(grouped(7), "7");
+        assert_eq!(grouped(4329), "4 329");
+        assert_eq!(grouped(318502), "318 502");
+        assert_eq!(grouped(1234567), "1 234 567");
+    }
+
+    #[test]
+    fn formats_have_extensions() {
+        let v: Value = serde_json::from_str(&formats_json()).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), Format::ALL.len());
+        assert_eq!(v[1]["ext"], "flac");
     }
 }

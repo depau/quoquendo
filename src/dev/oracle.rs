@@ -26,12 +26,15 @@ pub struct Reference {
     /// every half-phone SIG played, in order (`LOQ_TRACE_UNITS`): its start
     /// and end in `.sde` ticks and whether it ends a run (algorithm 1)
     pub units: Vec<(u64, u64, bool)>,
-    /// SIG: its audio
+    /// SIG: its audio, at `RATE`
     pub audio: Vec<i16>,
     /// every request to its decoders (`LOQ_TRACE_DECODE`): decoder, sample
     /// position, the samples returned
     pub decodes: Vec<(String, usize, Vec<i16>)>,
 }
+
+/// The original engine's output rate (Hz).
+pub const RATE: u32 = 32000;
 
 fn is_pause(sym: &str) -> bool {
     sym == "#" || sym == "@"
@@ -251,7 +254,11 @@ impl Reference {
                 _ => cur.is_empty(),
             };
             w += 1;
-            cur.push(Target { sym: sym.clone(), word_start });
+            cur.push(Target {
+                sym: sym.clone(),
+                word_start,
+                word: None,
+            });
         }
         if !cur.is_empty() {
             out.push(TargetPhrase {

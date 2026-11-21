@@ -12,12 +12,14 @@
 //! let data = std::path::Path::new("Loquendo/LTTS7/data");
 //! let voice = quoquendo::Voice::find(data, "Roberto")?;
 //! let speech = voice.say("Attenzione! Allontanarsi dalla linea gialla.")?;
-//! std::fs::write("out.wav", quoquendo::synth::to_wav_bytes(&speech)).unwrap();
+//! let bytes = quoquendo::export::encode(&speech, quoquendo::export::Format::Wav, None)?;
+//! std::fs::write("out.wav", bytes).unwrap();
 //! # Ok::<(), String>(())
 //! ```
 
 pub mod catalog;
 pub mod codec;
+pub mod export;
 pub mod g2p;
 pub mod gpr;
 pub mod inno;
@@ -30,6 +32,7 @@ pub mod sig;
 pub mod speex;
 pub mod sqlite;
 pub mod synth;
+pub mod text;
 pub mod voicefon;
 pub mod wise;
 pub mod x87;
@@ -93,6 +96,20 @@ impl Voice {
         synth::from_tokens(&g2p::analyse(text, &self.frontend))
     }
 
+    /// The FON stage with where each word lies in `text`.
+    pub fn utterance(&self, text: &str) -> Utterance {
+        self.utterance_with(text, &self.frontend)
+    }
+
+    /// `utterance` with another front end (another language's rules).
+    pub fn utterance_with(&self, text: &str, fe: &g2p::Frontend) -> Utterance {
+        let tokens = g2p::analyse(text, fe);
+        Utterance {
+            words: text::word_spans(text, &tokens),
+            targets: synth::from_tokens(&tokens),
+        }
+    }
+
     /// Speak `text` the way the original engine does.
     pub fn say(&self, text: &str) -> Result<Speech, String> {
         self.say_with(
@@ -106,9 +123,18 @@ impl Voice {
 
     /// Speak `text` with other settings (volume, smoothed joins).
     pub fn say_with(&self, text: &str, settings: Settings) -> Result<Speech, String> {
-        let plan = synth::select_all(&self.db, &self.transcribe(text));
+        let plan = synth::select_all(&self.db, &self.utterance(text).targets);
         synth::render(&plan, &self.db, settings)
     }
+}
+
+/// What a text says: its sounds phrase by phrase, each knowing its word
+/// (`synth::Target::word`), and where every word is in the text.
+#[derive(Clone, Debug, Default)]
+pub struct Utterance {
+    pub targets: Vec<TargetPhrase>,
+    /// byte ranges in the text, by word (`text::word_spans`)
+    pub words: Vec<std::ops::Range<usize>>,
 }
 
 /// The contents of a voice's files, for loading it without a filesystem

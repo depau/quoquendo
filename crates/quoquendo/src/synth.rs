@@ -14,6 +14,8 @@
 //! surroundings and unbroken runs (weights are mine, MECHANICS.md §6). The
 //! SIG stage reproduces the original engine's joining (MECHANICS.md §7).
 
+use std::ops::Range;
+
 use crate::g2p::Token;
 use crate::loquendo::{relax, VoiceDatabase};
 
@@ -85,12 +87,16 @@ pub struct Phrase {
     pub mood: Option<char>,
     /// sounds the voice has never recorded at all
     pub missing: Vec<String>,
+    /// the wanted sounds with their words, recorded or not (`phones` are
+    /// the recorded ones); empty for a plan made elsewhere
+    pub targets: Vec<Target>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Speech {
     pub samples: Vec<f32>,
     pub rate: u32,
+    pub timeline: Timeline,
 }
 
 impl Speech {
@@ -99,10 +105,71 @@ impl Speech {
     }
 }
 
+/// Where every sound and piece of a plan lies in the rendered speech.
+#[derive(Clone, Debug, Default)]
+pub struct Timeline {
+    /// every sound and pause in output order, spans in samples of
+    /// `Speech::samples`, contiguous and covering all of them; a sound the
+    /// voice never recorded has an empty span, every phrase ends with one
+    /// pause (empty when it has none)
+    pub sounds: Vec<TimedSound>,
+    /// output span of every piece, flattened in plan order
+    pub pieces: Vec<std::ops::Range<usize>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TimedSound {
+    /// the sound's symbol; empty for a pause
+    pub sym: String,
+    pub span: std::ops::Range<usize>,
+    pub pause: bool,
+    /// the `Target`'s word; None for pauses
+    pub word: Option<usize>,
+    pub word_start: bool,
+    /// index into the plan
+    pub phrase: usize,
+}
+
+impl Timeline {
+    /// The sound playing at `sample` (index into `sounds`).
+    pub fn sound_at(&self, sample: usize) -> Option<usize> {
+        let i = self.sounds.partition_point(|s| s.span.end <= sample);
+        self.sounds.get(i).filter(|s| s.span.start <= sample).map(|_| i)
+    }
+
+    /// The piece playing at `sample` (index into `pieces`).
+    pub fn piece_at(&self, sample: usize) -> Option<usize> {
+        let i = self.pieces.partition_point(|p| p.end <= sample);
+        self.pieces.get(i).filter(|p| p.start <= sample).map(|_| i)
+    }
+
+    /// Every word said, in order: its index and its output span. A word
+    /// cut by a pause (a phrase split for length) is listed once per part.
+    pub fn word_spans(&self) -> Vec<(usize, std::ops::Range<usize>)> {
+        let mut out: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        let mut joined = false;
+        for s in &self.sounds {
+            let Some(w) = s.word else {
+                joined = false;
+                continue;
+            };
+            match out.last_mut() {
+                Some((last, span)) if joined && *last == w => span.end = s.span.end,
+                _ => out.push((w, s.span.clone())),
+            }
+            joined = true;
+        }
+        out
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
     pub sym: String,
     pub word_start: bool,
+    /// the word it belongs to (`Token::Word` ordinal); None when unknown
+    /// (a transcription parsed from text)
+    pub word: Option<usize>,
 }
 
 /// What the FON stage hands on: the sounds of one phrase and what follows it.
@@ -115,10 +182,12 @@ pub struct TargetPhrase {
     pub mood: Option<char>,
 }
 
-/// Group the builtin front end's words into phrases at every real pause.
+/// Group the builtin front end's words into phrases at every real pause;
+/// each sound knows its word (the `Token::Word` ordinal).
 pub fn from_tokens(tokens: &[Token]) -> Vec<TargetPhrase> {
     let mut out = Vec::new();
     let mut cur: Vec<Target> = Vec::new();
+    let mut word = 0;
     for t in tokens {
         match t {
             Token::Word { symbols, .. } => {
@@ -126,8 +195,10 @@ pub fn from_tokens(tokens: &[Token]) -> Vec<TargetPhrase> {
                     cur.push(Target {
                         sym: s.clone(),
                         word_start: i == 0,
+                        word: Some(word),
                     });
                 }
+                word += 1;
             }
             Token::Pause { ms, reason } if reason != "word gap" => {
                 if !cur.is_empty() {
@@ -215,6 +286,7 @@ pub fn parse_transcription(text: &str) -> Vec<TargetPhrase> {
                 cur.push(Target {
                     sym: part.to_string(),
                     word_start: !first || cur.is_empty(),
+                    word: None,
                 });
             }
             first = false;
@@ -819,6 +891,7 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
     let mut phrase = Phrase {
         pause_ms,
         mood,
+        targets: t.to_vec(),
         ..Default::default()
     };
     let level_of = |sym: &str| (0..3).find(|&l| db.singles[l].contains_key(relax(sym, l)));
@@ -1044,6 +1117,11 @@ pub fn select_like_original(db: &VoiceDatabase, t: &[Target], edge: &str, mood: 
 /// through the original's resampler to 32 kHz as SIG streams into it
 /// (`codec::StreamResampler`: one phone at a time, a flush after every
 /// phrase).
+///
+/// The speech comes with its `Timeline`: where each sound, pause and piece
+/// ended up, to the sample (`Original` through the resampler too, from what
+/// it hands on for each phone; inside a phone, and for `Smooth` resampled
+/// as a whole, in proportion).
 pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result<Speech, String> {
     let bank = db
         .audio
@@ -1053,28 +1131,63 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
     let ms = |m: u32| (m as usize) * rate as usize / 1000;
     let gain = settings.volume / 32768.0;
     let resampled = rate != crate::codec::OUTPUT_RATE;
+    // the output span of every half-phone, in plan order, and of every
+    // phrase's pause
+    let mut halves: Vec<Range<usize>> = Vec::new();
+    let mut pauses: Vec<Range<usize>> = Vec::new();
     if settings.join == JoinStyle::Original {
         let (mut out, lens, ends) = join_like_original(plan, db, rate);
-        if resampled {
+        let spans: Vec<Range<usize>> = if resampled {
             // the engine resamples one phone (two half units) at a time
             // and flushes at the end of every phrase
             let mut rs = crate::codec::StreamResampler::new(rate, crate::codec::OUTPUT_RATE);
             let (mut res, mut at, mut unit) = (Vec::new(), 0, 0);
+            let mut chunks = Vec::new();
             for &end in &ends {
                 while unit < end {
                     let k = (end - unit).min(2);
                     let n: usize = lens[unit..unit + k].iter().sum();
                     res.extend(rs.push(&out[at..at + n]));
+                    chunks.push(unit..unit + k);
                     at += n;
                     unit += k;
                 }
                 res.extend(rs.flush());
             }
             out = res;
+            // what each phone got, shared between its two halves
+            let mut spans = Vec::with_capacity(lens.len());
+            let mut at = 0;
+            for (units, &n) in chunks.into_iter().zip(rs.handed().iter().chain(std::iter::repeat(&0))) {
+                spans.extend(split(at..at + n, &lens[units]));
+                at += n;
+            }
+            spans
+        } else {
+            split(0..out.len(), &lens).collect()
+        };
+        // per phrase: its half units, then the pause's two (when it has one)
+        let mut units = spans.into_iter();
+        let mut at = 0;
+        for phrase in plan {
+            let n: usize = phrase.pieces.iter().map(|p| p.halves as usize).sum();
+            for span in units.by_ref().take(n) {
+                at = span.end;
+                halves.push(span);
+            }
+            let pause = if ms(phrase.pause_ms) > 0 {
+                let (a, b) = (units.next().unwrap_or(at..at), units.next().unwrap_or(at..at));
+                a.start..b.end
+            } else {
+                at..at
+            };
+            at = pause.end;
+            pauses.push(pause);
         }
-        let out = out.into_iter().map(|v| v as f32 * gain).collect();
+        let samples: Vec<f32> = out.into_iter().map(|v| v as f32 * gain).collect();
         return Ok(Speech {
-            samples: out,
+            timeline: timeline(plan, &halves, &pauses),
+            samples,
             rate: if resampled { crate::codec::OUTPUT_RATE } else { rate },
         });
     }
@@ -1083,6 +1196,7 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
         let mut tail: Vec<f32> = Vec::new();
         let phrase_start = out.len();
         for piece in &phrase.pieces {
+            let piece_start = out.len();
             let from = piece.from as usize;
             let len = piece.to.saturating_sub(piece.from) as usize;
             let head = from.min(FADE + SLIDE);
@@ -1120,6 +1234,15 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
                 out.extend_from_slice(&buf[(at + fade).min(nominal_end)..nominal_end]);
             }
             tail = buf[nominal_end..].to_vec();
+            // its halves share what it put out, as long as each was recorded
+            let u = &db.units[piece.unit as usize];
+            let recorded: Vec<usize> = piece
+                .half_phones()
+                .map(|(i, side)| {
+                    u.phones.get(i).map_or(0, |p| if side == 0 { p.mid.saturating_sub(p.start) } else { p.end.saturating_sub(p.mid) } as usize)
+                })
+                .collect();
+            halves.extend(split(piece_start..out.len(), &recorded));
         }
         if settings.join == JoinStyle::Smooth {
             let n = out.len() - phrase_start;
@@ -1131,17 +1254,144 @@ pub fn render(plan: &[Phrase], db: &VoiceDatabase, settings: Settings) -> Result
                 out[j] *= w;
             }
         }
+        let pause_start = out.len();
         out.extend(std::iter::repeat_n(0.0, ms(phrase.pause_ms)));
+        pauses.push(pause_start..out.len());
     }
     if resampled {
         let pcm: Vec<i16> = out.iter().map(|v| (v / gain).round().clamp(-32768.0, 32767.0) as i16).collect();
-        let out = crate::codec::resample(&pcm, rate, crate::codec::OUTPUT_RATE).into_iter().map(|v| v as f32 * gain).collect();
+        let samples: Vec<f32> = crate::codec::resample(&pcm, rate, crate::codec::OUTPUT_RATE).into_iter().map(|v| v as f32 * gain).collect();
+        // resampled as a whole: every position scales with the length
+        let (from, to) = (out.len().max(1) as u64, samples.len() as u64);
+        let at = |x: usize| (x as u64 * to / from) as usize;
+        let scale = |r: &mut Range<usize>| *r = at(r.start)..at(r.end);
+        halves.iter_mut().for_each(scale);
+        pauses.iter_mut().for_each(scale);
         return Ok(Speech {
-            samples: out,
+            timeline: timeline(plan, &halves, &pauses),
+            samples,
             rate: crate::codec::OUTPUT_RATE,
         });
     }
-    Ok(Speech { samples: out, rate })
+    Ok(Speech {
+        timeline: timeline(plan, &halves, &pauses),
+        samples: out,
+        rate,
+    })
+}
+
+/// `span` cut into consecutive parts in proportion to `weights` (all of it
+/// to the last part when they are all 0).
+fn split(span: Range<usize>, weights: &[usize]) -> impl Iterator<Item = Range<usize>> + '_ {
+    let total: u64 = weights.iter().map(|&w| w as u64).sum();
+    let len = span.len() as u64;
+    let mut sum = 0u64;
+    let mut at = span.start;
+    weights.iter().enumerate().map(move |(i, &w)| {
+        sum += w as u64;
+        let end = if i + 1 == weights.len() {
+            span.end
+        } else {
+            span.start + (len * sum).checked_div(total).unwrap_or(0) as usize
+        };
+        let part = at..end;
+        at = end;
+        part
+    })
+}
+
+/// The timeline of a plan from the output spans of its half-phones and
+/// pauses. A sound starts at every left half (a phrase may open on a right
+/// one, which then belongs to its first sound); the wanted sounds the voice
+/// never recorded sit between their neighbours with empty spans.
+fn timeline(plan: &[Phrase], halves: &[Range<usize>], pauses: &[Range<usize>]) -> Timeline {
+    let mut tl = Timeline::default();
+    let mut h = halves.iter();
+    let mut at = 0;
+    for (pi, phrase) in plan.iter().enumerate() {
+        // the recorded sounds' spans, and whether each has its left half
+        let mut said: Vec<(Range<usize>, bool)> = Vec::new();
+        for piece in &phrase.pieces {
+            let mut first: Option<usize> = None;
+            for (_, side) in piece.half_phones() {
+                let span = h.next().cloned().unwrap_or(at..at);
+                at = span.end;
+                first.get_or_insert(span.start);
+                match said.last_mut() {
+                    Some((s, left)) if side == 1 || !*left => {
+                        s.end = span.end;
+                        *left |= side == 0;
+                    }
+                    _ => said.push((span, side == 0)),
+                }
+            }
+            tl.pieces.push(first.unwrap_or(at)..at);
+        }
+        let plain: Vec<Target>;
+        let wanted = if phrase.targets.is_empty() {
+            plain = phrase
+                .phones
+                .iter()
+                .map(|s| Target {
+                    sym: s.clone(),
+                    word_start: false,
+                    word: None,
+                })
+                .collect();
+            &plain
+        } else {
+            &phrase.targets
+        };
+        let recorded = |t: &Target| !phrase.missing.contains(&t.sym);
+        let mut left = wanted.iter().filter(|t| recorded(t)).count();
+        let mut said = said.into_iter().map(|(s, _)| s);
+        let mut end = tl.sounds.last().map_or(0, |s: &TimedSound| s.span.end);
+        for t in wanted {
+            let span = if !recorded(t) {
+                end..end
+            } else {
+                left -= 1;
+                // the last recorded sound takes whatever is left over
+                let mut span = said.next().unwrap_or(end..end);
+                if left == 0 {
+                    span.end = said.by_ref().fold(span.end, |_, s| s.end);
+                }
+                span
+            };
+            end = span.end;
+            tl.sounds.push(TimedSound {
+                sym: t.sym.clone(),
+                span,
+                pause: false,
+                word: t.word,
+                word_start: t.word_start,
+                phrase: pi,
+            });
+        }
+        // said with nothing wanted (a plan made elsewhere)
+        if let Some(first) = said.next() {
+            let span = first.start..said.next_back().map_or(first.end, |s| s.end);
+            tl.sounds.push(TimedSound {
+                sym: String::new(),
+                span,
+                pause: false,
+                word: None,
+                word_start: false,
+                phrase: pi,
+            });
+        }
+        let pause = pauses.get(pi).cloned().unwrap_or(at..at);
+        at = pause.end;
+        tl.sounds.push(TimedSound {
+            sym: String::new(),
+            span: pause,
+            pause: true,
+            word: None,
+            word_start: false,
+            phrase: pi,
+        });
+    }
+    tl
 }
 
 /// Samples decoded on each side of a unit, as LoqTTS7.dll's unit fetch
@@ -1250,49 +1500,6 @@ pub fn to_pcm16(samples: &[f32]) -> Vec<i16> {
     samples.iter().map(|s| (s * 32768.0).round().clamp(-32768.0, 32767.0) as i16).collect()
 }
 
-/// A 16-bit mono PCM WAV of the rendered speech.
-pub fn to_wav_bytes(speech: &Speech) -> Vec<u8> {
-    let data_len = speech.samples.len() * 2;
-    let mut out = Vec::with_capacity(44 + data_len);
-    let rate = speech.rate;
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data_len as u32).to_le_bytes());
-    for v in to_pcm16(&speech.samples) {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    out
-}
-
-/// A mono MP3 (MPEG-1 Layer III, 96 kbit/s, with a Xing/Info frame for its
-/// exact length) of 16-bit samples at `rate`: 32, 44.1 or 48 kHz.
-pub fn mp3_bytes(pcm: &[i16], rate: u32) -> Result<Vec<u8>, String> {
-    use audio2mp3_core::{Bitrate, EncoderConfig, Mp3Encoder};
-    let err = |e: audio2mp3_core::Error| format!("MP3 at {rate} Hz: {e:?}");
-    let mut enc = Mp3Encoder::new(EncoderConfig { sample_rate: rate, channels: 1, bitrate: Bitrate::Kbps96 }).map_err(err)?;
-    enc.enable_info_frame().map_err(err)?;
-    let mut out = Vec::with_capacity(pcm.len() / 2);
-    enc.encode(pcm, &mut out).map_err(err)?;
-    enc.flush(&mut out).map_err(err)?;
-    let n = enc.info_frame_size();
-    enc.info_frame_into(&mut out[..n]).map_err(err)?;
-    Ok(out)
-}
-
-/// A mono MP3 of the rendered speech (`mp3_bytes`).
-pub fn to_mp3_bytes(speech: &Speech) -> Result<Vec<u8>, String> {
-    mp3_bytes(&to_pcm16(&speech.samples), speech.rate)
-}
-
 /// Peak envelope for the waveform display, `buckets` values in 0..1.
 pub fn envelope(speech: &Speech, buckets: usize) -> Vec<f32> {
     if buckets == 0 || speech.samples.is_empty() {
@@ -1315,10 +1522,14 @@ mod tests {
 
     /// Two recorded sentences: "# a-b c @" and "# c d @".
     fn fake_db() -> VoiceDatabase {
+        fake_db_at(crate::loquendo::VOICE_SAMPLE_RATE)
+    }
+
+    fn fake_db_at(rate: u32) -> VoiceDatabase {
         crate::loquendo::parse_sde(
             "14,4\nN=2,9\nU=# a-b c @\nL# !\" #- n\nR# #- n\nL$ #- n\nR$ #- n\nL% #- n\nR% #- n\n\
              U=# c d @\nL# !#- #- n\nR# #- n\nL$ #- n\nR$ #- n\n",
-            crate::loquendo::VOICE_SAMPLE_RATE,
+            rate,
         )
     }
 
@@ -1327,8 +1538,157 @@ mod tests {
             .map(|s| Target {
                 sym: s.to_string(),
                 word_start: false,
+                word: None,
             })
             .collect()
+    }
+
+    /// Sounds with their words: `"a b|c"` is word `first` "a b", then "c".
+    fn worded(text: &str, first: usize) -> Vec<Target> {
+        text.split('|')
+            .enumerate()
+            .flat_map(|(w, word)| {
+                word.split(' ').enumerate().map(move |(i, s)| Target {
+                    sym: s.to_string(),
+                    word_start: i == 0,
+                    word: Some(first + w),
+                })
+            })
+            .collect()
+    }
+
+    /// The timeline's invariants, for any plan and join.
+    fn check_timeline(plan: &[Phrase], speech: &Speech) {
+        let tl = &speech.timeline;
+        let mut at = 0;
+        for s in &tl.sounds {
+            assert_eq!(s.span.start, at, "contiguous: {s:?}");
+            assert!(s.span.end >= s.span.start);
+            at = s.span.end;
+        }
+        assert_eq!(at, speech.samples.len(), "covers every sample");
+        let wanted: usize = plan.iter().map(|p| p.targets.len()).sum();
+        assert_eq!(tl.sounds.iter().filter(|s| !s.pause).count(), wanted);
+        assert_eq!(tl.sounds.iter().filter(|s| s.pause).count(), plan.len());
+        assert_eq!(tl.pieces.len(), plan.iter().map(|p| p.pieces.len()).sum::<usize>());
+        for w in tl.pieces.windows(2) {
+            assert!(w[0].end <= w[1].start, "pieces in order: {w:?}");
+        }
+        for (i, s) in tl.sounds.iter().enumerate() {
+            if !s.span.is_empty() {
+                assert_eq!(tl.sound_at(s.span.start), Some(i));
+                assert_eq!(tl.sound_at(s.span.end - 1), Some(i));
+            }
+        }
+        for (i, p) in tl.pieces.iter().enumerate().filter(|(_, p)| !p.is_empty()) {
+            assert_eq!(tl.piece_at(p.start), Some(i));
+            assert_eq!(tl.piece_at(p.end - 1), Some(i));
+        }
+        assert_eq!(tl.sound_at(speech.samples.len()), None);
+        assert_eq!(tl.piece_at(speech.samples.len()), None);
+    }
+
+    #[test]
+    fn the_timeline_places_every_sound() {
+        let phrases = [
+            TargetPhrase {
+                phones: worded("a b|c", 0),
+                pause_ms: 120,
+                full_stop: false,
+                mood: None,
+            },
+            TargetPhrase {
+                phones: worded("b zz c|d", 2),
+                pause_ms: 500,
+                full_stop: true,
+                mood: None,
+            },
+        ];
+        for rate in [32000, 44000] {
+            let mut db = fake_db_at(rate);
+            db.audio = Some(crate::codec::AudioBank::silent(rate));
+            let plan = select_all(&db, &phrases);
+            for p in &plan {
+                // the builtin picker supplies both halves of every sound
+                assert_eq!(p.pieces.iter().map(|x| x.halves as usize).sum::<usize>(), 2 * p.phones.len());
+            }
+            for join in [JoinStyle::Original, JoinStyle::Smooth] {
+                let speech = render(&plan, &db, Settings { volume: 1.0, join }).unwrap();
+                check_timeline(&plan, &speech);
+                let tl = &speech.timeline;
+                let syms: Vec<&str> = tl.sounds.iter().map(|s| s.sym.as_str()).collect();
+                assert_eq!(syms, ["a", "b", "c", "", "b", "zz", "c", "d", ""], "{rate} {join:?}");
+                // the unrecorded sound takes no time, the recorded ones do
+                assert!(tl.sounds[5].span.is_empty());
+                assert!(tl.sounds.iter().filter(|s| !s.pause && s.sym != "zz").all(|s| !s.span.is_empty()), "{rate} {join:?}");
+                let pause = &tl.sounds[3];
+                assert!(pause.pause && pause.span.len() >= 120 * speech.rate as usize / 1000 - 2, "{pause:?}");
+                let words = tl.word_spans();
+                assert_eq!(words.iter().map(|w| w.0).collect::<Vec<_>>(), [0, 1, 2, 3]);
+                assert_eq!(words[0].1, tl.sounds[0].span.start..tl.sounds[1].span.end);
+                assert_eq!(words[2].1, tl.sounds[4].span.start..tl.sounds[6].span.end);
+                assert_eq!(tl.sounds[4].phrase, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn long_phrases_are_split_and_still_timed() {
+        let mut db = fake_db();
+        db.audio = Some(crate::codec::AudioBank::silent(32000));
+        let n = MAX_DEMIPHONES_PER_PHRASE / 2 + 10;
+        let phones: Vec<Target> = (0..n)
+            .map(|i| Target {
+                sym: ["a", "b", "c"][i % 3].into(),
+                word_start: i % 3 == 0,
+                word: Some(i / 3),
+            })
+            .collect();
+        let phrases = [TargetPhrase {
+            phones,
+            pause_ms: 500,
+            full_stop: true,
+            mood: None,
+        }];
+        let plan = select_all(&db, &phrases);
+        assert_eq!(plan.len(), 2);
+        let speech = render(&plan, &db, Settings::default()).unwrap();
+        check_timeline(&plan, &speech);
+        let words = speech.timeline.word_spans();
+        // the word cut by the split shows up on both sides of its pause
+        assert_eq!(words.len(), n.div_ceil(3) + 1);
+        assert!(words.windows(2).all(|w| w[0].0 <= w[1].0 && w[0].1.end <= w[1].1.start));
+    }
+
+    #[test]
+    fn a_plan_made_elsewhere_is_timed_by_its_halves() {
+        // as the original engine's plan comes back (dev::oracle): no
+        // targets, and the phrase opening on a right half
+        let mut db = fake_db();
+        db.audio = Some(crate::codec::AudioBank::silent(32000));
+        let u = &db.units[0];
+        let plan = [Phrase {
+            phones: vec!["b".into(), "c".into()],
+            pieces: vec![Piece {
+                covers: vec!["a".into(), "b".into(), "c".into()],
+                unit: 0,
+                from: u.phones[1].mid,
+                to: u.phones[3].end,
+                first_half: 3,
+                halves: 5,
+                pitch: 0,
+                hard: false,
+            }],
+            pause_ms: 100,
+            ..Default::default()
+        }];
+        let speech = render(&plan, &db, Settings::default()).unwrap();
+        let tl = &speech.timeline;
+        let syms: Vec<&str> = tl.sounds.iter().map(|s| s.sym.as_str()).collect();
+        assert_eq!(syms, ["b", "c", ""]);
+        assert_eq!(tl.sounds[0].span.start, 0);
+        assert_eq!(tl.sounds[2].span.end, speech.samples.len());
+        assert!(tl.word_spans().is_empty());
     }
 
     #[test]

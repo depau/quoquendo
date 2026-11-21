@@ -1,5 +1,14 @@
 package eu.depau.quoquendo
 
+/**
+ * Speech as 16-bit [pcm] at [rate], and its words: per word in order, the
+ * sample it starts at and its UTF-16 range in the text, flattened in [marks].
+ */
+class Rendered(@JvmField val pcm: ShortArray, @JvmField val rate: Int, @JvmField val marks: IntArray)
+
+/** [Native.analyse]'s JSON, and its audio (null when it could not be rendered). */
+class Analysed(@JvmField val json: String, @JvmField val audio: Rendered?)
+
 /** The engine, in libquoquendo_jni.so (crates/quoquendo-jni). Errors throw RuntimeException. */
 object Native {
     init {
@@ -15,9 +24,10 @@ object Native {
     /** JSON array of the pack's installers `{file, label, language, voice, gender, size, archiveUrl}`. */
     @JvmStatic external fun catalog(): String
 
+    /** JSON array of the formats [export] writes: `{ext, label, hint, mime}`. */
+    @JvmStatic external fun formats(): String
+
     @JvmStatic external fun loadVoice(storeDir: String, name: String): Long
-    /** The rate `synthesize` returns (the engine's output rate). */
-    @JvmStatic external fun sampleRate(handle: Long): Int
 
     /** The recordings bank's own rate: the rate of [pieceSamples] (44000 for CodecMsx voices). */
     @JvmStatic external fun audioRate(handle: Long): Int
@@ -26,15 +36,28 @@ object Native {
     @JvmStatic external fun pieceSamples(handle: Long, unit: Int, from: Int, to: Int): ShortArray
 
     @JvmStatic external fun freeVoice(handle: Long)
-    @JvmStatic external fun synthesize(handle: Long, text: String): ShortArray
-    /** [pcm] at [rate] (32, 44.1 or 48 kHz) as an MP3 file. */
-    @JvmStatic external fun encodeMp3(pcm: ShortArray, rate: Int): ByteArray
-    @JvmStatic external fun deleteVoice(storeDir: String, name: String)
+
+    /** [text] spoken, pieces joined smoothly when [smooth]. */
+    @JvmStatic external fun synthesize(handle: Long, text: String, smooth: Boolean): Rendered
 
     /**
-     * JSON `{phrases:[{phones:[{sym,known,wordStart}],pauseMs,mood}], plan:[{pauseMs,mood,missing}],
-     * pieces:[{phrase,covers,unit,sentence,from,to,atS,lenMs,pitch,hard}], sentences,
-     * audio:{rate,samples,seconds,envelope} | {error}}`.
+     * [text] spoken as a file in the format with extension [ext] ([formats]),
+     * the text and its timing embedded. [language] as in [analyse].
      */
-    @JvmStatic external fun analyse(handle: Long, text: String): String
+    @JvmStatic external fun export(handle: Long, text: String, ext: String, smooth: Boolean, language: String?): ByteArray
+
+    @JvmStatic external fun deleteVoice(storeDir: String, name: String)
+
+    /** JSON `{language, languages, rows:[[label, value]]}`: the voice's details and the languages it can read with. */
+    @JvmStatic external fun details(handle: Long): String
+
+    /**
+     * [text] analysed and rendered, read by [language]'s rules (one of
+     * [details]' `languages`) or, when null, the voice's own. JSON
+     * `{sounds:[{sym,known,atS,endS,word,phrase,wordStart,pause}], plan:[{pauseMs,mood,missing}],
+     * pieces:[{phrase,covers,unit,sentence,from,to,recS,lenMs,pitch,hard,atS,endS}],
+     * words:[{start,end,at,atS,endS}], sentences, audio:{rate,samples,seconds,step,envelope} | {error}}`;
+     * word `start`/`end` are UTF-16 offsets in [text].
+     */
+    @JvmStatic external fun analyse(handle: Long, text: String, smooth: Boolean, language: String?): Analysed
 }

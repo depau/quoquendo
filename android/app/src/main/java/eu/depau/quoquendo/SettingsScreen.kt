@@ -23,9 +23,9 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,8 +37,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -52,12 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +80,7 @@ private fun Section(title: String) {
 private fun Setting(
     icon: ImageVector,
     title: String,
-    summary: String,
+    summary: String?,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
@@ -91,16 +89,19 @@ private fun Setting(
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         leadingContent = { Icon(icon, contentDescription = null) },
         headlineContent = { Text(title) },
-        supportingContent = { Text(summary) },
+        supportingContent = summary?.let { { Text(it) } },
         trailingContent = trailing,
     )
 }
 
+private const val MATCH_THE_REGION = "Match the region"
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     var editingMirror by remember { mutableStateOf(false) }
-    var choosingFor by remember { mutableStateOf<Locale?>(null) }
+    var choosingFor by remember { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         if (!model.isDefaultEngine) {
             Card(
@@ -114,16 +115,6 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                         Spacer(Modifier.width(12.dp))
                         Text("Set Quoquendo as the default engine", style = MaterialTheme.typography.titleMedium)
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        buildAnnotatedString {
-                            append("Apps read aloud with Android's default engine. Choose Quoquendo under ")
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Preferred engine") }
-                            append(".")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 36.dp),
-                    )
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(
@@ -142,34 +133,36 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             }
         }
 
-        Section("Engine")
-        val ready = model.installed.filter { it.ready }.flatMap { v -> v.locales.map { it.toLanguageTag() } }.distinct()
-        val needing = model.installed.filter { it.unsupported == null && it.languageMissing }.flatMap { v -> v.locales.map { it.toLanguageTag() } }.distinct()
-        val offered = buildString {
-            append(if (ready.isEmpty()) "None yet: install a voice" else ready.joinToString(", "))
-            if (needing.isNotEmpty()) append(" · ${needing.joinToString(", ")} needs language data")
-        }
-        Setting(Icons.Outlined.Language, "Languages offered to apps", offered)
-        Setting(
-            Icons.Outlined.GraphicEq,
-            "Show how speech is built",
-            "On the Try it screen",
-            onClick = { model.updateShowCurtain(!model.showCurtain) },
-        ) { Switch(checked = model.showCurtain, onCheckedChange = model::updateShowCurtain) }
-
-        // the voice apps get where several installed voices speak a language
-        val languages = model.installed.filter { it.speakable }.flatMap { it.locales }.distinct().sortedBy { it.displayName }
+        val languages = model.appLanguages()
         if (languages.isNotEmpty()) {
             Section("Voice apps use")
-            for (locale in languages) {
-                val speakers = model.installed.count { it.speakable && locale in it.locales }
-                val name = model.defaultVoiceFor(locale)?.name.orEmpty()
+            for (language in languages) {
                 Setting(
                     Icons.Outlined.RecordVoiceOver,
-                    locale.displayName,
-                    if (speakers > 1) "$name · $speakers voices speak it" else "$name, the only voice installed for it",
-                    onClick = if (speakers > 1) ({ choosingFor = locale }) else null,
-                ) { if (speakers > 1) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
+                    languageName(language),
+                    model.appVoice(language)?.name ?: MATCH_THE_REGION,
+                    onClick = { choosingFor = language },
+                ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
+            }
+        }
+
+        Section("Engine")
+        Setting(
+            Icons.Outlined.Tune,
+            "Advanced",
+            null,
+            onClick = { model.updateAdvanced(!model.advanced) },
+        ) { Switch(checked = model.advanced, onCheckedChange = model::updateAdvanced) }
+        if (model.advanced) {
+            Setting(Icons.Outlined.GraphicEq, "Joining", null)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(start = 56.dp, end = 16.dp, bottom = 8.dp)) {
+                listOf("Like the original" to false, "Smoothed" to true).forEachIndexed { i, (label, smooth) ->
+                    SegmentedButton(
+                        selected = model.smoothChoice == smooth,
+                        onClick = { model.updateSmooth(smooth) },
+                        shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    ) { Text(label) }
+                }
             }
         }
 
@@ -208,47 +201,49 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
         AlertDialog(
             onDismissRequest = { editingMirror = false },
             title = { Text("Voice mirror") },
-            text = {
-                Column {
-                    Text("Voices download from this mirror first, and from archive.org when it lacks one. Leave it empty to use archive.org only.")
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(value = url, onValueChange = { url = it }, singleLine = true, label = { Text("URL") }, modifier = Modifier.fillMaxWidth())
-                }
-            },
+            text = { OutlinedTextField(value = url, onValueChange = { url = it }, singleLine = true, label = { Text("URL") }, modifier = Modifier.fillMaxWidth()) },
             dismissButton = { TextButton(onClick = { editingMirror = false }) { Text("Cancel") } },
             confirmButton = { TextButton(onClick = { model.updateMirror(url); editingMirror = false }) { Text("Save") } },
         )
     }
 
-    choosingFor?.let { locale ->
-        AlertDialog(
-            onDismissRequest = { choosingFor = null },
-            title = { Text("Voice for ${locale.displayName}") },
-            text = {
-                Column {
-                    Text("Apps that read ${locale.displayName} aloud use this voice, unless they pick one themselves.")
-                    Spacer(Modifier.height(8.dp))
-                    val chosen = model.defaultVoiceFor(locale)?.name
-                    for (v in model.installed.filter { it.speakable && locale in it.locales }) {
-                        Row(
-                            Modifier.fillMaxWidth().clickable { model.updateDefaultVoice(locale, v.name); choosingFor = null }.padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = v.name == chosen, onClick = null)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(v.name)
-                                Text(
-                                    listOfNotNull(v.gender.ifEmpty { null }, if (v.languageMissing) "needs language data" else null).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+    choosingFor?.let { language -> VoiceChooser(model, language) { choosingFor = null } }
+}
+
+/** "Voice for <Language>": Match the region (when its voices come from several), or one voice for all of it. */
+@Composable
+private fun VoiceChooser(model: MainModel, language: String, onDismiss: () -> Unit) {
+    val chosen = model.appVoice(language)?.name
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Voice for ${languageName(language)}") },
+        text = {
+            Column {
+                @Composable
+                fun Option(title: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onClick(); onDismiss() }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected, onClick = null)
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(title, style = MaterialTheme.typography.bodyLarge)
+                            if (detail != null) {
+                                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { choosingFor = null }) { Text("Close") } },
-        )
-    }
+                if (model.regions(language) > 1) Option(MATCH_THE_REGION, null, chosen == null) { model.chooseAppVoice(language, null) }
+                for (v in model.speakersOf(language)) {
+                    val region = v.locales.firstOrNull { it.language == language }?.displayCountry.orEmpty()
+                    Option(v.name, listOf(region, v.gender).filter { it.isNotEmpty() }.joinToString(" · "), v.name == chosen) {
+                        model.chooseAppVoice(language, v.name)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

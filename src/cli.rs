@@ -1,7 +1,7 @@
 //! The command line (desktop): unpacking installers, speaking to a file,
 //! checks against the original engine.
 
-use crate::dev::{engines, oracle, pipeline};
+use crate::dev::{compare, engines, oracle, pipeline};
 use crate::install;
 use quoquendo::{g2p, loquendo, synth};
 
@@ -12,10 +12,15 @@ use synth::Settings;
 #[derive(Default)]
 pub struct LaunchOptions {
     pub screenshot: Option<PathBuf>,
-    /// `--dev`: developer mode on in the window
-    pub dev: bool,
+    /// `--play-at <seconds>`: the screenshot shows the speech playing at
+    /// that moment
+    pub play_at: Option<f64>,
+    /// `--advanced`: Advanced mode on in the window
+    pub advanced: bool,
+    /// `--original`: Original engine (Wine) mode on in the window
+    pub original: bool,
     selftest: bool,
-    /// `--say <text> [--voice <name>] [--out <file.wav>]`
+    /// `--say <text> [--voice <name>] [--out <file.wav|flac|mp3|opus>]`
     say: Option<String>,
     voice: Option<String>,
     out: Option<PathBuf>,
@@ -49,8 +54,12 @@ pub fn parse_args() -> LaunchOptions {
             opts.screenshot = args.next().map(PathBuf::from);
         } else if let Some(rest) = a.strip_prefix("--screenshot=") {
             opts.screenshot = Some(PathBuf::from(rest));
-        } else if a == "--dev" {
-            opts.dev = true;
+        } else if a == "--play-at" {
+            opts.play_at = args.next().and_then(|s| s.parse().ok());
+        } else if a == "--advanced" {
+            opts.advanced = true;
+        } else if a == "--original" {
+            opts.original = true;
         } else if a == "--selftest" {
             opts.selftest = true;
         } else if a == "--say" {
@@ -199,7 +208,7 @@ fn selftest() -> i32 {
             }
         };
         let out = std::env::temp_dir().join(format!("quoquendo-{}.wav", v.name));
-        let _ = std::fs::write(&out, synth::to_wav_bytes(&speech));
+        let _ = std::fs::write(&out, quoquendo::export::encode(&speech, quoquendo::export::Format::Wav, None).unwrap_or_default());
         println!("  wrote {}", out.display());
         let peak = speech.samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         println!(
@@ -239,8 +248,10 @@ fn find_voice(name: Option<&str>) -> Result<quoquendo::Voice, String> {
     quoquendo::Voice::open(v)
 }
 
-/// Speak one text with one voice into a WAV file, without a window.
+/// Speak one text with one voice into a file, without a window: WAV, FLAC,
+/// MP3 or Opus by its extension (WAV for any other), the text embedded.
 fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::path::Path) -> Result<(), String> {
+    use quoquendo::export::{encode, Format, Tagged};
     let v = find_voice(voice)?;
     let name = &v.descriptor.name;
     let run = pipeline::run(text, &v.frontend, name, &v.db, stages, None)?;
@@ -249,9 +260,10 @@ fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::pa
         eprintln!("never recorded by {name}: {m}");
     }
     let speech = synth::render(&run.plan, &v.db, Settings { volume: 1.0, join: stages.sig })?;
-    // `--out x.mp3` writes an MP3, anything else a WAV
-    let bytes = if out.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp3")) { synth::to_mp3_bytes(&speech)? } else { synth::to_wav_bytes(&speech) };
-    std::fs::write(out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
+    let format = out.extension().and_then(|e| Format::from_ext(&e.to_string_lossy())).unwrap_or(Format::Wav);
+    let words = quoquendo::text::word_spans(text, &analyse(text, &v.frontend));
+    let tags = Tagged { text, words: &words, voice: name };
+    std::fs::write(out, encode(&speech, format, Some(&tags))?).map_err(|e| format!("{}: {e}", out.display()))?;
     eprintln!(
         "{name}: {:.2} s from {} pieces → {}",
         speech.duration_s(),
@@ -270,7 +282,7 @@ fn compare(what: &str, voice: Option<&str>) -> Result<(), String> {
     };
     let out = oracle::oracle_dir().map(|d| d.join("out/compare"));
     let refs = oracle::run_many(&v.descriptor.name, &texts)?;
-    let (report, _) = pipeline::compare(&refs, &v, out.as_deref())?;
+    let (report, _) = compare::compare(&refs, &v, out.as_deref())?;
     println!("{report}");
     if let Some(o) = out {
         println!("listen: {}/<n>-original.wav, -replay.wav, -ours.wav", o.display());
@@ -310,7 +322,7 @@ fn compare_all() -> Result<(), String> {
             let voice = quoquendo::Voice::open(v)?;
             let refs = oracle::run_many(&v.name, &texts)?;
             let out = dir.join("out/compare").join(&v.name);
-            let (report, t) = pipeline::compare(&refs, &voice, Some(&out))?;
+            let (report, t) = compare::compare(&refs, &voice, Some(&out))?;
             let _ = std::fs::write(dir.join(format!("out/compare/{}.txt", v.name)), &report);
             Ok(format!(
                 "{} | {} | {} | {:.1} dB | {:.1}% | {:.1}% |",

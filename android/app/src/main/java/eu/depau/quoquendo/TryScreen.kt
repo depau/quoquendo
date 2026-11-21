@@ -5,8 +5,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,8 +16,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,19 +27,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,20 +50,18 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,14 +70,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -100,10 +113,14 @@ fun TryTopBar(model: MainModel) {
     )
 }
 
-private val tryCaption = "Sounds, recorded pieces and the waveform"
-
 /** `Roberto — Italian (Male)` */
 private fun MainModel.title(v: InstalledVoice) = "${v.name} — ${languageOf(v)} (${v.gender})"
+
+/** `generic` → `Generic` */
+private fun capitalized(s: String) = s.replaceFirstChar { it.titlecase(Locale.ROOT) }
+
+/** What is playing at the playhead: the sound, its word and the piece (indices into the analysis). */
+private class Moment(val seconds: Double, val sound: Int?, val word: Int?, val piece: Int?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,8 +129,16 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     var bannerDismissed by rememberSaveable { mutableStateOf(false) }
     val voice = model.selectedVoice()
     // an empty text box starts with the voice's own sentence
-    androidx.compose.runtime.LaunchedEffect(voice?.name) {
+    LaunchedEffect(voice?.name) {
         if (voice != null && model.text.isBlank()) model.updateText(voice.demoSentence)
+    }
+    LaunchedEffect(model.installed) { model.scheduleAnalysis() }
+    val a = model.analysis?.takeIf { it.voice == voice?.name }
+    val moment = model.spoken?.takeIf { it === a }?.let { s ->
+        model.playheadS?.let { t ->
+            val sound = s.soundAt(t)
+            Moment(t, sound, sound?.let { s.sounds[it].word }, s.pieceAt(t))
+        }
     }
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -126,14 +151,7 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                     Row {
                         Icon(Icons.Outlined.Info, contentDescription = null, Modifier.padding(top = 2.dp).size(20.dp))
                         Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("Quoquendo isn't your default text-to-speech engine", style = MaterialTheme.typography.titleSmall)
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Other apps read aloud with the default engine. Pick Quoquendo under Preferred engine.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+                        Text("Quoquendo isn't your default text-to-speech engine", style = MaterialTheme.typography.titleSmall)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { bannerDismissed = true }) { Text("Not now") }
@@ -147,17 +165,12 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             }
         }
         if (model.installed.isEmpty()) {
-            Empty(model, go)
+            Empty(go)
             return@Column
         }
         VoicePicker(model, voice, go)
-        OutlinedTextField(
-            value = model.text,
-            onValueChange = model::updateText,
-            label = { Text("Text") },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp),
-            textStyle = MaterialTheme.typography.bodyLarge,
-        )
+        if (model.advanced) model.details?.takeIf { it.voice == voice?.name }?.let { LanguagePicker(model, it) }
+        TextBox(model, a?.takeIf { moment != null && it.text == model.text }, moment)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = "Volume", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(
@@ -168,8 +181,8 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             )
             Text("${(model.volume * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(36.dp), textAlign = TextAlign.End)
         }
-        val canSpeak = voice != null && voice.ready && model.ttsReady
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val canRender = voice != null && voice.ready && model.text.isNotBlank()
+        Row(verticalAlignment = Alignment.CenterVertically) {
             if (model.speaking) {
                 Button(onClick = model::stop) {
                     Icon(Icons.Filled.Stop, contentDescription = null, Modifier.size(18.dp))
@@ -177,48 +190,27 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                     Text("Stop")
                 }
             } else {
-                Button(onClick = model::speak, enabled = canSpeak) {
+                Button(onClick = model::speak, enabled = canRender && model.ttsReady) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Speak")
                 }
             }
-            Box {
-                var saveMenu by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { saveMenu = true }, enabled = voice != null && voice.ready) {
-                    Icon(Icons.Outlined.Save, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Save")
-                }
-                DropdownMenu(expanded = saveMenu, onDismissRequest = { saveMenu = false }) {
-                    DropdownMenuItem(text = { Text("WAV") }, onClick = { saveMenu = false; model.save(mp3 = false) })
-                    DropdownMenuItem(text = { Text("MP3") }, onClick = { saveMenu = false; model.save(mp3 = true) })
-                }
-            }
+            Spacer(Modifier.width(12.dp))
+            SaveControl(model, enabled = canRender && !model.saving)
         }
         val status = model.status ?: voice?.let { v -> model.cannotSpeak(v)?.let { Status(Status.Kind.Warn, it) } }
         status?.let { StatusLine(it) }
-        ListItem(
-            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.clickable { model.updateShowCurtain(!model.showCurtain) },
-            headlineContent = { Text("Show how it's built") },
-            supportingContent = { Text(tryCaption) },
-            trailingContent = { Switch(checked = model.showCurtain, onCheckedChange = model::updateShowCurtain) },
-        )
-        if (model.showCurtain) model.analysis?.let { Curtain(model, it) }
+        if (a != null) Curtain(model, a, moment)
+        if (model.advanced) model.details?.takeIf { it.voice == voice?.name }?.let { Details(it) }
         Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun Empty(model: MainModel, go: (Screen) -> Unit) {
+private fun Empty(go: (Screen) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("No voices installed yet", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Download one of the ${model.catalog.size} Loquendo 7 voices, or import an installer .exe you already have.",
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Button(onClick = { go(Screen.Voices) }) { Text("Browse the catalog") }
     }
 }
@@ -256,29 +248,114 @@ private fun VoicePicker(model: MainModel, voice: InstalledVoice?, go: (Screen) -
     }
 }
 
+/** Advanced: the language the text is read by. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LanguagePicker(model: MainModel, d: VoiceDetails) {
+    var open by remember { mutableStateOf(false) }
+    val current = model.language ?: d.language
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value = capitalized(current),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Language") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            d.languages.forEach { l ->
+                DropdownMenuItem(text = { Text(capitalized(l)) }, onClick = { model.updateLanguage(l); open = false })
+            }
+        }
+    }
+}
+
+/** Marks the word being spoken and dims the ones already spoken. */
+private class Highlight(val current: AnWord?, val spokenEnd: Int, val dim: Color, val mark: Color) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val n = text.length
+        val out = AnnotatedString.Builder(text).apply {
+            if (spokenEnd > 0) addStyle(SpanStyle(color = dim), 0, spokenEnd.coerceAtMost(n))
+            current?.let { w -> if (w.start < w.end && w.end <= n) addStyle(SpanStyle(background = mark), w.start, w.end) }
+        }.toAnnotatedString()
+        return TransformedText(out, OffsetMapping.Identity)
+    }
+}
+
+@Composable
+private fun TextBox(model: MainModel, live: Analysis?, moment: Moment?) {
+    val transformation = if (live != null && moment != null) {
+        val current = moment.word?.let { live.words.getOrNull(it) }
+        val spokenEnd = live.words.filter { it.endS != null && it.endS <= moment.seconds }.maxOfOrNull { it.end } ?: 0
+        Highlight(current, minOf(spokenEnd, current?.start ?: spokenEnd), MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), MaterialTheme.colorScheme.primaryContainer)
+    } else {
+        VisualTransformation.None
+    }
+    OutlinedTextField(
+        value = model.text,
+        onValueChange = model::updateText,
+        label = { Text("Text") },
+        trailingIcon = {
+            IconButton(onClick = model::sampleText) { Icon(Icons.Outlined.RestartAlt, contentDescription = "Sample text") }
+        },
+        visualTransformation = transformation,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+        textStyle = MaterialTheme.typography.bodyLarge,
+    )
+}
+
+/** The split control: the format first, then Save. */
+@Composable
+private fun SaveControl(model: MainModel, enabled: Boolean) {
+    var menu by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box {
+            OutlinedButton(onClick = { menu = true }, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                Text(model.saveFormat.label)
+                Spacer(Modifier.width(4.dp))
+                Icon(if (menu) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = "Format", Modifier.size(18.dp))
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                model.formats.forEach { f ->
+                    val selected = f == model.saveFormat
+                    DropdownMenuItem(
+                        modifier = if (selected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier,
+                        leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null, Modifier.alpha(if (selected) 1f else 0f)) },
+                        text = {
+                            Column {
+                                Text(f.label, style = MaterialTheme.typography.bodyLarge)
+                                Text(capitalized(f.hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = { model.updateSaveFormat(f); menu = false },
+                    )
+                }
+            }
+        }
+        OutlinedButton(onClick = model::save, enabled = enabled, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+            Icon(Icons.Outlined.Save, contentDescription = null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Save")
+        }
+    }
+}
+
 @Composable
 private fun StatusLine(s: Status) {
     val (icon, color) = when (s.kind) {
-        Status.Kind.Ok -> Icons.Outlined.CheckCircle to Recorded
-        Status.Kind.Info -> Icons.Outlined.Info to MaterialTheme.colorScheme.onSurfaceVariant
         Status.Kind.Warn -> Icons.Outlined.WarningAmber to MaterialTheme.colorScheme.primary
         Status.Kind.Error -> Icons.Outlined.ErrorOutline to MaterialTheme.colorScheme.error
-        Status.Kind.Busy -> null to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, Modifier.size(16.dp), tint = color)
-            Spacer(Modifier.width(6.dp))
-        } else if (!s.text.startsWith("Speaking")) {
-            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-        }
+        Icon(icon, contentDescription = null, Modifier.size(16.dp), tint = color)
+        Spacer(Modifier.width(6.dp))
         Text(s.text, style = MaterialTheme.typography.bodySmall, color = color)
     }
 }
 
 @Composable
-private fun Heading(title: String, rest: androidx.compose.ui.text.AnnotatedString.Builder.() -> Unit) {
+private fun Heading(title: String, rest: AnnotatedString.Builder.() -> Unit) {
     val primary = MaterialTheme.colorScheme.primary
     Text(
         buildAnnotatedString {
@@ -301,49 +378,70 @@ private fun Panel(content: @Composable () -> Unit) {
 
 private val mono = FontFamily.Monospace
 
+/** Waveform width per second of speech, when it is longer than the screen is wide. */
+private const val DP_PER_SECOND = 120
+
+@Composable
+private fun Curtain(model: MainModel, a: Analysis, moment: Moment?) {
+    Sounds(a, moment)
+    Pieces(model, a, moment)
+    a.audio?.let { Audio(a, it, moment) }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Curtain(model: MainModel, a: Analysis) {
+private fun Sounds(a: Analysis, moment: Moment?) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val primary = MaterialTheme.colorScheme.primary
+    val wordMark = MaterialTheme.colorScheme.primaryContainer
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
     val recorded = Recorded
     val missing = Missing
-    val hardCut = HardCut
-    val sounds = a.phrases.sumOf { it.phones.size }
     Heading("Sounds") {
-        append("$sounds · ")
         withStyle(SpanStyle(color = recorded)) { append("green") }
-        append(" recorded by ${a.voice}, ")
+        append(" recorded · ")
         withStyle(SpanStyle(color = missing)) { append("red") }
         append(" never recorded")
     }
     Panel {
         val bar = MaterialTheme.colorScheme.outlineVariant
-        val primary = MaterialTheme.colorScheme.primary
+        val phrases = maxOf(a.plan.size, (a.sounds.maxOfOrNull { it.phrase } ?: -1) + 1)
         FlowRow(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-            a.phrases.forEach { p ->
+            for (p in 0 until phrases) {
                 // one item per word, so lines wrap between words
-                val words = mutableListOf<MutableList<AnPhone>>()
-                p.phones.forEach { ph -> if (ph.wordStart || words.isEmpty()) words += mutableListOf(ph) else words.last() += ph }
+                val words = mutableListOf<MutableList<Int>>()
+                a.sounds.forEachIndexed { i, s ->
+                    if (s.phrase != p || s.pause) return@forEachIndexed
+                    if (s.wordStart || words.isEmpty()) words += mutableListOf(i) else words.last() += i
+                }
                 words.forEachIndexed { w, word ->
                     if (w > 0) Text("|", fontFamily = mono, fontSize = 13.sp, color = bar, modifier = Modifier.padding(horizontal = 5.dp))
                     Text(
                         buildAnnotatedString {
-                            word.forEachIndexed { i, ph ->
-                                if (i > 0) append(" ")
-                                withStyle(SpanStyle(color = if (ph.known) Recorded else Missing)) { append(ph.sym) }
+                            word.forEachIndexed { k, i ->
+                                val s = a.sounds[i]
+                                val inWord = moment?.word != null && s.word == moment.word
+                                if (k > 0) withStyle(SpanStyle(background = if (inWord) wordMark else Color.Unspecified)) { append(" ") }
+                                val style = when {
+                                    i == moment?.sound -> SpanStyle(color = onPrimary, background = primary)
+                                    inWord -> SpanStyle(color = if (s.known) recorded else missing, background = wordMark)
+                                    else -> SpanStyle(color = if (s.known) recorded else missing)
+                                }
+                                withStyle(style) { append(s.sym) }
                             }
                         },
                         fontFamily = mono,
                         fontSize = 13.sp,
                     )
                 }
-                when (p.mood) {
+                val planned = a.plan.getOrNull(p)
+                when (planned?.mood) {
                     "I" -> Text("?", fontFamily = mono, fontWeight = FontWeight.Bold, color = primary, modifier = Modifier.padding(start = 4.dp))
                     "E" -> Text("!", fontFamily = mono, fontWeight = FontWeight.Bold, color = primary, modifier = Modifier.padding(start = 4.dp))
                 }
-                if (p.pauseMs > 0) {
+                if (planned != null && planned.pauseMs > 0) {
                     Text(
-                        "${p.pauseMs} ms",
+                        "${planned.pauseMs} ms",
                         fontFamily = mono,
                         fontSize = 10.sp,
                         color = muted,
@@ -355,10 +453,13 @@ private fun Curtain(model: MainModel, a: Analysis) {
             }
         }
     }
+}
 
-    val units = a.pieces.map { it.unit }.toSet().size
+@Composable
+private fun Pieces(model: MainModel, a: Analysis, moment: Moment?) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val hardCut = HardCut
     Heading("Pieces") {
-        append("${a.pieces.size} from $units sentences · ")
         withStyle(SpanStyle(color = hardCut)) { append("purple") }
         append(" = hard cut")
     }
@@ -372,9 +473,9 @@ private fun Curtain(model: MainModel, a: Analysis) {
             Text("len", style = small, color = muted, modifier = Modifier.weight(0.5f), textAlign = TextAlign.End)
             Text("pitch", style = small, color = muted, modifier = Modifier.weight(0.6f), textAlign = TextAlign.End)
         }
-        val shown = if (all) a.pieces.size else minOf(a.pieces.size, 12)
+        val shown = if (all) a.pieces.size else minOf(a.pieces.size, PIECES_SHOWN)
         a.pieces.take(shown).forEachIndexed { index, p ->
-            val playing = model.playingPiece == index
+            val playing = model.playingPiece == index || moment?.piece == index
             Row(
                 Modifier.fillMaxWidth()
                     .background(if (playing) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(6.dp))
@@ -388,7 +489,7 @@ private fun Curtain(model: MainModel, a: Analysis) {
                     Text(p.covers, fontFamily = mono, fontSize = 12.sp, color = if (p.hard) HardCut else Recorded, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text("#${p.unit}", fontFamily = mono, fontSize = 12.sp, color = muted, modifier = Modifier.weight(1f))
-                Text("%.2f".format(Locale.ROOT, p.atS), fontFamily = mono, fontSize = 12.sp, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                Text("%.2f".format(Locale.ROOT, p.recS), fontFamily = mono, fontSize = 12.sp, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
                 Text("%.0f".format(Locale.ROOT, p.lenMs), fontFamily = mono, fontSize = 12.sp, modifier = Modifier.weight(0.5f), textAlign = TextAlign.End)
                 Text("${p.pitch}", fontFamily = mono, fontSize = 12.sp, modifier = Modifier.weight(0.6f), textAlign = TextAlign.End)
             }
@@ -406,12 +507,6 @@ private fun Curtain(model: MainModel, a: Analysis) {
                 if (planned.pauseMs > 0) Text("— pause ${planned.pauseMs} ms", fontSize = 11.sp, color = muted, modifier = Modifier.padding(start = 16.dp, bottom = 2.dp))
             }
         }
-        Text(
-            "Tap a piece to hear it as it was recorded",
-            style = MaterialTheme.typography.bodySmall,
-            color = muted,
-            modifier = Modifier.padding(top = 8.dp),
-        )
         if (a.pieces.size > shown) {
             Text(
                 "Show all ${a.pieces.size} pieces",
@@ -421,31 +516,123 @@ private fun Curtain(model: MainModel, a: Analysis) {
             )
         }
     }
+}
 
-    a.audio?.let { audio ->
-        Heading("Audio") {
-            append("%.2f s · %s Hz · %s samples".format(Locale.ROOT, audio.seconds, grouped(audio.rate.toLong()), grouped(audio.samples)))
+private const val PIECES_SHOWN = 12
+
+/** The waveform and, on its time axis, the strip of sounds; both scroll sideways when long, following the playhead. */
+@Composable
+private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
+    val primary = MaterialTheme.colorScheme.primary
+    Heading("Audio") {
+        if (moment != null) {
+            withStyle(SpanStyle(color = primary, fontWeight = FontWeight.Medium)) { append("%.2f s".format(Locale.ROOT, moment.seconds)) }
+            append(" / ")
         }
-        val color = MaterialTheme.colorScheme.primary
-        val head = MaterialTheme.colorScheme.onSurface
-        val playhead = model.playheadS
-        Panel {
-            Canvas(Modifier.fillMaxWidth().height(72.dp)) {
-                val env = audio.envelope
-                if (env.isEmpty()) return@Canvas
-                val mid = size.height / 2
-                val step = size.width / (env.size - 1).coerceAtLeast(1)
-                val path = Path().apply {
-                    moveTo(0f, mid)
-                    env.forEachIndexed { i, e -> lineTo(i * step, mid - e * mid) }
-                    for (i in env.indices.reversed()) lineTo(i * step, mid + env[i] * mid)
-                    close()
+        append("%.2f s · %s Hz".format(Locale.ROOT, audio.seconds, grouped(audio.rate.toLong())))
+    }
+    val muted = primary.copy(alpha = 0.35f)
+    val head = MaterialTheme.colorScheme.onSurface
+    val axis = MaterialTheme.colorScheme.outline
+    val wordMark = MaterialTheme.colorScheme.primaryContainer
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val pauseBlock = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val recorded = Recorded
+    val missing = Missing
+    val measurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(fontFamily = mono, fontSize = 9.sp, letterSpacing = (-0.5).sp)
+    val labels = remember(a, measurer) { a.sounds.map { if (it.pause) null else measurer.measure(it.sym, labelStyle) } }
+    Panel {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val density = LocalDensity.current
+            val viewport = constraints.maxWidth.toFloat()
+            val width = maxOf(maxWidth, (audio.seconds * DP_PER_SECOND).dp)
+            val widthPx = with(density) { width.toPx() }
+            val scroll = rememberScrollState()
+            // keep the playhead in view while speaking
+            val x = moment?.let { (it.seconds / audio.seconds).toFloat().coerceIn(0f, 1f) * widthPx }
+            LaunchedEffect(x) {
+                if (x != null && (x < scroll.value || x > scroll.value + viewport * 0.8f)) scroll.scrollTo((x - viewport * 0.2f).toInt().coerceAtLeast(0))
+            }
+            Box(Modifier.horizontalScroll(scroll)) {
+                Canvas(Modifier.width(width).height(112.dp)) {
+                    val waveH = 72.dp.toPx()
+                    val perS = size.width / audio.seconds.toFloat().coerceAtLeast(0.001f)
+                    val env = audio.envelope
+                    val mid = waveH / 2
+                    if (env.isNotEmpty()) {
+                        val step = audio.step.toFloat() / audio.rate * perS
+                        val path = Path().apply {
+                            moveTo(0f, mid)
+                            env.forEachIndexed { i, e -> lineTo((i + 0.5f) * step, mid - e * mid) }
+                            lineTo(env.size * step, mid)
+                            for (i in env.indices.reversed()) lineTo((i + 0.5f) * step, mid + env[i] * mid)
+                            close()
+                        }
+                        drawLine(primary.copy(alpha = 0.3f), Offset(0f, mid), Offset(size.width, mid), 1f)
+                        if (x == null) {
+                            drawPath(path, primary)
+                        } else {
+                            clipRect(right = x) { drawPath(path, primary) }
+                            clipRect(left = x) { drawPath(path, muted) }
+                        }
+                    }
+                    // the strip: a tick at every sound boundary (longer at words), labels centred in their span
+                    val top = waveH + 6.dp.toPx()
+                    val labelTop = top + 9.dp.toPx()
+                    val labelH = 14.dp.toPx()
+                    val tick = 1.dp.toPx()
+                    var lastEnd = Float.NEGATIVE_INFINITY
+                    a.sounds.forEachIndexed { i, s ->
+                        val x0 = (s.atS * perS).toFloat()
+                        val x1 = (s.endS * perS).toFloat()
+                        if (s.pause) {
+                            drawRoundRect(pauseBlock, Offset(x0 + tick, labelTop), Size((x1 - x0 - 2 * tick).coerceAtLeast(0f), labelH), CornerRadius(2.dp.toPx()))
+                            return@forEachIndexed
+                        }
+                        drawLine(axis, Offset(x0, top), Offset(x0, top + (if (s.wordStart) 8 else 4).dp.toPx()), tick)
+                        val inWord = moment?.word != null && s.word == moment.word
+                        if (i == moment?.sound) drawRect(primary, Offset(x0, labelTop), Size(x1 - x0, labelH))
+                        else if (inWord) drawRect(wordMark, Offset(x0, labelTop), Size(x1 - x0, labelH))
+                        val label = labels[i] ?: return@forEachIndexed
+                        val lx = (x0 + x1) / 2 - label.size.width / 2
+                        // a label that would collide is left out, unless it is the one playing
+                        if (lx < lastEnd && i != moment?.sound) return@forEachIndexed
+                        drawText(
+                            label,
+                            color = if (i == moment?.sound) onPrimary else if (s.known) recorded else missing,
+                            topLeft = Offset(lx, labelTop + (labelH - label.size.height) / 2),
+                        )
+                        lastEnd = lx + label.size.width
+                    }
+                    if (x != null) {
+                        drawLine(head, Offset(x, 4.dp.toPx()), Offset(x, labelTop + labelH), 2.dp.toPx())
+                        drawCircle(head, 4.dp.toPx(), Offset(x, 4.dp.toPx()))
+                    }
                 }
-                drawLine(color.copy(alpha = 0.3f), Offset(0f, mid), Offset(size.width, mid), 1f)
-                drawPath(path, color)
-                if (playhead != null && audio.seconds > 0 && model.analysis?.voice == model.selectedVoice()?.name) {
-                    val x = (playhead / audio.seconds).toFloat().coerceIn(0f, 1f) * size.width
-                    drawLine(head, Offset(x, 0f), Offset(x, size.height), 3f)
+            }
+        }
+    }
+}
+
+/** Advanced: what the voice is made of, collapsible. */
+@Composable
+private fun Details(d: VoiceDetails) {
+    var open by rememberSaveable { mutableStateOf(true) }
+    Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Voice details", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (open) "Collapse" else "Expand",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (open) {
+        Panel {
+            d.rows.forEach { (label, value) ->
+                Row(Modifier.padding(vertical = 3.dp)) {
+                    Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.4f))
+                    Text(value, fontFamily = mono, fontSize = 12.sp, modifier = Modifier.weight(0.6f))
                 }
             }
         }

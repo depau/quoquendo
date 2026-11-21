@@ -16,6 +16,7 @@ import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import android.webkit.MimeTypeMap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,10 +36,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import java.util.Locale
 
 /** A catalog download: running, waiting its turn, or failed. */
 sealed interface Download {
@@ -53,29 +52,54 @@ data class Import(val name: String, val done: Long, val total: Long, val unpacki
 /** A snackbar to show, with a Retry action when [retry] is set. */
 data class Snack(val message: String, val error: Boolean = false, val retry: (() -> Unit)? = null)
 
-/** The status line under Speak. */
+/** The line under Speak, when something stands in the way. */
 data class Status(val kind: Kind, val text: String) {
-    enum class Kind { Ok, Busy, Info, Warn, Error }
+    enum class Kind { Warn, Error }
 }
 
-/** What the analysis shows: sounds, recorded pieces and the waveform outline. */
-data class Analysis(
-    val voice: String,
-    val text: String,
-    val phrases: List<AnPhrase>,
+/** A format Save writes (`Native.formats`). */
+data class SaveFormat(val ext: String, val label: String, val hint: String, val mime: String)
+
+/** What an analysis was made of: its voice, text, joining and reading language (null: the voice's own). */
+data class AnalysisKey(val voice: String, val text: String, val smooth: Boolean, val language: String?)
+
+/** What the analysis shows: sounds, recorded pieces, words and the waveform outline, all timed. */
+class Analysis(
+    val key: AnalysisKey,
+    val sounds: List<AnSound>,
     val plan: List<AnPlanned>,
     val pieces: List<AnPiece>,
+    val words: List<AnWord>,
     val sentences: Int,
     val audio: AnAudio?,
+    /** the audio itself, which Speak plays */
+    val rendered: Rendered?,
+) {
+    val voice: String get() = key.voice
+    val text: String get() = key.text
+
+    /** The sound playing at [s] seconds (an index into [sounds]). */
+    fun soundAt(s: Double): Int? = sounds.indexOfLast { it.atS <= s }.takeIf { it >= 0 && s < sounds[it].endS }
+
+    /** The piece playing at [s] seconds (an index into [pieces]). */
+    fun pieceAt(s: Double): Int? = pieces.indexOfFirst { s >= it.atS && s < it.endS }.takeIf { it >= 0 }
+}
+data class AnSound(
+    val sym: String, val known: Boolean, val atS: Double, val endS: Double,
+    val word: Int?, val phrase: Int, val wordStart: Boolean, val pause: Boolean,
 )
-data class AnPhone(val sym: String, val known: Boolean, val wordStart: Boolean)
-data class AnPhrase(val phones: List<AnPhone>, val pauseMs: Int, val mood: String?)
 data class AnPlanned(val pauseMs: Int, val mood: String?, val missing: List<String>)
 data class AnPiece(
     val phrase: Int, val covers: String, val unit: Int, val sentence: String,
-    val from: Int, val to: Int, val atS: Double, val lenMs: Double, val pitch: Int, val hard: Boolean,
+    val from: Int, val to: Int, val recS: Double, val lenMs: Double, val pitch: Int, val hard: Boolean,
+    val atS: Double, val endS: Double,
 )
-data class AnAudio(val rate: Int, val samples: Long, val seconds: Double, val envelope: FloatArray)
+/** A word: its UTF-16 range in the text and, when spoken, its time. */
+data class AnWord(val start: Int, val end: Int, val atS: Double?, val endS: Double?)
+data class AnAudio(val rate: Int, val samples: Long, val seconds: Double, val step: Int, val envelope: FloatArray)
+
+/** The Voice details rows, and the languages the voice can read with (its own first). */
+data class VoiceDetails(val voice: String, val language: String, val languages: List<String>, val rows: List<Pair<String, String>>)
 
 /** The app's state; its work lives as long as the app is open. */
 class MainModel(app: Application) : AndroidViewModel(app) {
@@ -93,12 +117,13 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var wifiOnly by mutableStateOf(prefs.getBoolean("wifi_only", true))
         private set
-    var showCurtain by mutableStateOf(prefs.getBoolean("show_curtain", false))
+    var advanced by mutableStateOf(prefs.getBoolean(VoiceStore.ADVANCED, false))
         private set
-    /** The voice apps get, by locale tag, where Settings chose one. */
-    var chosenVoices by mutableStateOf(
-        prefs.all.mapNotNull { (k, v) -> if (k.startsWith(VoiceStore.DEFAULT_VOICE) && v is String) k.removePrefix(VoiceStore.DEFAULT_VOICE) to v else null }.toMap(),
-    )
+    /** Joining: Smoothed rather than Like the original (in effect with [advanced]). */
+    var smoothChoice by mutableStateOf(prefs.getBoolean(VoiceStore.SMOOTH, false))
+        private set
+    /** The voice chosen for each language (`en`) in Settings. */
+    var voiceChoices by mutableStateOf(readChoices())
         private set
 
     // voices
@@ -117,13 +142,28 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var volume by mutableStateOf(prefs.getFloat("volume", 0.8f))
         private set
+    /** The reading language picked in Advanced (null: the voice's own). */
+    var language by mutableStateOf<String?>(null)
+        private set
+    val formats: List<SaveFormat> = JSONArray(Native.formats()).let { a ->
+        (0 until a.length()).map { a.getJSONObject(it) }.map { SaveFormat(it.getString("ext"), it.getString("label"), it.getString("hint"), it.getString("mime")) }
+    }
+    var saveFormat by mutableStateOf(formats.firstOrNull { it.ext == prefs.getString("save_format", "flac") } ?: formats.first())
+        private set
+    var saving by mutableStateOf(false)
+        private set
     var status by mutableStateOf<Status?>(null)
         private set
     var speaking by mutableStateOf(false)
         private set
+    /** The analysis being spoken, and how far into it. */
+    var spoken by mutableStateOf<Analysis?>(null)
+        private set
     var playheadS by mutableStateOf<Double?>(null)
         private set
     var analysis by mutableStateOf<Analysis?>(null)
+        private set
+    var details by mutableStateOf<VoiceDetails?>(null)
         private set
     var playingPiece by mutableStateOf<Int?>(null)
         private set
@@ -138,6 +178,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     }, app.packageName)
     private var utterance = 0
     private var speakJob: Job? = null
+    private var analysisJob: Job? = null
+    private var pendingKey: AnalysisKey? = null
 
     /** The voice loaded in this process for analysis, saving and piece playback. */
     private var handle = 0L
@@ -158,6 +200,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
                 val (list, used) = withContext(Dispatchers.IO) { store.installed() to store.bytesUsed() }
                 installed = list
                 bytesUsed = used
+                VoiceStore.migrateChoices(prefs, list)
+                voiceChoices = readChoices()
             } catch (e: Exception) {
                 fail("Could not list voices: ${e.message}")
             }
@@ -182,7 +226,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     private fun blockedByWifi(): String? {
         if (!wifiOnly) return null
         val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
-        return if (cm.isActiveNetworkMetered) "Download on Wi-Fi only is on, and this network is metered" else null
+        return if (cm.isActiveNetworkMetered) "metered network, Wi-Fi only is on" else null
     }
 
     fun download(i: Installer) {
@@ -228,7 +272,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     /** Fetch the language data [v] lacks from the mirror. */
     fun downloadLanguage(v: InstalledVoice) {
         if (mirror.isEmpty()) {
-            snack("No voice mirror is set: add any ${languageOf(v)} voice from the catalog to bring its language data")
+            snack("No voice mirror: add any ${languageOf(v)} voice from the catalog")
             return
         }
         viewModelScope.launch {
@@ -273,7 +317,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
                 Log.e(VoiceStore.TAG, "import of $name failed", e)
                 val why = e.message ?: e.javaClass.simpleName
                 val notVoice = "no Loquendo voice" in why || "no voice cabinet" in why
-                fail(if (notVoice) "Not a Loquendo voice: $name holds no voice configurator (.vcf)" else "$name: $why")
+                fail(if (notVoice) "Not a Loquendo voice: $name" else "$name: $why")
             } finally {
                 importing = null
                 refresh()
@@ -294,6 +338,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
                     store.delete(v.name)
                 }
                 if (analysis?.voice == v.name) analysis = null
+                if (details?.voice == v.name) details = null
                 snack("${v.name} deleted")
             } catch (e: Exception) {
                 fail("Could not delete ${v.name}: ${e.message}")
@@ -314,19 +359,45 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("wifi_only", on).apply()
     }
 
-    fun updateShowCurtain(on: Boolean) {
-        showCurtain = on
-        prefs.edit().putBoolean("show_curtain", on).apply()
-        val v = selectedVoice()
-        if (on && v != null && v.ready && text.isNotBlank()) analyse(v, text)
+    fun updateAdvanced(on: Boolean) {
+        advanced = on
+        prefs.edit().putBoolean(VoiceStore.ADVANCED, on).apply()
+        scheduleAnalysis()
     }
 
-    /** The voice apps get for [locale] (`VoiceStore.defaultFor`). */
-    fun defaultVoiceFor(locale: java.util.Locale): InstalledVoice? = VoiceStore.defaultFor(installed, locale, chosenVoices[locale.toLanguageTag()])
+    fun updateSmooth(on: Boolean) {
+        smoothChoice = on
+        prefs.edit().putBoolean(VoiceStore.SMOOTH, on).apply()
+        scheduleAnalysis()
+    }
 
-    fun updateDefaultVoice(locale: java.util.Locale, name: String) {
-        chosenVoices = chosenVoices + (locale.toLanguageTag() to name)
-        prefs.edit().putString(VoiceStore.defaultVoiceKey(locale), name).apply()
+    private fun readChoices(): Map<String, String> = VoiceStore.choices(prefs)
+
+    /** The languages (`en`) installed voices speak, by name. */
+    fun appLanguages(): List<String> =
+        installed.filter { it.speakable }.flatMap { v -> v.locales.map { it.language } }.distinct().sortedBy { languageName(it) }
+
+    /** How many regions the installed voices speak [language] in. */
+    fun regions(language: String): Int = VoiceStore.regions(installed, language)
+
+    fun speakersOf(language: String): List<InstalledVoice> = VoiceStore.speakers(installed, language)
+
+    /**
+     * The voice chosen for [language] (`en`); else, when its voices all come
+     * from one region, the one apps get there; else null (Match the region).
+     */
+    fun appVoice(language: String): InstalledVoice? {
+        val speakers = speakersOf(language)
+        voiceChoices[language]?.let { name -> speakers.firstOrNull { it.name == name } }?.let { return it }
+        if (regions(language) > 1) return null
+        val locale = speakers.flatMap { it.locales }.firstOrNull { it.language == language } ?: return null
+        return VoiceStore.regionalFor(installed, locale)
+    }
+
+    /** Give apps [name] for every region of [language], or (null) each region's own voice. */
+    fun chooseAppVoice(language: String, name: String?) {
+        voiceChoices = if (name == null) voiceChoices - language else voiceChoices + (language to name)
+        prefs.edit().apply { if (name == null) remove(VoiceStore.voiceForKey(language)) else putString(VoiceStore.voiceForKey(language), name) }.apply()
     }
 
     fun refreshDefaultEngine() {
@@ -346,13 +417,20 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     fun selectVoice(v: InstalledVoice) {
         val previous = selectedVoice()
         voiceName = v.name
+        language = null
         prefs.edit().putString("voice", v.name).apply()
-        if (text.isBlank() || text == previous?.demoSentence) updateText(v.demoSentence)
+        if (text.isBlank() || text == previous?.demoSentence) updateText(v.demoSentence) else scheduleAnalysis()
     }
 
     fun updateText(t: String) {
         text = t
         prefs.edit().putString("text", t).apply()
+        scheduleAnalysis()
+    }
+
+    /** Back to the voice's own sentence. */
+    fun sampleText() {
+        selectedVoice()?.let { updateText(it.demoSentence) }
     }
 
     fun updateVolume(v: Float) {
@@ -360,82 +438,143 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putFloat("volume", v).apply()
     }
 
+    fun updateLanguage(l: String) {
+        language = l.takeIf { it != details?.language }
+        scheduleAnalysis()
+    }
+
+    fun updateSaveFormat(f: SaveFormat) {
+        saveFormat = f
+        prefs.edit().putString("save_format", f.ext).apply()
+    }
+
     /** Why [v] can't speak, as the status line puts it, or null. */
     fun cannotSpeak(v: InstalledVoice): String? = when {
         v.unsupported != null -> "${v.name} can't speak yet: ${v.unsupported}"
-        v.languageMissing -> "${v.name} can't speak: needs ${v.motherTongue} language data — add any ${languageOf(v)} voice or download it from the mirror"
+        v.languageMissing -> "${v.name} needs ${v.motherTongue} language data"
         else -> null
     }
 
-    fun speak() {
-        val v = selectedVoice() ?: return
-        cannotSpeak(v)?.let { status = Status(Status.Kind.Warn, it); return }
-        if (text.isBlank()) {
-            status = Status(Status.Kind.Info, "Nothing to speak — type some text first")
+    /** What the Try it screen shows now, or null when there is nothing to analyse. */
+    private fun currentKey(v: InstalledVoice? = selectedVoice()): AnalysisKey? {
+        if (v == null || !v.ready || text.isBlank()) return null
+        return AnalysisKey(v.name, text, advanced && smoothChoice, language.takeIf { advanced })
+    }
+
+    /** Analyse and render what the screen shows after [delayMs], replacing a pending analysis. */
+    fun scheduleAnalysis(delayMs: Long = ANALYSIS_DELAY_MS) {
+        val v = selectedVoice()
+        val key = currentKey(v)
+        if (key == null || v == null) {
+            analysisJob?.cancel()
+            pendingKey = null
+            analysis = null
             return
         }
-        val locale = v.locales.firstOrNull()
-        tts.voices?.firstOrNull { locale != null && it.name == VoiceStore.ttsVoiceName(v.name, locale) }
-            ?.let { tts.voice = it }
-            ?: locale?.let { tts.language = it }
-        val id = "qq-${++utterance}"
-        current = Utterance(id, SystemClock.elapsedRealtime())
+        if (analysis?.key == key || (pendingKey == key && analysisJob?.isActive == true)) return
+        analysisJob?.cancel()
+        pendingKey = key
+        analysisJob = viewModelScope.launch {
+            delay(delayMs)
+            analyse(v, key)
+        }
+    }
+
+    private suspend fun analyse(v: InstalledVoice, key: AnalysisKey): Analysis? = try {
+        val (a, d) = withContext(Dispatchers.Default) {
+            synchronized(handleLock) {
+                val h = handleFor(v)
+                val d = if (details?.voice != v.name) parseDetails(v.name, JSONObject(Native.details(h))) else null
+                parse(key, Native.analyse(h, key.text, key.smooth, key.language)) to d
+            }
+        }
+        d?.let { details = it }
+        analysis = a
+        playingPiece = null
+        if (status?.kind == Status.Kind.Error) status = null
+        a
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.e(VoiceStore.TAG, "analysis failed", e)
+        status = Status(Status.Kind.Error, "Analysis failed: ${e.message}")
+        null
+    }
+
+    /** Speak the rendered preview through the engine, rendering it first if the text just changed. */
+    fun speak() {
+        val v = selectedVoice() ?: return
+        val key = currentKey(v) ?: return
         speaking = true
-        status = Status(Status.Kind.Busy, "Rendering…")
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume) }, id)
-        if (showCurtain) analyse(v, text)
+        speakJob?.cancel()
+        speakJob = viewModelScope.launch {
+            val a = analysis?.takeIf { it.key == key } ?: run {
+                analysisJob?.cancel()
+                pendingKey = null
+                analyse(v, key)
+            }
+            if (a == null) {
+                speaking = false
+                return@launch
+            }
+            val locale = v.locales.firstOrNull()
+            tts.voices?.firstOrNull { locale != null && it.name == VoiceStore.ttsVoiceName(v.name, locale) }
+                ?.let { tts.voice = it }
+                ?: locale?.let { tts.language = it }
+            val id = "qq-${++utterance}"
+            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume) }
+            a.rendered?.let {
+                Prerendered.put(id, a.text, it)
+                params.putString(Prerendered.KEY, id)
+            }
+            current = Utterance(id, a.audio?.rate ?: 0)
+            spoken = a
+            tts.speak(a.text, TextToSpeech.QUEUE_FLUSH, params, id)
+        }
     }
 
     fun stop() {
         tts.stop()
         finishSpeaking(null)
-        status = Status(Status.Kind.Info, "Stopped")
     }
 
-    /** Timing of the utterance being spoken, from the engine's callbacks. */
-    private class Utterance(val id: String, val asked: Long) {
-        var rendered: Long = 0
-        var rate: Int = 0
-        var bytes: Long = 0
-        var playing: Long = 0
-        val seconds: Double get() = if (rate > 0) bytes / 2.0 / rate else 0.0
+    /**
+     * Where the utterance being spoken is: the time since playback started,
+     * set right at each word as playback reaches it.
+     */
+    private class Utterance(val id: String, @Volatile var rate: Int) {
+        @Volatile var anchorS = 0.0
+        @Volatile var anchorAt = 0L
+        fun at(now: Long): Double = anchorS + (now - anchorAt) / 1000.0
     }
     @Volatile private var current: Utterance? = null
 
     private inner class Progress : UtteranceProgressListener() {
         override fun onBeginSynthesis(id: String, sampleRate: Int, audioFormat: Int, channelCount: Int) {
-            current?.takeIf { it.id == id }?.let { it.rate = sampleRate; it.rendered = SystemClock.elapsedRealtime() }
-        }
-
-        override fun onAudioAvailable(id: String, audio: ByteArray) {
-            current?.takeIf { it.id == id }?.let { it.bytes += audio.size }
+            current?.takeIf { it.id == id }?.let { it.rate = sampleRate }
         }
 
         override fun onStart(id: String) {
             val u = current?.takeIf { it.id == id } ?: return
-            u.playing = SystemClock.elapsedRealtime()
-            speakJob?.cancel()
-            speakJob = viewModelScope.launch {
+            u.anchorAt = SystemClock.elapsedRealtime()
+            viewModelScope.launch {
+                val total = spoken?.audio?.seconds ?: Double.MAX_VALUE
                 while (isActive && current === u) {
-                    val at = (SystemClock.elapsedRealtime() - u.playing) / 1000.0
-                    playheadS = at
-                    // the length is known up front only from the analysis of this same text
-                    val total = analysis?.takeIf { it.voice == selectedVoice()?.name && it.text == text }?.audio?.seconds
-                    status = Status(
-                        Status.Kind.Busy,
-                        if (total != null) "Speaking… %.1f s of %.2f s".format(java.util.Locale.ROOT, minOf(at, total), total)
-                        else "Speaking… %.1f s".format(java.util.Locale.ROOT, at),
-                    )
-                    delay(100)
+                    playheadS = u.at(SystemClock.elapsedRealtime()).coerceAtMost(total)
+                    delay(16)
                 }
             }
         }
 
-        override fun onDone(id: String) {
+        override fun onRangeStart(id: String, start: Int, end: Int, frame: Int) {
             val u = current?.takeIf { it.id == id } ?: return
-            val renderedIn = if (u.rendered > 0) (u.rendered - u.asked) / 1000.0 else 0.0
-            finishSpeaking(u)
-            status = Status(Status.Kind.Ok, "Spoke %.2f s · rendered in %.1f s".format(java.util.Locale.ROOT, u.seconds, renderedIn))
+            if (u.rate <= 0) return
+            u.anchorS = frame.toDouble() / u.rate
+            u.anchorAt = SystemClock.elapsedRealtime()
+        }
+
+        override fun onDone(id: String) {
+            current?.takeIf { it.id == id }?.let { finishSpeaking(it) }
         }
 
         override fun onStop(id: String, interrupted: Boolean) {
@@ -448,7 +587,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         override fun onError(id: String, errorCode: Int) {
             val u = current?.takeIf { it.id == id } ?: return
             finishSpeaking(u)
-            status = Status(Status.Kind.Error, "Speaking failed (engine error $errorCode) — see the log for details")
+            status = Status(Status.Kind.Error, "Speaking failed (engine error $errorCode)")
         }
     }
 
@@ -456,6 +595,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         if (u == null || current === u) current = null
         speakJob?.cancel()
         speaking = false
+        spoken = null
         playheadS = null
     }
 
@@ -475,21 +615,6 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         if (handle != 0L) Native.freeVoice(handle)
         handle = 0
         handleVoice = null
-    }
-
-    fun analyse(v: InstalledVoice, text: String) {
-        viewModelScope.launch {
-            try {
-                analysis = withContext(Dispatchers.Default) {
-                    val json = synchronized(handleLock) { Native.analyse(handleFor(v), text) }
-                    parse(v.name, text, JSONObject(json))
-                }
-                playingPiece = null
-            } catch (e: Exception) {
-                Log.e(VoiceStore.TAG, "analysis failed", e)
-                status = Status(Status.Kind.Error, "Analysis failed: ${e.message}")
-            }
-        }
     }
 
     /** Play one recorded piece as it sits in the recordings, stopping the one before. */
@@ -531,31 +656,26 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Render with the picked voice in this process and save it to Downloads as quoquendo.wav or .mp3. */
-    fun save(mp3: Boolean) {
+    /** Render what the screen shows in the chosen format and save it to Downloads. */
+    fun save() {
         val v = selectedVoice() ?: return
-        cannotSpeak(v)?.let { status = Status(Status.Kind.Warn, it); return }
-        if (text.isBlank()) {
-            status = Status(Status.Kind.Info, "Nothing to speak — type some text first")
-            return
-        }
-        val words = text
-        status = Status(Status.Kind.Busy, "Rendering ${v.name}…")
+        val key = currentKey(v) ?: return
+        val f = saveFormat
+        saving = true
         viewModelScope.launch {
             try {
-                val (bytes, seconds) = withContext(Dispatchers.Default) {
-                    val (pcm, rate) = synchronized(handleLock) {
-                        val h = handleFor(v)
-                        Native.synthesize(h, words) to Native.sampleRate(h)
-                    }
-                    (if (mp3) Native.encodeMp3(pcm, rate) else wav(pcm, rate)) to pcm.size.toDouble() / rate
+                val bytes = withContext(Dispatchers.Default) {
+                    synchronized(handleLock) { Native.export(handleFor(v), key.text, f.ext, key.smooth, key.language) }
                 }
-                val name = if (mp3) "quoquendo.mp3" else "quoquendo.wav"
-                val where = withContext(Dispatchers.IO) { writeDownload(name, bytes, if (mp3) "audio/mpeg" else "audio/wav") }
-                status = Status(Status.Kind.Ok, "Saved %s · %.2f s · %d KB".format(java.util.Locale.ROOT, where, seconds, bytes.size / 1000))
+                // MediaStore names the file by its own MIME map (audio/x-wav, not audio/wav)
+                val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.ext) ?: f.mime
+                val where = withContext(Dispatchers.IO) { writeDownload("quoquendo.${f.ext}", bytes, mime) }
+                snack("Saved $where to Downloads")
             } catch (e: Exception) {
                 Log.e(VoiceStore.TAG, "save failed", e)
-                status = Status(Status.Kind.Error, "Could not save: ${e.message}")
+                fail("Could not save: ${e.message}")
+            } finally {
+                saving = false
             }
         }
     }
@@ -579,30 +699,20 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         return name
     }
 
-    private fun wav(pcm: ShortArray, rate: Int): ByteArray {
-        val data = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-        pcm.forEach { data.putShort(it) }
-        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
-            put("RIFF".toByteArray()); putInt(36 + pcm.size * 2); put("WAVE".toByteArray())
-            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1); putInt(rate); putInt(rate * 2); putShort(2); putShort(16)
-            put("data".toByteArray()); putInt(pcm.size * 2)
-        }
-        return ByteArrayOutputStream(44 + pcm.size * 2).apply { write(header.array()); write(data.array()) }.toByteArray()
-    }
-
     override fun onCleared() {
         tts.shutdown()
         synchronized(handleLock) { freeHandle() }
     }
 
-    private fun parse(voice: String, text: String, o: JSONObject): Analysis {
+    private fun parse(key: AnalysisKey, analysed: Analysed): Analysis {
+        val o = JSONObject(analysed.json)
         fun JSONArray.objs() = (0 until length()).map { getJSONObject(it) }
         fun JSONObject.str(k: String) = if (isNull(k)) null else getString(k)
-        val phrases = o.getJSONArray("phrases").objs().map { p ->
-            AnPhrase(
-                p.getJSONArray("phones").objs().map { AnPhone(it.getString("sym"), it.getBoolean("known"), it.getBoolean("wordStart")) },
-                p.getInt("pauseMs"),
-                p.str("mood"),
+        fun JSONObject.num(k: String) = if (isNull(k)) null else getDouble(k)
+        val sounds = o.getJSONArray("sounds").objs().map { s ->
+            AnSound(
+                s.getString("sym"), s.getBoolean("known"), s.getDouble("atS"), s.getDouble("endS"),
+                if (s.isNull("word")) null else s.getInt("word"), s.getInt("phrase"), s.getBoolean("wordStart"), s.getBoolean("pause"),
             )
         }
         val plan = o.getJSONArray("plan").objs().map { p ->
@@ -618,17 +728,39 @@ class MainModel(app: Application) : AndroidViewModel(app) {
                 p.getString("sentence"),
                 p.getInt("from"),
                 p.getInt("to"),
-                p.getDouble("atS"),
+                p.getDouble("recS"),
                 p.getDouble("lenMs"),
                 p.getInt("pitch"),
                 p.getBoolean("hard"),
+                p.getDouble("atS"),
+                p.getDouble("endS"),
             )
         }
+        val words = o.getJSONArray("words").objs().map { w -> AnWord(w.getInt("start"), w.getInt("end"), w.num("atS"), w.num("endS")) }
         val a = o.getJSONObject("audio")
         val audio = if (a.has("error")) null else {
             val env = a.getJSONArray("envelope")
-            AnAudio(a.getInt("rate"), a.getLong("samples"), a.getDouble("seconds"), FloatArray(env.length()) { env.getDouble(it).toFloat() })
+            AnAudio(a.getInt("rate"), a.getLong("samples"), a.getDouble("seconds"), a.getInt("step"), FloatArray(env.length()) { env.getDouble(it).toFloat() })
         }
-        return Analysis(voice, text, phrases, plan, pieces, o.getInt("sentences"), audio)
+        return Analysis(key, sounds, plan, pieces, words, o.getInt("sentences"), audio, analysed.audio)
+    }
+
+    private fun parseDetails(voice: String, o: JSONObject): VoiceDetails {
+        val langs = o.getJSONArray("languages")
+        val rows = o.getJSONArray("rows")
+        return VoiceDetails(
+            voice,
+            o.getString("language"),
+            (0 until langs.length()).map { langs.getString(it) },
+            (0 until rows.length()).map { rows.getJSONArray(it).let { r -> r.getString(0) to r.getString(1) } },
+        )
+    }
+
+    companion object {
+        const val ANALYSIS_DELAY_MS = 400L
     }
 }
+
+/** `English` for `en`, in the device's language. */
+fun languageName(language: String): String =
+    Locale.forLanguageTag(language).displayLanguage.ifEmpty { language }.replaceFirstChar { it.titlecase(Locale.getDefault()) }

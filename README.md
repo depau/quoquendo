@@ -30,18 +30,38 @@ language module.
 
 ```sh
 cargo run --release                               # the window
-cargo run --release -- --dev                      # with the developer tools
-quoquendo --say "Attenzione! Allontanarsi dalla linea gialla." --voice Roberto --out out.wav
+cargo run --release -- --advanced                 # in Advanced mode
+cargo run --release -- --original                 # in Original engine (Wine) mode
+quoquendo --say "Attenzione! Allontanarsi dalla linea gialla." --voice Roberto --out out.flac
 quoquendo --selftest
 ```
 
-The window has a Speak tab (Save WAV or MP3; with what the engine did, behind
-a toggle: sounds, the recorded pieces chosen, each playable on its own, and
-the waveform) and a Voices tab (the library; each voice's Explore button opens
-every recorded take of every phone, and every recorded sentence). Developer
-mode, off by default,
-adds the voice's details, swappable stages and the comparison with the
-original engine.
+The window has a Speak tab and a Voices tab. Speak shows what the engine
+makes of the text while you type: its sounds (green when the voice recorded
+them, red when it never did), the recorded pieces chosen for them, each
+playable on its own, and the waveform with the sounds under it. Speak plays
+it, lighting the word, the sound and the piece being said. Save writes WAV,
+FLAC (the default), MP3 or Opus; each file carries the text with each
+word's time: cue markers in WAV, synced lyrics (LRC in `LYRICS`/`USLT`, and
+`SYLT` in MP3) in the others. `--say` picks the format by the file's
+extension. The Voices tab is the library: Use picks a voice, and Explore
+opens every recorded take of every phone, and every recorded sentence.
+
+Two modes, in Settings, are off by default:
+
+- **Advanced**: the voice's details, its inventory and its language data;
+  reading the text with another language's rules; pronunciation from a
+  command (desktop: any program that prints a transcription); and joining the
+  pieces like the original or smoothed.
+- **Original engine (Wine)** (desktop): the original Loquendo engine run under
+  Wine as a separate program (`oracle/run.sh`) for the pronunciation or the
+  piece picking, its audio beside ours on one time axis (each with its own
+  play button; switching plays the other from the same moment), and
+  Compare with the original, which scores each stage against it.
+
+`--screenshot <file.png>` draws the window once everything is ready, saves
+it and quits (with `--play-at <seconds>`, showing the speech at that moment
+as if playing); add `--advanced` or `--original` for those modes.
 
 ### In the browser
 
@@ -65,7 +85,13 @@ The address bar follows the page, so it can be shared and back/forward work:
 ### On Android
 
 `android/` is a system text-to-speech engine: install it, pick Quoquendo in
-the system's TTS settings, and get voices in its Voices screen.
+the system's TTS settings, and get voices in its Voices screen. Try it shows
+the sounds, recorded pieces and waveform of the text as you type, follows
+them word by word while it speaks, and saves WAV, FLAC, MP3 or Opus files
+with the text and its timing embedded. Apps that read aloud get the word
+being spoken too. Settings chooses the voice apps get for each language;
+Advanced adds the reading language, the voice's details and how pieces are
+joined.
 
 [![Add to Obtainium](https://raw.githubusercontent.com/NavicApp/Branding/refs/heads/main/assets/obtainium.svg)][ADD_NIGHTLY_TO_OBTAINIUM]
 

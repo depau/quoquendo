@@ -8,13 +8,12 @@
 mod app;
 mod audio;
 mod catalog;
+mod dev;
 mod route;
 mod store;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod cli;
-#[cfg(not(target_arch = "wasm32"))]
-mod dev;
 #[cfg(not(target_arch = "wasm32"))]
 mod install;
 #[cfg(not(target_arch = "wasm32"))]
@@ -54,8 +53,10 @@ fn main() -> eframe::Result<()> {
         native.persist_window = false;
     }
     let launch = app::Launch {
-        dev: opts.dev,
+        advanced: opts.advanced,
+        original: opts.original,
         screenshot: opts.screenshot.clone(),
+        play_at: opts.play_at,
     };
     eframe::run_native("quoquendo", native, Box::new(|cc| Ok(Box::new(app::App::new(cc, launch)))))
 }
