@@ -17,9 +17,11 @@ and supports `Range` requests. The voices' files and the app's hashed files
 are cached for a year (they never change under a name); `catalog.json`,
 `index.html` and the unpack worker's files for 5 minutes.
 
-The mirror workflow downloads all 47 installers from archive.org, unpacks
-them with `quoquendo --unpack` and uploads the LTTS7 tree (about 2.1 GB).
-Both workflows deploy the Worker.
+The mirror workflow downloads all 47 installers from archive.org (kept in
+the Actions cache for the next run), unpacks them with `quoquendo --unpack`
+and uploads the LTTS7 tree (about 2.1 GB): only the files whose sha256
+differs from the catalog already on the mirror, then the catalog. Both
+workflows deploy the Worker.
 
 ## One-time setup
 
@@ -39,12 +41,14 @@ Both workflows deploy the Worker.
 5. **GitHub.** In the repository's *Settings → Secrets and variables →
    Actions*, add the secrets `CLOUDFLARE_API_TOKEN` and
    `CLOUDFLARE_ACCOUNT_ID`.
-6. **Fill it.** *Actions → mirror → Run workflow* (about an hour: 47
-   downloads and a few thousand uploads), and *Actions → site → Run
+6. **Fill it.** *Actions → mirror → Run workflow* (the first run uploads
+   every file; later ones only what changed), and *Actions → site → Run
    workflow* (or push to `main`).
-7. **Optional: your own domain.** In the dashboard, *Workers & Pages →
-   quoquendo → Settings → Domains & Routes → Add → Custom domain* (the domain
-   must be a zone on the same Cloudflare account).
+7. **Your own domain.** `routes` in `mirror/worker/wrangler.toml` attaches
+   it on every deploy (now `quoquendo.depau.eu`); the domain must be a zone
+   on the same Cloudflare account. Set the repository variable
+   `QQ_MIRROR_URL` to it: the mirror workflow reads the live catalog there,
+   and the Android nightly uses it as its built-in mirror.
 
 The bucket and Worker names are `quoquendo` in `mirror/worker/wrangler.toml`
 and `BUCKET` in both workflows; change all three to use another name.
