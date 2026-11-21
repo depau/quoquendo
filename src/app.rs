@@ -422,7 +422,7 @@ impl App {
                         self.error = voice
                             .language_missing
                             .as_ref()
-                            .map(|t| format!("{} needs {t} language data: add any {t} voice", voice.descriptor.name));
+                            .map(|t| format!("{} needs {t} language data: add any {t} voice or the {t} language distribution", voice.descriptor.name));
                         self.status = format!("{} ready", voice.descriptor.name);
                         self.voice = Some(*voice);
                         self.analyse();
@@ -954,7 +954,7 @@ impl App {
                     ui.label(RichText::new(&v.gender).color(MUTED));
                     match (&v.unsupported, &v.language_missing) {
                         (Some(u), _) => ui.label(RichText::new(format!("{u} — unsupported yet")).color(MUTED)),
-                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data: add any {t} voice or download it from the mirror")).color(AMBER)),
+                        (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data: add any {t} voice or language distribution, or download it from the mirror")).color(AMBER)),
                         (None, None) => ui.label(RichText::new(format!("Ready · {}", catalog::size_label(v.bytes))).color(GREEN)),
                     };
                     ui.horizontal(|ui| {

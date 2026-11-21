@@ -1,7 +1,8 @@
-//! Reading the Wise installers some Loquendo voices ship in (an MSI holding
-//! one Microsoft cabinet) without running them: the cabinet is found by its
-//! `MSCF` signature, its file table read, and its MSZIP data inflated. Works
-//! on bytes, so it runs in a browser too.
+//! Reading the Wise installers some Loquendo voices and the language
+//! distributions ship in (an MSI holding one Microsoft cabinet) without
+//! running them: the cabinet is found by its `MSCF` signature, its file
+//! table read, and its MSZIP data inflated. Works on bytes, so it runs in a
+//! browser too.
 
 use miniz_oxide::inflate::core::{decompress, inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF, DecompressorOxide};
 use miniz_oxide::inflate::TINFLStatus;
@@ -15,9 +16,10 @@ fn u32le(b: &[u8], o: usize) -> Option<u32> {
 }
 
 /// The installed name of a cabinet member: MSI file keys are the file name
-/// plus a number (`LTTS7Jordi.dll1`, `Marcello.sde6`), dropped here.
+/// plus a number (`LTTS7Jordi.dll1`, `Marcello.sde6`, `German.lde4`),
+/// dropped here.
 pub fn member_name(key: &str) -> String {
-    const EXTENSIONS: [&str; 8] = [".sde", ".bin", ".vde", ".vcf", ".dll", ".gde", ".pdf", ".ico"];
+    const EXTENSIONS: [&str; 14] = [".sde", ".bin", ".vde", ".vcf", ".dll", ".gde", ".pdf", ".ico", ".lde", ".dbl", ".lex", ".rex", ".lcf", ".ycf"];
     let stem = key.trim_end_matches(|c: char| c.is_ascii_digit());
     let low = stem.to_ascii_lowercase();
     if stem.len() < key.len() && EXTENSIONS.iter().any(|e| low.ends_with(e)) {
@@ -138,17 +140,20 @@ fn unpack_folder(c: &Cabinet, f: &Folder, need: usize) -> Result<Vec<u8>, String
     Ok(out)
 }
 
-/// Every file of the voice cabinet inside a Wise installer, by its installed
-/// name (`member_name`), with its contents.
+/// Every file of the voice or language cabinet inside a Wise installer, by
+/// its installed name (`member_name`), with its contents. The voice
+/// installers hold one cabinet with a `.vcf`; the language distributions
+/// one with `.lde`s instead.
 pub fn files(exe: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let holds = |c: &Cabinet, ext: &str| c.members.iter().any(|m| m.name.to_ascii_lowercase().ends_with(ext));
     let signature = b"MSCF\0\0\0\0";
     let c = exe
         .windows(signature.len())
         .enumerate()
         .filter(|(_, w)| w == signature)
         .filter_map(|(at, _)| cabinet(exe, at))
-        .find(|c| c.members.iter().any(|m| m.name.to_ascii_lowercase().ends_with(".vcf")))
-        .ok_or("no voice cabinet in this installer")?;
+        .find(|c| holds(c, ".vcf") || holds(c, ".lde"))
+        .ok_or("no Loquendo cabinet in this installer")?;
     let mut out = Vec::with_capacity(c.members.len());
     for (i, f) in c.folders.iter().enumerate() {
         let mine: Vec<&Member> = c.members.iter().filter(|m| m.folder == i).collect();
@@ -248,6 +253,7 @@ mod tests {
         assert_eq!(member_name("Alan.44000.LTTS7CodecMsx.58300.10.bin1"), "Alan.44000.LTTS7CodecMsx.58300.10.bin");
         assert_eq!(member_name("Marcello.44000.LTTS7CodecMsx.58300.10.bin"), "Marcello.44000.LTTS7CodecMsx.58300.10.bin");
         assert_eq!(member_name("Loquendo_TTS_7_Installation_Manual.pdf7"), "Loquendo_TTS_7_Installation_Manual.pdf");
+        assert_eq!(member_name("German.dbl5"), "German.dbl");
         assert_eq!(member_name("Logo.ico"), "Logo.ico");
     }
 }

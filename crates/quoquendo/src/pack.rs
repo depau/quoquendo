@@ -72,13 +72,15 @@ pub fn unpack_installer(exe: &[u8]) -> Result<Unpacked, String> {
 }
 
 /// Wise cabinets are flat: the `.vcf` goes in `data/`, libraries in `bin/`,
-/// the rest in the voice's folder.
+/// the rest in the voice's folder. A language distribution holds no `.vcf`:
+/// its language files go in the folder the `.lcf`s name (`LanguagePath`,
+/// both `Catalan.lcf` and `Valencian.lcf` say `Catalan`), the library in
+/// `bin/`.
 fn place_wise(members: Vec<(String, Vec<u8>)>) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let vcf = members
-        .iter()
-        .find(|(n, _)| lower(n).ends_with(".vcf"))
-        .ok_or("this installer holds no Loquendo voice")?;
-    let voice_path = parse_ini(&latin1(&vcf.1))
+    let Some((_, vcf)) = members.iter().find(|(n, _)| lower(n).ends_with(".vcf")) else {
+        return place_wise_language(members);
+    };
+    let voice_path = parse_ini(&latin1(vcf))
         .get("VoicePath")
         .map(|p| p.replace('\\', "/").trim_matches('/').to_string())
         .ok_or("the voice file names no folder")?;
@@ -94,6 +96,39 @@ fn place_wise(members: Vec<(String, Vec<u8>)>) -> Result<Vec<(String, Vec<u8>)>,
                 return None;
             } else {
                 format!("data/{voice_path}/{name}")
+            };
+            Some((path, data))
+        })
+        .collect())
+}
+
+/// The language branch: `.lde/.dbl/.lex/.rex/.lcf` (and whatever other
+/// language file the cabinet holds) under the `.lcf`'s folder, the library
+/// in `bin/`; the manual and the logo dropped.
+fn place_wise_language(members: Vec<(String, Vec<u8>)>) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let language_folder = || -> Option<String> {
+        let lcf = members.iter().find(|(n, _)| lower(n).ends_with(".lcf"))?;
+        parse_ini(&latin1(&lcf.1))
+            .get("LanguagePath")?
+            .replace('\\', "/")
+            .trim_matches('/')
+            .rsplit('/')
+            .next()
+            .map(str::to_string)
+    };
+    let Some(folder) = language_folder() else {
+        return Err("this installer holds no Loquendo voice or language".into());
+    };
+    Ok(members
+        .into_iter()
+        .filter_map(|(name, data)| {
+            let low = lower(&name);
+            let path = if low.starts_with("ltts7") && low.ends_with(".dll") {
+                format!("bin/{name}")
+            } else if low.ends_with(".pdf") || low.ends_with(".ico") {
+                return None;
+            } else {
+                format!("data/languages/{folder}/{name}")
             };
             Some((path, data))
         })
@@ -158,8 +193,25 @@ fn select(files: Vec<(String, Vec<u8>)>) -> Result<Unpacked, String> {
         }
         voices.push(name.clone());
     }
+    // a language distribution installs no voice: keep its language folders
+    // whole (every file the `.lde`s and `.lcf`s may name is already placed
+    // there), and the libraries they name.
     if voices.is_empty() {
-        return Err("this installer holds no Loquendo voice".into());
+        if ldes.is_empty() {
+            return Err("this installer holds no Loquendo voice".into());
+        }
+        let mut kept: Vec<(String, Vec<u8>)> = Vec::new();
+        for (path, data) in files {
+            let low = lower(&path);
+            let language_file = low.starts_with("data/languages/") && low.matches('/').count() == 3;
+            if language_file || low.starts_with("bin/") && ldes.iter().any(|(_, t)| {
+                let lib = parse_ini(t).get("Library").and_then(|l| l.split(',').next().map(|s| s.trim().to_lowercase()));
+                lib.is_some_and(|lib| low == format!("bin/{lib}.dll"))
+            }) {
+                kept.push((path, data));
+            }
+        }
+        return Ok(Unpacked { voices, files: kept });
     }
     let files = files.into_iter().zip(keep).filter(|(_, k)| *k).map(|(f, _)| f).collect();
     Ok(Unpacked { voices, files })
@@ -191,8 +243,9 @@ mod tests {
         assert_eq!(language_descriptor(&ldes, "Catalan", "ca-ES"), None);
     }
 
-    /// QQ_INSTALLERS=<folder of installers>: every installer unpacks to at
-    /// least one voice with its folder.
+    /// QQ_INSTALLERS=<folder of installers>: every voice installer unpacks to
+    /// at least one voice with its folder; every language distribution to
+    /// its language folder, dictionary and the library its `.lde` names.
     #[test]
     fn unpacks_every_installer() {
         let Some(dir) = std::env::var_os("QQ_INSTALLERS") else { return };
@@ -201,7 +254,19 @@ mod tests {
                 continue;
             }
             let u = unpack_installer(&std::fs::read(e.path()).unwrap()).unwrap();
-            assert!(u.files.iter().any(|(p, _)| p.ends_with(".sde")), "{}", e.path().display());
+            let name = e.path().display().to_string();
+            if !u.voices.is_empty() {
+                assert!(u.files.iter().any(|(p, _)| p.ends_with(".sde")), "{name}");
+                continue;
+            }
+            let ldes: Vec<&(String, Vec<u8>)> = u.files.iter().filter(|(p, _)| p.ends_with(".lde")).collect();
+            assert!(!ldes.is_empty(), "{name}");
+            for (p, d) in ldes {
+                assert!(p.starts_with("data/languages/") && p.matches('/').count() == 3, "{name}: {p}");
+                assert!(u.files.iter().any(|(q, _)| q.starts_with(folder(p)) && q.ends_with(".dbl")), "{name}: {p}");
+                let lib = parse_ini(&latin1(d)).get("Library").and_then(|l| l.split(',').next().map(|s| s.trim().to_string())).unwrap();
+                assert!(u.files.iter().any(|(q, _)| lower(q) == lower(&format!("bin/{lib}.dll"))), "{name}: {lib}");
+            }
         }
     }
 }

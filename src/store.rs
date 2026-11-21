@@ -539,6 +539,21 @@ mod web {
                 entry.dedup();
             }
         }
+        // a language distribution brings no voice: its language folders,
+        // with the library it carries
+        let mut languages = Vec::new();
+        if infos.is_empty() {
+            let bins: Vec<String> = list("bin").into_iter().map(|n| format!("bin/{n}")).collect();
+            for lang in list("data/languages") {
+                let d = format!("data/languages/{lang}");
+                let entry = index.languages.entry(d.clone()).or_default();
+                entry.extend(list(&d).into_iter().map(|n| format!("{d}/{n}")));
+                entry.extend(bins.iter().cloned());
+                entry.sort();
+                entry.dedup();
+                languages.push(format!("{lang} language data"));
+            }
+        }
         for info in &infos {
             let own = own_files(info, &list);
             let bytes = own.iter().filter_map(|p| map.get(p)).map(|d| d.len() as u64).sum();
@@ -552,6 +567,9 @@ mod web {
         index.voices.sort_by(|a, b| a.info.name.cmp(&b.info.name));
         refresh(&mut index).await;
         save_index(&index).await?;
+        if infos.is_empty() {
+            return Ok(languages);
+        }
         Ok(infos.iter().map(|i| i.descriptor.name.clone()).collect())
     }
 

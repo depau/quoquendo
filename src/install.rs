@@ -42,10 +42,11 @@ fn is_exe(p: &Path) -> bool {
     p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"))
 }
 
-/// Unpack a Loquendo voice installer (Inno Setup or Wise), or every
-/// installer in a folder, into the LTTS7 tree at `root` (`quoquendo::pack`:
-/// read, never run). Records which installer brought each voice in
-/// `<root>/installers.json`. Returns the voices unpacked.
+/// Unpack a Loquendo voice installer (Inno Setup or Wise) or language
+/// distribution, or every installer in a folder, into the LTTS7 tree at
+/// `root` (`quoquendo::pack`: read, never run). Records which installer
+/// brought each voice in `<root>/installers.json`. Returns the voices
+/// unpacked, and for a language distribution its languages.
 pub fn unpack(path: &Path, root: &Path) -> Result<Vec<String>, String> {
     if path.is_dir() {
         let mut exes: Vec<PathBuf> = fs::read_dir(path)
@@ -75,7 +76,16 @@ pub fn unpack_bytes(file: &str, exe: Vec<u8>, root: &Path) -> Result<Vec<String>
     drop(exe);
     write_files(root, &unpacked.files)?;
     record_installer(root, file, &unpacked.voices)?;
-    Ok(unpacked.voices)
+    if !unpacked.voices.is_empty() {
+        return Ok(unpacked.voices);
+    }
+    let mut languages: Vec<String> = unpacked
+        .files
+        .iter()
+        .filter_map(|(p, _)| Some(format!("{} language data", p.strip_prefix("data/languages/")?.split_once('/')?.0)))
+        .collect();
+    languages.dedup();
+    Ok(languages)
 }
 
 fn io(p: &Path, e: std::io::Error) -> String {
