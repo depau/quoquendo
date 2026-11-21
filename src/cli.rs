@@ -1,7 +1,6 @@
 //! The command line (desktop): unpacking installers, speaking to a file,
 //! checks against the original engine.
 
-use crate::app::sample_text;
 use crate::dev::{engines, oracle, pipeline};
 use crate::install;
 use quoquendo::{g2p, loquendo, synth};
@@ -155,7 +154,7 @@ fn selftest() -> i32 {
             db.audio_rate()
         );
 
-        let text = sample_text(v);
+        let text = v.sample_text();
         println!("  text: {text}");
         let tokens = analyse(&text, &voice.frontend);
         let words = tokens.iter().filter(|t| matches!(t, Token::Word { .. })).count();

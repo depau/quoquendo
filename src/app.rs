@@ -12,7 +12,6 @@ use eframe::egui::{self, Color32, RichText};
 use quoquendo::g2p::{self, Language};
 #[cfg(not(target_arch = "wasm32"))]
 use quoquendo::loquendo;
-use quoquendo::loquendo::VoiceDescriptor;
 use quoquendo::synth::{self, Settings};
 use std::sync::mpsc::{channel, Receiver};
 
@@ -29,20 +28,6 @@ const AMBER: Color32 = Color32::from_rgb(0xe9, 0xb2, 0x4c);
 const GREEN: Color32 = Color32::from_rgb(0x8b, 0xc9, 0x6e);
 const RED: Color32 = Color32::from_rgb(0xe8, 0x70, 0x5f);
 const LILAC: Color32 = Color32::from_rgb(0xc9, 0xa8, 0xff);
-
-/// The voice's own demo sentence; Italian voices also get the station
-/// warning, the benchmark for "does it sound like the stations".
-pub fn sample_text(v: &VoiceDescriptor) -> String {
-    let demo = v.demo_sentence.trim();
-    let mut text = if demo.is_empty() { v.language().sample_sentence().to_string() } else { demo.to_string() };
-    if v.language() == Language::Italian {
-        if !text.ends_with(['.', '!', '?']) {
-            text.push('.');
-        }
-        text.push_str(" Attenzione! Allontanarsi dalla linea gialla.");
-    }
-    text
-}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -380,7 +365,7 @@ impl App {
                 StoreEvent::Loaded(voice) => {
                     if self.loading.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(&voice.descriptor.name)) {
                         self.loading = None;
-                        let sample = sample_text(&voice.descriptor);
+                        let sample = voice.descriptor.sample_text();
                         if self.text.trim().is_empty() || self.text == self.last_sample {
                             self.text = sample.clone();
                         }
@@ -1480,7 +1465,7 @@ impl App {
             }
             if ui.button("voice's sentence").clicked() {
                 if let Some(v) = &self.voice {
-                    self.text = sample_text(&v.descriptor);
+                    self.text = v.descriptor.sample_text();
                     self.analyse();
                 }
             }

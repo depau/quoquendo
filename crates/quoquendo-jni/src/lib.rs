@@ -103,7 +103,7 @@ fn list_voices(store: &str) -> String {
                 "locales": locales,
                 "gender": d.gender,
                 "rate": d.audio_rate,
-                "demoSentence": d.demo_sentence,
+                "demoSentence": d.sample_text(),
                 "languageMissing": v.language_missing.is_some(),
                 "unsupported": v.unsupported,
                 "languageFolder": v.language_dir().and_then(|d| d.rsplit('/').next()),

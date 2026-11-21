@@ -484,6 +484,20 @@ impl VoiceDescriptor {
     pub fn language(&self) -> crate::g2p::Language {
         crate::g2p::Language::from_voice(&self.mother_tongue, &self.mother_tongue_aliases)
     }
+    /// The text the apps start with: the voice's own demo sentence, and for
+    /// Italian voices also the station warning, the benchmark for "does it
+    /// sound like the stations".
+    pub fn sample_text(&self) -> String {
+        let demo = self.demo_sentence.trim();
+        let mut text = if demo.is_empty() { self.language().sample_sentence().to_string() } else { demo.to_string() };
+        if self.language() == crate::g2p::Language::Italian {
+            if !text.ends_with(['.', '!', '?']) {
+                text.push('.');
+            }
+            text.push_str(" Attenzione! Allontanarsi dalla linea gialla.");
+        }
+        text
+    }
     /// Fill from a `.vde` plus the `.vcf` that points at it.
     pub fn from_files(vcf: &Path, vde: &Path) -> VoiceDescriptor {
         let mut d = VoiceDescriptor::from_ini(&read_ini(vcf), &read_ini(vde));
