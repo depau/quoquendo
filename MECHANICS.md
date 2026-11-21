@@ -2179,7 +2179,17 @@ when a speed/pitch change asks for it.
   nasality aside) of the phones. The `German Distribution.exe` of that
   archive is damaged (`unzip -t` reports a bad CRC; its cabinet's MSZIP
   blocks fail their checksums from the fifth on); German's data comes with
-  Katrin's and Stefan's voice installers anyway.
+  Katrin's and Stefan's voice installers anyway. With their distributions'
+  language data unpacked into the engine (Wise MSI, like the voices), the
+  three voices do run in the original: `ttsLoadPersona` needs each language's
+  `.lcf` also at `data/` root, a copy of the one in
+  `data/languages/<Language>/` (`data/Catalan.lcf` BaseLanguage `CatalanCe`,
+  `data/Valencian.lcf` `CatalanVa`, `data/Galician.lcf` `Galician`; the
+  distributions ship them nested only), and the engine finds nothing without
+  it (`ttsLoadPersona` 12). Scored on `oracle/bench-{ca,va,gl}.txt` (Jordi,
+  Empar, Carmela): FON 82/86/83% of sounds (the built-in rules, above),
+  CAT given the original's FON 98.9/100/99.5% of half-sounds, decoder and
+  replay bit-exact.
 - German numbers (§4): slot 9 matches the original on every traced call
   (541, `numeri::tests::replay_slot9`). What still differs on
   `oracle/bench-de-text.txt` is the engine's side: the reading's words are

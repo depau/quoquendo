@@ -389,6 +389,9 @@ pub fn bench_for(mother_tongue: &str) -> Option<&'static str> {
         "Dutch" => "nl",
         "Polish" => "pl",
         "Russian" => "ru",
+        "Catalan" => "ca",
+        "Valencian" => "va",
+        "Galician" => "gl",
         _ => return None,
     })
 }

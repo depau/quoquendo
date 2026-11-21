@@ -225,6 +225,17 @@ original:
 | Willem | Dutch | 100% | 100% | 100% |
 | Frida | Danish | 100% | 100% | 100% |
 | Dmitri, Olga | Russian | 100% | 100% | 100% |
+| Jordi | Catalan | 82% | 99% | 100% |
+| Empar | Valencian | 86% | 100% | 100% |
+| Carmela | Galician | 83% | 99% | 100% |
+
+Catalan, Valencian and Galician have no ported language module: their text
+rules are built in (MECHANICS.md §11), so their sounds score lower while
+everything after the transcription still matches. Federica (Italian) and
+Linlin (Chinese) cannot be scored against the original at all: Federica's
+voice library is built for the 7.2 engine and never loads in the 7.0 one
+(`ttsLoadPersona` error 4), and no x86 Chinese language module exists
+(MECHANICS.md §11).
 
 The pronunciation of these languages is ported from the original's own
 language modules and each voice's own phone rules (MECHANICS.md §4b–§4n;
