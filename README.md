@@ -59,17 +59,18 @@ bucket, deployed from `main` (`.github/workflows/site.yml`; setup in
 
 ### On Android
 
-`android/` is a system text-to-speech engine: install it, pick quoquendo in
+`android/` is a system text-to-speech engine: install it, pick Quoquendo in
 the system's TTS settings, and get voices in its Voices screen.
 
 [![Add to Obtainium](https://raw.githubusercontent.com/NavicApp/Branding/refs/heads/main/assets/obtainium.svg)][ADD_NIGHTLY_TO_OBTAINIUM]
 
 Every push to `main` builds a nightly (`eu.depau.quoquendo.nightly`, the
-[`nightly` release][NIGHTLY]); Obtainium keeps it updated. To build it
-yourself: `cd android && ./gradlew assembleDebug`.
+[`nightly` release][NIGHTLY], republished each time); Obtainium uses the
+release date as its version and offers each new one as an update. To build
+it yourself: `cd android && ./gradlew assembleDebug`.
 
 [NIGHTLY]: https://github.com/depau/quoquendo/releases/tag/nightly
-[ADD_NIGHTLY_TO_OBTAINIUM]: https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22eu.depau.quoquendo.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdepau%2Fquoquendo%22%2C%22author%22%3A%22depau%22%2C%22name%22%3A%22quoquendo%20Nightly%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Equoquendo-nightly-.%2A%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D
+[ADD_NIGHTLY_TO_OBTAINIUM]: https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22eu.depau.quoquendo.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdepau%2Fquoquendo%22%2C%22author%22%3A%22depau%22%2C%22name%22%3A%22Quoquendo%20Nightly%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22versionDetection%5C%22%3Afalse%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Equoquendo-nightly-.%2A%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D
 
 ## The library
 
