@@ -6,7 +6,7 @@
 //! | Speak, edited text | `#/speak/Roberto?text=Ciao%20a%20tutti` |
 //! | Speak, no voice | `#/speak` (`?text=` allowed) |
 //! | Voices | `#/voices` |
-//! | Explore | `#/explore/Roberto` + `list=sentences`, `phone=<sym>`, `sentence=<n>` |
+//! | Explore | `#/explore/Roberto` + `list=phones`, `phone=<sym>`, `sentence=<n>` |
 //!
 //! A voice is named by its catalog voice name, matched ignoring case.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -15,7 +15,7 @@
 pub enum Route {
     Speak { voice: Option<String>, text: Option<String> },
     Voices,
-    Explore { voice: String, sentences: bool, phone: Option<String>, sentence: Option<usize> },
+    Explore { voice: String, phones: bool, phone: Option<String>, sentence: Option<usize> },
 }
 
 impl Route {
@@ -44,7 +44,7 @@ pub fn parse(hash: &str) -> Option<Route> {
     let (path, query) = hash.split_once('?').unwrap_or((hash, ""));
     let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     let mut text = None;
-    let mut sentences = false;
+    let mut phones = false;
     let mut phone = None;
     let mut sentence = None;
     for pair in query.split('&').filter(|p| !p.is_empty()) {
@@ -52,7 +52,7 @@ pub fn parse(hash: &str) -> Option<Route> {
         let v = decode(v);
         match k {
             "text" => text = Some(v).filter(|t| !t.is_empty()),
-            "list" => sentences = v == "sentences",
+            "list" => phones = v == "phones",
             "phone" => phone = Some(v).filter(|p| !p.is_empty()),
             "sentence" => sentence = v.parse().ok(),
             _ => {}
@@ -63,7 +63,7 @@ pub fn parse(hash: &str) -> Option<Route> {
         ["speak"] => Some(Route::Speak { voice: None, text }),
         ["speak", v] => Some(Route::Speak { voice: Some(voice(v)?), text }),
         ["voices"] => Some(Route::Voices),
-        ["explore", v] => Some(Route::Explore { voice: voice(v)?, sentences, phone, sentence }),
+        ["explore", v] => Some(Route::Explore { voice: voice(v)?, phones, phone, sentence }),
         _ => None,
     }
 }
@@ -80,10 +80,10 @@ pub fn to_hash(route: &Route) -> String {
             (s, text.into_iter().collect::<Vec<_>>())
         }
         Route::Voices => ("#/voices".to_string(), Vec::new()),
-        Route::Explore { voice, sentences, phone, sentence } => {
+        Route::Explore { voice, phones, phone, sentence } => {
             let mut params = Vec::new();
-            if *sentences {
-                params.push("list=sentences".to_string());
+            if *phones {
+                params.push("list=phones".to_string());
             }
             if let Some(p) = phone.as_deref().filter(|p| !p.is_empty()) {
                 params.push(format!("phone={}", encode(p)));
@@ -147,7 +147,7 @@ mod tests {
                 text: Some("Attenzione! Allontanarsi dalla linea gialla. è \"ok\" & 50%".into()),
             },
             Route::Voices,
-            Route::Explore { voice: "Roberto".into(), sentences: true, phone: Some("a1".into()), sentence: Some(12) },
+            Route::Explore { voice: "Roberto".into(), phones: true, phone: Some("a1".into()), sentence: Some(12) },
         ];
         for r in routes {
             assert_eq!(parse(&to_hash(&r)), Some(r.clone()), "{}", to_hash(&r));

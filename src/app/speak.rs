@@ -564,6 +564,7 @@ impl App {
         let current = now.and_then(|n| n.piece);
         let follow = current.filter(|c| self.followed_piece != Some(*c));
         let mut play = None;
+        let mut open = None;
         section(
             ui,
             "pieces",
@@ -602,7 +603,9 @@ impl App {
                                         }
                                     }
                                     2 => {
-                                        ui.label(RichText::new(format!("#{}", p.unit)).monospace().color(MUTED));
+                                        if ui.link(RichText::new(format!("#{}", p.unit)).monospace().color(ui.visuals().hyperlink_color)).clicked() {
+                                            open = Some(p.unit as usize);
+                                        }
                                     }
                                     3 => {
                                         let u = &db.units[p.unit as usize];
@@ -657,6 +660,9 @@ impl App {
         }
         if let Some((unit, a, b)) = play {
             self.play_span(unit, a, b);
+        }
+        if let Some(unit) = open {
+            self.open_sentence(unit);
         }
     }
 

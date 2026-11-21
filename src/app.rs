@@ -59,8 +59,10 @@ struct Explore {
     page: usize,
     /// for the loaded voice: each phone with every take of it (sentence, phone index)
     index: Option<(String, Vec<(String, Vec<(u32, u16)>)>)>,
-    /// the left list shows the recorded sentences (else the phones)
-    sentences: bool,
+    /// the left list shows the phones (else the recorded sentences)
+    phones: bool,
+    /// scroll the sentence list to `unit` once (a link opened it)
+    reveal: bool,
     sentence_filter: String,
     /// the sentences the filter keeps: (voice, filter) they were found for
     sentence_hits: Option<(String, String, Vec<usize>)>,
@@ -1020,11 +1022,27 @@ impl App {
         let fresh = self.explore.index.is_none();
         self.explore = Explore {
             index: Some((v.descriptor.name.clone(), map.into_iter().collect())),
-            sentences: self.explore.sentences,
+            phones: self.explore.phones,
+            reveal: fresh && self.explore.reveal,
             phone: if fresh { self.explore.phone.take() } else { None },
             unit: if fresh { self.explore.unit } else { None },
             ..Default::default()
         };
+    }
+
+    /// Open the loaded voice's recorded sentence `unit` in Explore, the
+    /// sentence list scrolled to it.
+    pub(crate) fn open_sentence(&mut self, unit: usize) {
+        let Some(v) = &self.voice else { return };
+        // an index of another voice would drop the selection: rebuild it
+        if self.explore.index.as_ref().is_some_and(|(n, _)| *n != v.descriptor.name) {
+            self.explore.index = None;
+        }
+        self.tab = Tab::Explore;
+        self.explore.phones = false;
+        self.explore.unit = Some(unit);
+        self.explore.sentence_filter.clear();
+        self.explore.reveal = true;
     }
 
     /// The recorded sentences the sentence filter keeps: a sentence number
@@ -1108,13 +1126,13 @@ impl App {
             // a list to pick from: the phones, with how often each was
             // recorded, or the recorded sentences
             ui.vertical(|ui| {
-                let width = if self.explore.sentences { 380.0 } else { 170.0 };
+                let width = if self.explore.phones { 170.0 } else { 380.0 };
                 ui.set_width(width);
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.explore.sentences, false, "Phones");
-                    ui.selectable_value(&mut self.explore.sentences, true, "Sentences");
+                    ui.selectable_value(&mut self.explore.phones, false, "Sentences");
+                    ui.selectable_value(&mut self.explore.phones, true, "Phones");
                 });
-                if !self.explore.sentences {
+                if self.explore.phones {
                     ui.add(egui::TextEdit::singleline(&mut self.explore.filter).hint_text("Filter phones").desired_width(width - 10.0));
                     egui::ScrollArea::vertical().id_salt("phones").max_height(height - 70.0).show(ui, |ui| {
                         for (sym, takes) in index.iter().filter(|(s, _)| self.explore.filter.is_empty() || s.contains(self.explore.filter.as_str())) {
@@ -1136,7 +1154,14 @@ impl App {
                 ui.label(RichText::new(format!("{} of {} sentences", hits.len(), db.units.len())).small().color(MUTED));
                 let row = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
                 let digits = db.units.len().saturating_sub(1).to_string().len();
-                egui::ScrollArea::vertical().id_salt("sentences").max_height(height - 90.0).show_rows(ui, row, hits.len(), |ui, rows| {
+                let mut list = egui::ScrollArea::vertical().id_salt("sentences").max_height(height - 90.0);
+                if std::mem::take(&mut self.explore.reveal) {
+                    if let Some(at) = self.explore.unit.and_then(|u| hits.iter().position(|&h| h == u)) {
+                        let step = row + ui.spacing().item_spacing.y;
+                        list = list.vertical_scroll_offset((at as f32 * step - (height - 90.0) / 2.0).max(0.0));
+                    }
+                }
+                list.show_rows(ui, row, hits.len(), |ui, rows| {
                     for &u in &hits[rows] {
                         let unit = &db.units[u];
                         let said: Vec<&str> = unit.phones.iter().filter(|p| p.timed).map(|p| p.sym.as_str()).collect();
@@ -1245,7 +1270,7 @@ impl App {
                                     ui.label(RichText::new(&p.sym).monospace().color(GREEN));
                                     ui.label(RichText::new(next.map(|q| q.sym.as_str()).unwrap_or("@")).monospace().color(MUTED));
                                 });
-                                if ui.link(RichText::new(format!("#{u}")).monospace()).clicked() {
+                                if ui.link(RichText::new(format!("#{u}")).monospace().color(ui.visuals().hyperlink_color)).clicked() {
                                     open_unit = Some(Some(u as usize));
                                 }
                                 ui.label(RichText::new(format!("{:.0} ms", ms(p.start, p.end))).monospace());
@@ -1426,18 +1451,18 @@ impl App {
                     }
                 }
             }
-            Route::Explore { voice, sentences, phone, sentence } => {
+            Route::Explore { voice, phones, phone, sentence } => {
                 self.tab = Tab::Explore;
                 if self.explore.index.as_ref().is_some_and(|(n, _)| n.eq_ignore_ascii_case(&voice)) {
                     if self.explore.phone != phone {
                         self.explore.page = 0;
                     }
-                    self.explore.sentences = sentences;
+                    self.explore.phones = phones;
                     self.explore.phone = phone;
                     self.explore.unit = sentence;
                 } else {
                     // `explore_index` keeps the selection when it builds the index
-                    self.explore = Explore { sentences, phone, unit: sentence, ..Default::default() };
+                    self.explore = Explore { phones, phone, unit: sentence, reveal: sentence.is_some(), ..Default::default() };
                 }
             }
         }
@@ -1461,7 +1486,7 @@ impl App {
             },
             (Tab::Explore, Some(voice)) => Route::Explore {
                 voice: voice.clone(),
-                sentences: self.explore.sentences,
+                phones: self.explore.phones,
                 phone: self.explore.phone.clone(),
                 sentence: self.explore.unit,
             },

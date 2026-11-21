@@ -98,8 +98,9 @@ bucket, deployed from `main` (`.github/workflows/site.yml`; setup in
 
 The address bar follows the page, so it can be shared and back/forward work:
 `#/speak/Roberto` (with `?text=…` when the text isn't the voice's sample),
-`#/voices`, and `#/explore/Roberto` (with `list=sentences`, `phone=a`,
-`sentence=12`). A link to a voice that isn't installed offers to download it.
+`#/voices`, and `#/explore/Roberto` (with `list=phones`, `phone=a`,
+`sentence=12`; the recorded sentences are listed unless `list=phones`). A
+link to a voice that isn't installed offers to download it.
 
 ### On Android
 
