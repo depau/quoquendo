@@ -6,6 +6,24 @@ Katrin and the rest. No Loquendo code runs; the voices' files are read as
 data. How each stage works, and where every number comes from, is in
 [MECHANICS.md](MECHANICS.md).
 
+## Get the app
+
+- **Browser**: <https://quoquendo.depau.eu>
+- **Android**: the [nightly release][NIGHTLY], rebuilt on every push to
+  `main`; Obtainium tracks it:
+
+  [![Add to Obtainium](https://raw.githubusercontent.com/NavicApp/Branding/refs/heads/main/assets/obtainium.svg)][ADD_NIGHTLY_TO_OBTAINIUM]
+- **Desktop** (Linux, Windows, macOS): build it with Rust (on Linux with the
+  ALSA headers, `libasound2-dev` / `alsa-lib`):
+
+  ```sh
+  git clone https://github.com/depau/quoquendo && cd quoquendo
+  cargo run --release
+  ```
+
+[NIGHTLY]: https://github.com/depau/quoquendo/releases/tag/nightly
+[ADD_NIGHTLY_TO_OBTAINIUM]: https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22eu.depau.quoquendo.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdepau%2Fquoquendo%22%2C%22author%22%3A%22depau%22%2C%22name%22%3A%22Quoquendo%20Nightly%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22versionDetection%5C%22%3Afalse%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Equoquendo-nightly-.%2A%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D
+
 ## Getting a voice
 
 The voices' installers (`<Voice> - <Language>.exe`, e.g. `Raffaele - Italian.exe`
@@ -54,10 +72,11 @@ Two modes, in Settings, are off by default:
   command (desktop: any program that prints a transcription); and joining the
   pieces like the original or smoothed.
 - **Original engine (Wine)** (desktop): the original Loquendo engine run under
-  Wine as a separate program (`oracle/run.sh`) for the pronunciation or the
-  piece picking, its audio beside ours on one time axis (each with its own
-  play button; switching plays the other from the same moment), and
-  Compare with the original, which scores each stage against it.
+  Wine as a separate program for the pronunciation or the piece picking, its
+  audio beside ours on one time axis (each with its own play button;
+  switching plays the other from the same moment), and Compare with the
+  original, which scores each stage against it. It needs the setup in
+  [The original engine](#the-original-engine).
 
 `--screenshot <file.png>` draws the window once everything is ready, saves
 it and quits (with `--play-at <seconds>`, showing the speech at that moment
@@ -93,15 +112,55 @@ being spoken too. Settings chooses the voice apps get for each language;
 Advanced adds the reading language, the voice's details and how pieces are
 joined.
 
-[![Add to Obtainium](https://raw.githubusercontent.com/NavicApp/Branding/refs/heads/main/assets/obtainium.svg)][ADD_NIGHTLY_TO_OBTAINIUM]
+The nightly is `eu.depau.quoquendo.nightly`; Obtainium uses the release date
+as its version and offers each new one as an update. To build it yourself:
+`cd android && ./gradlew assembleDebug`.
 
-Every push to `main` builds a nightly (`eu.depau.quoquendo.nightly`, the
-[`nightly` release][NIGHTLY], republished each time); Obtainium uses the
-release date as its version and offers each new one as an update. To build
-it yourself: `cd android && ./gradlew assembleDebug`.
+## The original engine
 
-[NIGHTLY]: https://github.com/depau/quoquendo/releases/tag/nightly
-[ADD_NIGHTLY_TO_OBTAINIUM]: https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22eu.depau.quoquendo.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdepau%2Fquoquendo%22%2C%22author%22%3A%22depau%22%2C%22name%22%3A%22Quoquendo%20Nightly%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22versionDetection%5C%22%3Afalse%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5Equoquendo-nightly-.%2A%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D
+Original engine (Wine) mode, `--compare` and `--compare-all` run the real
+Loquendo 7 engine on the same text, under Wine, as a separate program
+(`oracle/run.sh`), and read back what each of its stages produced. Nothing
+of it is loaded into quoquendo, and nothing outside its own Wine prefix is
+touched. It works on Linux, from a checkout of this repository (the app finds
+`oracle/` next to the current folder or the program).
+
+1. Install Wine (with 32-bit support), `xvfb-run` and the MinGW-w64 cross
+   compiler (`i686-w64-mingw32-gcc`).
+2. Build the program that drives the engine:
+
+   ```sh
+   (cd oracle && i686-w64-mingw32-gcc -O1 -o loqref.exe loqref.c)
+   ```
+3. Put the voices' installers in one folder and point `LOQ_INSTALLERS` at it.
+   `Raffaele - Italian.exe` must be among them: the engine itself is
+   installed from it (silently, on a virtual display); every other voice is
+   only its files, unpacked over that installation.
+4. Make a licence with [loquendo-keygen](https://github.com/depau/loquendo-keygen)
+   for one of this computer's network cards and the Wine user `wineuser`, as
+   `license-wineuser.reg` in the repository root (`LOQ_LICENCE=<file>` for
+   another one):
+
+   ```sh
+   loqkeygen --mac <this computer's MAC, e.g. 52:54:00:12:34:56> --user wineuser -o license-wineuser.reg
+   ```
+
+   The licences the installers write make every voice say only that the
+   licence isn't valid for this system.
+5. Run the app in that mode, or the comparisons:
+
+   ```sh
+   LOQ_INSTALLERS=~/Downloads/Loquendo cargo run --release -- --original
+   LOQ_INSTALLERS=~/Downloads/Loquendo quoquendo --compare "Il treno è in arrivo."
+   ```
+
+The first use of a voice installs it into `oracle/prefix` (`LOQ_PREFIX` for
+another place), which takes a minute; the licence is imported again whenever
+the file changes. Every result is cached in `oracle/cache`, so each text
+runs the engine once. To drive the engine by hand:
+`oracle/run.sh <voice> <utf-8 text file> <output prefix>` writes its
+transcription (`.fon`), its events (`.ev`) and its audio (`.wav`); see
+MECHANICS.md §8.
 
 ## The library
 
@@ -113,9 +172,15 @@ quoquendo = { path = "crates/quoquendo" }
 ```rust
 let voice = quoquendo::Voice::find(std::path::Path::new(".../LTTS7/data"), "Roberto")?;
 let speech = voice.say("Il treno regionale è in arrivo al binario tre.")?;
-// speech.samples: f32 in [-1, 1], speech.rate: 32000
-std::fs::write("out.wav", quoquendo::synth::to_wav_bytes(&speech)).unwrap();
+// speech.samples: f32 in [-1, 1], speech.rate: 32000; speech.timeline: when
+// each sound, pause and recorded piece is heard
+let flac = quoquendo::export::encode(&speech, quoquendo::export::Format::Flac, None)?;
+std::fs::write("out.flac", flac).unwrap();
 ```
+
+`voice.utterance(text)` also gives where each word sits in the text, for
+`export::Tagged` (the text embedded with each word's time) or for following
+along while it plays.
 
 Without a filesystem (a browser, a server holding files in memory):
 `pack::unpack_installer(&exe_bytes)` gives a voice's files as an LTTS7 tree,
@@ -126,9 +191,10 @@ voices' own notation.
 
 ## How close it is
 
-Measured against the original engine run under Wine (`oracle/`, a developer
-tool only, not needed to use quoquendo), on the benchmark sentences in
-`oracle/bench-*.txt`, without any dictionary made by running the original:
+Measured against the original engine run under Wine ([The original
+engine](#the-original-engine), not needed to use quoquendo), on the benchmark
+sentences in `oracle/bench-*.txt`, without any dictionary made by running the
+original:
 
 | voice | language | sounds identical | half-sounds picked identically | output samples identical |
 |---|---|---|---|---|
