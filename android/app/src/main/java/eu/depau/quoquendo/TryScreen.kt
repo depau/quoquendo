@@ -305,12 +305,15 @@ private val mono = FontFamily.Monospace
 @Composable
 private fun Curtain(model: MainModel, a: Analysis) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val recorded = Recorded
+    val missing = Missing
+    val hardCut = HardCut
     val sounds = a.phrases.sumOf { it.phones.size }
     Heading("Sounds") {
         append("$sounds · ")
-        withStyle(SpanStyle(color = Recorded)) { append("green") }
+        withStyle(SpanStyle(color = recorded)) { append("green") }
         append(" recorded by ${a.voice}, ")
-        withStyle(SpanStyle(color = Missing)) { append("red") }
+        withStyle(SpanStyle(color = missing)) { append("red") }
         append(" never recorded")
     }
     Panel {
@@ -356,7 +359,7 @@ private fun Curtain(model: MainModel, a: Analysis) {
     val units = a.pieces.map { it.unit }.toSet().size
     Heading("Pieces") {
         append("${a.pieces.size} from $units sentences · ")
-        withStyle(SpanStyle(color = HardCut)) { append("purple") }
+        withStyle(SpanStyle(color = hardCut)) { append("purple") }
         append(" = hard cut")
     }
     var all by remember(a) { mutableStateOf(false) }

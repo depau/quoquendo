@@ -64,6 +64,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -203,15 +206,11 @@ private val listColors @Composable get() = ListItemDefaults.colors(containerColo
 
 @Composable
 private fun InstalledRow(model: MainModel, v: InstalledVoice, onDelete: () -> Unit) {
+    // one line each, so every row is the same height
     val supporting: @Composable () -> Unit = when {
-        v.unsupported != null -> ({ Text(v.unsupported, color = MaterialTheme.colorScheme.error) })
-        v.languageMissing -> ({
-            Text(
-                "needs ${v.motherTongue} language data: add any ${model.languageOf(v)} voice or download it from the mirror",
-                color = MaterialTheme.colorScheme.primary,
-            )
-        })
-        else -> ({ Text("${model.languageOf(v)} · ${v.gender} · ${v.rate / 1000} kHz") })
+        v.unsupported != null -> ({ OneLine(v.unsupported, color = MaterialTheme.colorScheme.error) })
+        v.languageMissing -> ({ OneLine("needs ${v.motherTongue} language data", color = MaterialTheme.colorScheme.primary) })
+        else -> ({ OneLine("${model.languageOf(v)} · ${v.gender} · ${v.rate / 1000} kHz") })
     }
     ListItem(
         colors = listColors,
@@ -235,22 +234,35 @@ private fun InstalledRow(model: MainModel, v: InstalledVoice, onDelete: () -> Un
 private fun CatalogRow(model: MainModel, i: Installer) {
     val state = model.downloads[i.file]
     val installedAs = model.installedFor(i)
-    val parts = mutableListOf(i.language, i.gender, size(i.size))
-    when {
-        state is Download.Queued -> parts += "queued"
-        state is Download.Running && state.unpacking -> parts += "unpacking"
-        installedAs != null && !installedAs.name.equals(i.label, ignoreCase = true) -> parts += "installed as ${installedAs.name}"
-        installedAs != null -> parts += "installed"
-        i.unsupported != null -> parts += i.unsupported
+    val status = when {
+        state is Download.Queued -> "queued"
+        state is Download.Running && state.unpacking -> "unpacking"
+        installedAs != null && !installedAs.name.equals(i.label, ignoreCase = true) -> "installed as ${installedAs.name}"
+        installedAs != null -> "installed"
+        else -> i.unsupported
     }
     ListItem(
         colors = listColors,
         modifier = if (state is Download.Failed) Modifier.clickable { model.download(i) } else Modifier,
         leadingContent = { Avatar(i.label) },
-        headlineContent = { Text(i.label) },
+        // the status beside the name and the details on one line, so every
+        // row is the same height (until a download shows its progress)
+        headlineContent = {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(i.label, maxLines = 1)
+                if (status != null) {
+                    OneLine(
+                        "  $status",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                }
+            }
+        },
         supportingContent = {
             Column {
-                Text(parts.joinToString(" · "))
+                OneLine("${i.language} · ${i.gender} · ${size(i.size)}")
                 when (state) {
                     is Download.Running -> if (!state.unpacking) {
                         Spacer(Modifier.height(6.dp))
@@ -266,7 +278,7 @@ private fun CatalogRow(model: MainModel, i: Installer) {
                         Spacer(Modifier.height(6.dp))
                         LinearProgressIndicator(Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.primaryContainer)
                     }
-                    is Download.Failed -> Text("${state.message}. Tap to retry.", color = MaterialTheme.colorScheme.error)
+                    is Download.Failed -> OneLine("${state.message}. Tap to retry.", color = MaterialTheme.colorScheme.error)
                     else -> {}
                 }
             }
@@ -293,6 +305,14 @@ private fun CatalogRow(model: MainModel, i: Installer) {
         },
     )
 }
+
+@Composable
+private fun OneLine(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    style: TextStyle = LocalTextStyle.current,
+) = Text(text, modifier, color = color, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
 private fun progressCaption(done: Long, total: Long, bytesPerSecond: Double): String {
     val mb = { b: Long -> "%.1f".format(Locale.ROOT, b / 1e6) }

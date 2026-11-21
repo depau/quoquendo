@@ -56,8 +56,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) route(intent)
@@ -137,7 +137,9 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (errorSnack.value) {
-                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = Color(0xFFFFB4AB), modifier = Modifier.size(20.dp))
+                            // the snackbar is the inverse surface: light error red on dark, dark red on light
+                            val tint = if (isSystemInDarkTheme()) Color(0xFFBA1A1A) else Color(0xFFFFB4AB)
+                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(12.dp))
                         }
                         Text(data.visuals.message)

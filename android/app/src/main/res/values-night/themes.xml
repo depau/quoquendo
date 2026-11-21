@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the window behind Compose in dark mode: the dark scheme's surface -->
+    <style name="Theme.Quoquendo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF17130B</item>
+    </style>
+    <style name="Theme.Quoquendo.Invisible" parent="android:Theme.Translucent.NoTitleBar" />
+</resources>
