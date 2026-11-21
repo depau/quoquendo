@@ -6,6 +6,7 @@
 //! adds the voice's details and the stage selectors; Original engine (Wine)
 //! mode (desktop only) adds the original engine beside ours.
 
+mod fonts;
 mod modes;
 mod speak;
 
@@ -280,6 +281,7 @@ pub struct App {
     frame_no: u64,
     quit_after: Option<u64>,
     logo: egui::TextureHandle,
+    cjk: fonts::Cjk,
 }
 
 /// What the app was started with.
@@ -402,6 +404,7 @@ impl App {
             frame_no: 0,
             quit_after: None,
             logo,
+            cjk: fonts::Cjk::default(),
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1686,6 +1689,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_no += 1;
         self.poll(ctx);
+        self.cjk.ensure(ctx, &self.text);
         #[cfg(not(target_arch = "wasm32"))]
         self.poll_original(ctx);
         self.schedule(ctx);
