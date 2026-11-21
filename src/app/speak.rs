@@ -742,15 +742,15 @@ impl App {
             let marks = our_marks(&p.speech, &v.db);
             let hover = self.hover_time(&response, wave.union(strip), &axis, duration);
             paint_wave(&painter, wave, &axis, &p.speech.samples, p.speech.rate, played, AMBER);
-            paint_strip(&painter, strip, &axis, &marks, now.and_then(|n| n.sound), true);
+            paint_strip(&painter, strip, &axis, &marks, true);
             paint_axis(&painter, ticks, &axis);
             if let Some(t) = played {
                 paint_playhead(&painter, wave.top(), strip.bottom(), axis.x(t), Head::Playing);
             }
             if let Some(t) = hover {
                 paint_playhead(&painter, wave.top(), strip.bottom(), axis.x(t), Head::Hover);
-                paint_hovered(&painter, strip, &axis, &marks, t, true);
             }
+            paint_chips(&painter, strip, &axis, &marks, played, hover, true);
         });
     }
 
@@ -982,8 +982,9 @@ pub(super) fn paint_wave(painter: &Painter, rect: Rect, axis: &Axis, samples: &[
 /// The sounds under (or, `ticks_up` false, over) a waveform: a tick at each
 /// boundary, longer where a word starts, each sound's symbol in the middle
 /// of its span (green recorded, red never recorded, left out where it would
-/// collide), pauses as blocks; `current` lit.
-pub(super) fn paint_strip(painter: &Painter, rect: Rect, axis: &Axis, marks: &[Mark], current: Option<usize>, ticks_up: bool) {
+/// collide), pauses as blocks. The sound being said and the one under the
+/// pointer are shown by `paint_chips`.
+pub(super) fn paint_strip(painter: &Painter, rect: Rect, axis: &Axis, marks: &[Mark], ticks_up: bool) {
     let font = FontId::monospace(11.0);
     let tick = |x: f32, long: bool| {
         let len = if long { 7.0 } else { 4.0 };
@@ -992,7 +993,7 @@ pub(super) fn paint_strip(painter: &Painter, rect: Rect, axis: &Axis, marks: &[M
     };
     let label_y = if ticks_up { rect.top() + 8.0 } else { rect.top() + 2.0 };
     let mut last_right = f32::NEG_INFINITY;
-    for (i, m) in marks.iter().enumerate() {
+    for m in marks {
         let (a, b) = (axis.x(m.start), axis.x(m.end));
         tick(a, m.word_start || m.pause);
         if m.pause {
@@ -1003,25 +1004,14 @@ pub(super) fn paint_strip(painter: &Painter, rect: Rect, axis: &Axis, marks: &[M
             }
             continue;
         }
-        let lit = current == Some(i);
-        let color = if lit {
-            GROUND
-        } else if m.known {
-            GREEN
-        } else {
-            RED
-        };
+        let color = if m.known { GREEN } else { RED };
         let galley = painter.layout_no_wrap(m.sym.clone(), font.clone(), color);
         let w = galley.size().x;
         let left = (a + b) / 2.0 - w / 2.0;
-        if left < last_right + 2.0 && !lit {
+        if left < last_right + 2.0 {
             continue;
         }
-        let at = pos2(left, label_y);
-        if lit {
-            painter.rect_filled(Rect::from_min_size(at, galley.size()).expand2(vec2(2.0, 0.5)), 2.0, AMBER);
-        }
-        painter.galley(at, galley, color);
+        painter.galley(pos2(left, label_y), galley, color);
         last_right = left + w;
     }
     if let Some(m) = marks.last() {
@@ -1082,27 +1072,58 @@ pub(super) fn paint_playhead(painter: &Painter, top: f32, bottom: f32, x: f32, h
     }
 }
 
-/// The sound at `t` on a strip painted by `paint_strip`: its span tinted
-/// and a chip on the label row at `t` with its symbol (green recorded, red
-/// never recorded) and the time, shown even where its label was left out.
-pub(super) fn paint_hovered(painter: &Painter, rect: Rect, axis: &Axis, marks: &[Mark], t: f64, ticks_up: bool) {
-    let Some(m) = marks.iter().find(|m| m.start <= t && t < m.end).or_else(|| marks.last().filter(|m| t == m.end)) else { return };
-    let span = Rect::from_x_y_ranges(axis.x(m.start)..=axis.x(m.end).max(axis.x(m.start) + 1.0), rect.y_range());
-    painter.rect_filled(span, 2.0, AMBER.gamma_multiply(0.18));
-    let font = FontId::monospace(11.0);
-    let mut job = LayoutJob::default();
-    let (sym, color) = match (m.pause, m.known) {
-        (true, _) => ("pause", MUTED),
-        (false, true) => (m.sym.as_str(), GREEN),
-        (false, false) => (m.sym.as_str(), RED),
-    };
-    job.append(sym, 0.0, TextFormat::simple(font.clone(), color));
-    job.append(&format!("  {t:.2} s"), 0.0, TextFormat::simple(font, MUTED));
-    let galley = painter.layout_job(job);
-    let size = galley.size();
-    let label_y = if ticks_up { rect.top() + 8.0 } else { rect.top() + 2.0 };
-    let left = (axis.x(t) - size.x / 2.0).clamp(rect.left() + 3.0, (rect.right() - size.x - 3.0).max(rect.left() + 3.0));
-    let chip = Rect::from_min_size(pos2(left, label_y), size).expand2(vec2(3.0, 1.0));
-    painter.rect(chip, 3.0, PANEL, Stroke::new(1.0f32, AMBER.gamma_multiply(0.7)));
-    painter.galley(pos2(left, label_y), galley, TEXT);
+/// A sound's chip on a strip's label row, centred on a moment.
+struct Chip {
+    rect: Rect,
+    galley: std::sync::Arc<egui::Galley>,
+}
+
+impl Chip {
+    /// The chip for the sound at `t` (its symbol, green recorded, red never
+    /// recorded; with `time`, also `t`), with the sound.
+    fn at<'a>(painter: &Painter, rect: Rect, axis: &Axis, marks: &'a [Mark], t: f64, time: bool, ticks_up: bool) -> Option<(&'a Mark, Chip)> {
+        let m = marks.iter().find(|m| m.start <= t && t < m.end).or_else(|| marks.last().filter(|m| t == m.end))?;
+        let font = FontId::monospace(11.0);
+        let mut job = LayoutJob::default();
+        let (sym, color) = match (m.pause, m.known) {
+            (true, _) => ("pause", MUTED),
+            (false, true) => (m.sym.as_str(), GREEN),
+            (false, false) => (m.sym.as_str(), RED),
+        };
+        job.append(sym, 0.0, TextFormat::simple(font.clone(), color));
+        if time {
+            job.append(&format!("  {t:.2} s"), 0.0, TextFormat::simple(font, MUTED));
+        }
+        let galley = painter.layout_job(job);
+        let size = galley.size();
+        let label_y = if ticks_up { rect.top() + 8.0 } else { rect.top() + 2.0 };
+        let left = (axis.x(t) - size.x / 2.0).clamp(rect.left() + 3.0, (rect.right() - size.x - 3.0).max(rect.left() + 3.0));
+        Some((m, Chip { rect: Rect::from_min_size(pos2(left, label_y), size), galley }))
+    }
+
+    fn paint(self, painter: &Painter) {
+        painter.rect(self.rect.expand2(vec2(3.0, 1.0)), 3.0, PANEL, Stroke::new(1.0f32, AMBER.gamma_multiply(0.7)));
+        painter.galley(self.rect.min, self.galley, TEXT);
+    }
+}
+
+/// The chips on a strip painted by `paint_strip`: the sound at the playhead
+/// `play` (its symbol) and the one under the pointer `hover` (its symbol and
+/// the time, its span tinted), each shown even where its label was left out.
+/// Where they would overlap the pointer's wins.
+pub(super) fn paint_chips(painter: &Painter, rect: Rect, axis: &Axis, marks: &[Mark], play: Option<f64>, hover: Option<f64>, ticks_up: bool) {
+    let hovered = hover.and_then(|t| Chip::at(painter, rect, axis, marks, t, true, ticks_up));
+    let played = play.and_then(|t| Chip::at(painter, rect, axis, marks, t, false, ticks_up));
+    if let Some((m, _)) = &hovered {
+        let span = Rect::from_x_y_ranges(axis.x(m.start)..=axis.x(m.end).max(axis.x(m.start) + 1.0), rect.y_range());
+        painter.rect_filled(span, 2.0, AMBER.gamma_multiply(0.18));
+    }
+    if let Some((_, chip)) = played {
+        if hovered.as_ref().is_none_or(|(_, h)| !h.rect.expand(4.0).intersects(chip.rect)) {
+            chip.paint(painter);
+        }
+    }
+    if let Some((_, chip)) = hovered {
+        chip.paint(painter);
+    }
 }

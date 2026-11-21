@@ -554,7 +554,6 @@ private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
     val head = MaterialTheme.colorScheme.onSurface
     val axis = MaterialTheme.colorScheme.outline
     val wordMark = MaterialTheme.colorScheme.primaryContainer
-    val onPrimary = MaterialTheme.colorScheme.onPrimary
     val pauseBlock = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     val recorded = Recorded
     val missing = Missing
@@ -627,59 +626,69 @@ private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
                             return@forEachIndexed
                         }
                         drawLine(axis, Offset(x0, top), Offset(x0, top + (if (s.wordStart) 8 else 4).dp.toPx()), tick)
-                        val inWord = moment?.word != null && s.word == moment.word
-                        if (i == moment?.sound) drawRect(primary, Offset(x0, labelTop), Size(x1 - x0, labelH))
-                        else if (inWord) drawRect(wordMark, Offset(x0, labelTop), Size(x1 - x0, labelH))
+                        if (moment?.word != null && s.word == moment.word) drawRect(wordMark, Offset(x0, labelTop), Size(x1 - x0, labelH))
+                        // the sound playing shows in the chip on the playhead instead
+                        if (i == moment?.sound) return@forEachIndexed
                         val label = labels[i] ?: return@forEachIndexed
                         val lx = (x0 + x1) / 2 - label.size.width / 2
-                        // a label that would collide is left out, unless it is the one playing
-                        if (lx < lastEnd && i != moment?.sound) return@forEachIndexed
-                        drawText(
-                            label,
-                            color = if (i == moment?.sound) onPrimary else if (s.known) recorded else missing,
-                            topLeft = Offset(lx, labelTop + (labelH - label.size.height) / 2),
-                        )
+                        // a label that would collide is left out
+                        if (lx < lastEnd) return@forEachIndexed
+                        drawText(label, color = if (s.known) recorded else missing, topLeft = Offset(lx, labelTop + (labelH - label.size.height) / 2))
                         lastEnd = lx + label.size.width
                     }
+
+                    /** An outlined chip of [text], its left edge from [place] given its width, its top from [top] given its height. */
+                    fun chip(text: AnnotatedString, place: (Float) -> Float, top: (Float) -> Float) {
+                        val laid = measurer.measure(text, chipStyle)
+                        val pad = 6.dp.toPx()
+                        val box = Size(laid.size.width + 2 * pad, laid.size.height + pad)
+                        val at = Offset(place(box.width), top(box.height))
+                        drawRoundRect(chipBack, at, box, CornerRadius(6.dp.toPx()))
+                        drawRoundRect(axis, at, box, CornerRadius(6.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        drawText(laid, topLeft = Offset(at.x + pad, at.y + pad / 2))
+                    }
+                    fun AnnotatedString.Builder.sym(s: AnSound) = withStyle(SpanStyle(color = if (s.known) recorded else missing, fontFamily = mono)) { append(s.sym) }
+
                     if (x != null) {
                         drawLine(head, Offset(x, 4.dp.toPx()), Offset(x, labelTop + labelH), 2.dp.toPx())
                         drawCircle(head, 4.dp.toPx(), Offset(x, 4.dp.toPx()))
                     }
                     // touch and hold: the sound under the finger, its label shown even where it didn't fit
-                    val sx = scrub ?: return@Canvas
-                    val t = sx / perS
-                    val si = a.sounds.indexOfLast { it.atS <= t }.takeIf { it >= 0 && t < a.sounds[it].endS }
+                    val sx = scrub
+                    val t = sx?.let { it / perS }
+                    val si = t?.let { at -> a.sounds.indexOfLast { it.atS <= at }.takeIf { it >= 0 && at < a.sounds[it].endS } }
                     val s = si?.let { a.sounds[it] }
-                    val label = si?.let { labels[it] }
-                    if (s != null && label != null) {
-                        val x0 = (s.atS * perS).toFloat()
-                        val w = maxOf((s.endS * perS).toFloat() - x0, label.size.width + 4.dp.toPx())
-                        val left = x0 + ((s.endS * perS).toFloat() - x0) / 2 - w / 2
-                        drawRect(scrubMark, Offset(left, labelTop), Size(w, labelH))
-                        drawText(label, color = if (s.known) recorded else missing, topLeft = Offset(left + (w - label.size.width) / 2, labelTop + (labelH - label.size.height) / 2))
+                    if (sx != null) {
+                        val label = si?.let { labels[it] }
+                        if (s != null && label != null) {
+                            val x0 = (s.atS * perS).toFloat()
+                            val w = maxOf((s.endS * perS).toFloat() - x0, label.size.width + 4.dp.toPx())
+                            val left = x0 + ((s.endS * perS).toFloat() - x0) / 2 - w / 2
+                            drawRect(scrubMark, Offset(left, labelTop), Size(w, labelH))
+                            drawText(label, color = if (s.known) recorded else missing, topLeft = Offset(left + (w - label.size.width) / 2, labelTop + (labelH - label.size.height) / 2))
+                        }
+                        drawLine(head.copy(alpha = 0.45f), Offset(sx, 4.dp.toPx()), Offset(sx, labelTop + labelH), 2.dp.toPx())
+                        drawCircle(head.copy(alpha = 0.45f), 4.dp.toPx(), Offset(sx, 4.dp.toPx()))
                     }
-                    drawLine(head.copy(alpha = 0.45f), Offset(sx, 4.dp.toPx()), Offset(sx, labelTop + labelH), 2.dp.toPx())
-                    drawCircle(head.copy(alpha = 0.45f), 4.dp.toPx(), Offset(sx, 4.dp.toPx()))
-                    val chip = measurer.measure(
-                        buildAnnotatedString {
-                            if (s != null && !s.pause) {
-                                withStyle(SpanStyle(color = if (s.known) recorded else missing, fontFamily = mono)) { append(s.sym) }
-                                append("  ")
-                            }
-                            append("%.2f s".format(Locale.ROOT, t))
-                        },
-                        chipStyle,
-                    )
-                    val pad = 6.dp.toPx()
-                    val chipW = chip.size.width + 2 * pad
-                    val chipH = chip.size.height + pad
-                    // beside the line, on whichever side stays in view
-                    val right = sx + 8.dp.toPx()
-                    val chipX = if (right + chipW <= scroll.value + viewport) right else sx - 8.dp.toPx() - chipW
-                    val chipY = 10.dp.toPx()
-                    drawRoundRect(chipBack, Offset(chipX, chipY), Size(chipW, chipH), CornerRadius(6.dp.toPx()))
-                    drawRoundRect(axis, Offset(chipX, chipY), Size(chipW, chipH), CornerRadius(6.dp.toPx()), style = Stroke(1.dp.toPx()))
-                    drawText(chip, topLeft = Offset(chipX + pad, chipY + pad / 2))
+                    // the sound playing, on the playhead where it crosses the strip
+                    val playing = moment?.sound?.let { a.sounds[it] }?.takeIf { !it.pause }
+                    if (x != null && playing != null) {
+                        chip(buildAnnotatedString { sym(playing) }, { w -> (x - w / 2).coerceIn(0f, size.width - w) }, { h -> labelTop + labelH / 2 - h / 2 })
+                    }
+                    // the scrub's chip above the waveform, beside its line on whichever side stays in view
+                    if (sx != null && t != null) {
+                        chip(
+                            buildAnnotatedString {
+                                if (s != null && !s.pause) {
+                                    sym(s)
+                                    append("  ")
+                                }
+                                append("%.2f s".format(Locale.ROOT, t))
+                            },
+                            { w -> if (sx + 8.dp.toPx() + w <= scroll.value + viewport) sx + 8.dp.toPx() else sx - 8.dp.toPx() - w },
+                            { 10.dp.toPx() },
+                        )
+                    }
                 }
             }
         }

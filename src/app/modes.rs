@@ -271,7 +271,7 @@ impl App {
     /// sounds, the same sounds joined between them; a play button on each
     /// switches between them at the same moment.
     pub(super) fn original_lanes(&mut self, ui: &mut egui::Ui, position: Option<(Track, f64)>) {
-        use speak::{our_marks, paint_axis, paint_hovered, paint_playhead, paint_strip, paint_wave, Axis, Head};
+        use speak::{our_marks, paint_axis, paint_chips, paint_playhead, paint_strip, paint_wave, Axis, Head};
         const WAVE: f32 = 72.0;
         const STRIP: f32 = 22.0;
         const LINKS: f32 = 16.0;
@@ -311,21 +311,13 @@ impl App {
             let hover = self.hover_time(&response, rect.with_max_y(ticks.top()), &axis, ours_s.max(orig_s.unwrap_or(0.0)));
             let on = |track: Track| position.filter(|(k, _)| *k == track).map(|(_, t)| t);
             let ours = our_marks(&p.speech, &v.db);
-            let ours_current = on(Track::Ours).and_then(|t| p.speech.timeline.sound_at((t * p.speech.rate as f64) as usize));
+            let theirs = reference.map(|r| original_marks(r, &v.db));
             paint_wave(&painter, our_wave, &axis, &p.speech.samples, p.speech.rate, on(Track::Ours), AMBER);
-            paint_strip(&painter, our_strip, &axis, &ours, ours_current, true);
-            if let Some(t) = hover {
-                paint_hovered(&painter, our_strip, &axis, &ours, t, true);
-            }
-            match (reference, &samples) {
-                (Some(r), Some(s)) => {
-                    let theirs = original_marks(r, &v.db);
-                    let theirs_current = on(Track::Original).and_then(|t| theirs.iter().position(|m| !m.pause && m.start <= t && t < m.end));
-                    paint_links(&painter, links, &axis, &ours, &theirs);
-                    paint_strip(&painter, their_strip, &axis, &theirs, theirs_current, false);
-                    if let Some(t) = hover {
-                        paint_hovered(&painter, their_strip, &axis, &theirs, t, false);
-                    }
+            paint_strip(&painter, our_strip, &axis, &ours, true);
+            match (&theirs, &samples) {
+                (Some(theirs), Some(s)) => {
+                    paint_links(&painter, links, &axis, &ours, theirs);
+                    paint_strip(&painter, their_strip, &axis, theirs, false);
                     paint_wave(&painter, their_wave, &axis, s, crate::dev::oracle::RATE, on(Track::Original), WAVE_ORIGINAL);
                 }
                 _ => {
@@ -362,6 +354,11 @@ impl App {
                 // one line across both lanes, at the same moment
                 let bottom = if reference.is_some() { their_wave.bottom() } else { our_strip.bottom() };
                 paint_playhead(&painter, our_wave.top(), bottom, axis.x(t), Head::Hover);
+            }
+            // each lane's sound at the playhead and under the pointer
+            paint_chips(&painter, our_strip, &axis, &ours, t, hover, true);
+            if let (Some(theirs), Some(_)) = (&theirs, &samples) {
+                paint_chips(&painter, their_strip, &axis, theirs, t, hover, false);
             }
             ui.horizontal(|ui| {
                 if lane_button(ui, playing == Some(Track::Original) && !paused, reference.is_some()) {
