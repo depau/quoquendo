@@ -141,6 +141,27 @@ fn check(f: &MirrorFile, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+/// Where one fetched file's bytes count in its download's progress bar: the
+/// download's bytes before this file, out of `total` (the download's whole
+/// size; None: this file's own length).
+#[derive(Clone, Copy)]
+struct Part<'a> {
+    task: &'a str,
+    before: u64,
+    total: Option<u64>,
+}
+
+impl Part<'_> {
+    /// The progress after `got` bytes of a file `length` long.
+    fn progress(&self, got: u64, length: Option<u64>) -> StoreEvent {
+        StoreEvent::Progress {
+            task: self.task.to_string(),
+            done: self.before + got,
+            total: self.total.or(length.map(|l| self.before + l)),
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
 
@@ -247,12 +268,12 @@ mod native {
         });
     }
 
-    fn get(url: &str, task: &str, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
+    fn get(url: &str, part: Option<Part>, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
         cancel.check()?;
         let resp = ureq::get(url).call().map_err(|e| format!("{url}: {e}"))?;
-        let total = resp.header("Content-Length").and_then(|l| l.parse::<u64>().ok());
+        let length = resp.header("Content-Length").and_then(|l| l.parse::<u64>().ok());
         let mut body = resp.into_reader();
-        let mut out = Vec::with_capacity(total.unwrap_or(0) as usize);
+        let mut out = Vec::with_capacity(length.unwrap_or(0) as usize);
         let mut buf = vec![0u8; 256 * 1024];
         loop {
             cancel.check()?;
@@ -261,11 +282,9 @@ mod native {
                 break;
             }
             out.extend_from_slice(&buf[..n]);
-            let _ = tx.send(StoreEvent::Progress {
-                task: task.to_string(),
-                done: out.len() as u64,
-                total,
-            });
+            if let Some(p) = part {
+                let _ = tx.send(p.progress(out.len() as u64, length));
+            }
         }
         Ok(out)
     }
@@ -273,7 +292,7 @@ mod native {
     /// From the mirror: Ok(None) when it can't serve this installer. The
     /// files it stored are removed again unless every one arrived.
     fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx, cancel: &Cancel) -> Result<Option<Vec<String>>, String> {
-        let cat = match get(&format!("{mirror}/v1/catalog.json"), inst.label, tx, cancel) {
+        let cat = match get(&format!("{mirror}/v1/catalog.json"), None, tx, cancel) {
             Ok(cat) => cat,
             Err(_) if !cancel.is_cancelled() => return Ok(None),
             Err(e) => return Err(e),
@@ -289,7 +308,8 @@ mod native {
         // checksum or a write error is final
         let mut stop: Option<Result<Option<Vec<String>>, String>> = None;
         for f in &need {
-            let data = match get(&catalog::mirror_url(mirror, &f.path), inst.label, tx, cancel) {
+            let part = Part { task: inst.label, before: done, total: Some(total) };
+            let data = match get(&catalog::mirror_url(mirror, &f.path), Some(part), tx, cancel) {
                 Ok(data) => data,
                 Err(_) => {
                     stop = Some(Ok(None));
@@ -302,11 +322,6 @@ mod native {
             }
             stored.push(root.join(&f.path));
             done += f.size;
-            let _ = tx.send(StoreEvent::Progress {
-                task: inst.label.to_string(),
-                done,
-                total: Some(total),
-            });
         }
         if let Some(stop) = stop {
             for p in &stored {
@@ -339,7 +354,8 @@ mod native {
                 }
             }
             let url = catalog::installer_url(inst.file, None).unwrap_or_default();
-            let _ = tx.send(match get(&url, inst.label, &tx, &cancel) {
+            let part = Part { task: inst.label, before: 0, total: None };
+            let _ = tx.send(match get(&url, Some(part), &tx, &cancel) {
                 Ok(bytes) => StoreEvent::Fetched {
                     file: inst.file.to_string(),
                     bytes,
@@ -648,18 +664,18 @@ mod web {
         });
     }
 
-    /// `fetch` a URL whole, reporting progress.
-    async fn get(url: &str, task: &str, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
+    /// `fetch` a URL whole, reporting progress as `part` of its download.
+    async fn get(url: &str, part: Option<Part<'_>>, tx: &Tx, cancel: &Cancel) -> Result<Vec<u8>, String> {
         cancel.check()?;
         let window = web_sys::window().ok_or("no window")?;
         let resp: web_sys::Response = JsFuture::from(window.fetch_with_str(url)).await.map_err(js)?.unchecked_into();
         if !resp.ok() {
             return Err(format!("{url}: HTTP {}", resp.status()));
         }
-        let total = resp.headers().get("Content-Length").ok().flatten().and_then(|l| l.parse::<u64>().ok());
+        let length = resp.headers().get("Content-Length").ok().flatten().and_then(|l| l.parse::<u64>().ok());
         let body = resp.body().ok_or("empty response")?;
         let reader: web_sys::ReadableStreamDefaultReader = body.get_reader().unchecked_into();
-        let mut out = Vec::with_capacity(total.unwrap_or(0) as usize);
+        let mut out = Vec::with_capacity(length.unwrap_or(0) as usize);
         loop {
             if cancel.is_cancelled() {
                 // stops the network transfer too
@@ -673,11 +689,9 @@ mod web {
             }
             let value = js_sys::Reflect::get(&chunk, &"value".into()).map_err(js)?;
             out.extend_from_slice(&js_sys::Uint8Array::new(&value).to_vec());
-            let _ = tx.send(StoreEvent::Progress {
-                task: task.to_string(),
-                done: out.len() as u64,
-                total,
-            });
+            if let Some(p) = part {
+                let _ = tx.send(p.progress(out.len() as u64, length));
+            }
         }
         Ok(out)
     }
@@ -685,7 +699,7 @@ mod web {
     /// From the mirror: Ok(None) when it can't serve this installer. Nothing
     /// is stored until every file has arrived.
     async fn from_mirror(mirror: &str, inst: &Installer, tx: &Tx, cancel: &Cancel) -> Result<Option<Vec<String>>, String> {
-        let cat = match get(&format!("{mirror}/v1/catalog.json"), inst.label, tx, cancel).await {
+        let cat = match get(&format!("{mirror}/v1/catalog.json"), None, tx, cancel).await {
             Ok(cat) => cat,
             Err(_) if !cancel.is_cancelled() => return Ok(None),
             Err(e) => return Err(e),
@@ -695,15 +709,19 @@ mod web {
         let index = load_index().await;
         let stored: std::collections::HashSet<&String> = index.voices.iter().flat_map(|v| &v.files).chain(index.languages.values().flatten()).collect();
         let need = missing(files.clone(), |f| stored.contains(&f.path));
+        let total: u64 = need.iter().map(|f| f.size).sum();
+        let mut done = 0;
         let mut fetched = Vec::new();
         for f in &need {
-            let data = match get(&catalog::mirror_url(mirror, &f.path), inst.label, tx, cancel).await {
+            let part = Part { task: inst.label, before: done, total: Some(total) };
+            let data = match get(&catalog::mirror_url(mirror, &f.path), Some(part), tx, cancel).await {
                 Ok(data) => data,
                 Err(_) if !cancel.is_cancelled() => return Ok(None),
                 Err(e) => return Err(e),
             };
             check(f, &data)?;
             fetched.push((f.path.clone(), data));
+            done += f.size;
         }
         // the whole set is stored together so the index knows each voice's
         // files and language; files already stored are read back for that
@@ -712,7 +730,8 @@ mod web {
                 fetched.push((f.path.clone(), d));
             }
         }
-        store(fetched, tx, inst.label).await.map(Some)
+        // storing reports on the status line, not the download's bar
+        store(fetched, tx, &format!("Storing {}", inst.label)).await.map(Some)
     }
 
     /// Download an installer's voices: their files from the mirror when it
@@ -740,7 +759,8 @@ mod web {
                     inst.file
                 ))));
             };
-            let _ = tx.send(match get(&url, inst.label, &tx, &cancel).await {
+            let part = Part { task: inst.label, before: 0, total: None };
+            let _ = tx.send(match get(&url, Some(part), &tx, &cancel).await {
                 Ok(bytes) => StoreEvent::Fetched {
                     file: inst.file.to_string(),
                     bytes,
