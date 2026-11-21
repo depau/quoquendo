@@ -13,6 +13,9 @@ concurrency:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    # the file table it commits (mirror/FILES.md)
+    permissions:
+      contents: write
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -84,6 +87,18 @@ jobs:
           cd out/LTTS7
           xargs -a ../../upload.txt -P 8 -I{} wrangler r2 object put "$BUCKET/v1/{}" --file "{}" --remote
           wrangler r2 object put "$BUCKET/v1/catalog.json" --file ../catalog.json --content-type application/json --remote
+      # the same files as a page on GitHub, for downloads outside the app
+      - name: File table
+        run: |
+          set -euo pipefail
+          ./target/release/quoquendo --mirror-table out/catalog.json "$MIRROR" mirror/FILES.md
+          git add mirror/FILES.md
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Mirror: file table"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
       - name: Deploy the Worker
         working-directory: mirror/worker
         run: wrangler deploy

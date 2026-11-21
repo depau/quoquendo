@@ -39,10 +39,14 @@ This keeps only the voice's files and its language's in
 `~/.local/share/quoquendo/LTTS7` (`%APPDATA%` on Windows). The app's Voices
 tab does the same, and downloads any of the pack's 47 installers from
 archive.org, or their files from a voice mirror ([mirror/](mirror/README.md)).
+Every file on the mirror is listed, with links, sizes and checksums, in
+[mirror/FILES.md](mirror/FILES.md), for use outside the app.
 
-Of the 47 voices, Jordi (Catalan), Empar (Valencian), Carmela (Galician) and
-LinLin (Chinese) can't be read properly yet: no installer carries their
-language module.
+Jordi (Catalan), Empar (Valencian) and Carmela (Galician) need their
+language from Loquendo's separate language distributions (`Catalan &
+Valencian Distribution.exe`, `Galician Distribution.exe`; the mirror has it),
+read through its dictionary and built-in rules. LinLin (Chinese) can't be read
+yet: no installer carries her language module.
 
 ## The app
 

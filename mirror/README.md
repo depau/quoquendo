@@ -7,7 +7,7 @@ One Worker (`mirror/worker`, named `quoquendo`) over one R2 bucket
 |---|---|---|
 | `/`, `/<file>` | the web app (`trunk build` output, R2 `site/`) | the **site** workflow, on every push to `main` |
 | `/v1/catalog.json` | every voice and language folder with each file's path, size and sha256 (`quoquendo --mirror-catalog`) | the **mirror** workflow, run by hand |
-| `/v1/<path>` | one file of the LTTS7 tree, e.g. `v1/data/Roberto.vcf`, `v1/bin/LTTS7Italian.dll` | the **mirror** workflow |
+| `/v1/<path>` | one file of the LTTS7 tree, e.g. `v1/data/Roberto.vcf`, `v1/bin/LTTS7Italian.dll`; all listed, linked, in [FILES.md](FILES.md) (`quoquendo --mirror-table`) | the **mirror** workflow |
 | `/v1/archive/<installer>.exe` | the original installer, proxied from archive.org (which sends no CORS header for `.exe` files) | — |
 
 The web app downloads voices from the site it is served from. The desktop

@@ -36,6 +36,8 @@ pub struct LaunchOptions {
     unpack: Option<(PathBuf, PathBuf)>,
     /// `--mirror-catalog <LTTS7 dir> <out catalog.json>`
     mirror_catalog: Option<(PathBuf, PathBuf)>,
+    /// `--mirror-table <catalog.json> <mirror base URL> <out .md>`
+    mirror_table: Option<(PathBuf, String, PathBuf)>,
     /// `--list-installers`: the pack's installer file names
     list_installers: bool,
     /// `--compare-all`: every voice against the original on its language's
@@ -95,6 +97,10 @@ pub fn parse_args() -> LaunchOptions {
         } else if a == "--mirror-catalog" {
             if let (Some(from), Some(to)) = (args.next(), args.next()) {
                 opts.mirror_catalog = Some((from.into(), to.into()));
+            }
+        } else if a == "--mirror-table" {
+            if let (Some(catalog), Some(base), Some(to)) = (args.next(), args.next(), args.next()) {
+                opts.mirror_table = Some((catalog.into(), base, to.into()));
             }
         } else if a == "--list-installers" {
             opts.list_installers = true;
@@ -487,6 +493,9 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
     }
     if let Some((from, to)) = &opts.mirror_catalog {
         return Some(done(crate::mirror::write_catalog(from, to).map(|n| println!("{n} voices -> {}", to.display()))));
+    }
+    if let Some((catalog, base, to)) = &opts.mirror_table {
+        return Some(done(crate::mirror::write_table(catalog, base, to).map(|n| println!("{n} files -> {}", to.display()))));
     }
     if let Some(path) = &opts.install {
         let store = install::voice_store().unwrap_or_default();

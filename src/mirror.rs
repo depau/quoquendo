@@ -85,6 +85,90 @@ pub fn write_catalog(ltts7: &Path, out: &Path) -> Result<usize, String> {
     Ok(n)
 }
 
+/// The mirror's files as a Markdown page (`--mirror-table`), for people who
+/// want them outside the app: each voice and language folder of `catalog`
+/// with every file linked on `base`, its size and sha256. Returns the file
+/// count.
+pub fn write_table(catalog: &Path, base: &str, out: &Path) -> Result<usize, String> {
+    use crate::catalog::{archive_url, mirror_url, size_label};
+    use std::fmt::Write;
+    let text = std::fs::read(catalog).map_err(|e| format!("{}: {e}", catalog.display()))?;
+    let doc: Value = serde_json::from_slice(&text).map_err(|e| format!("{}: {e}", catalog.display()))?;
+    let base = base.trim_end_matches('/');
+    let str_of = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let files_of = |v: &Value| v.get("files").and_then(Value::as_array).cloned().unwrap_or_default();
+    let bytes_of = |fs: &[Value]| fs.iter().filter_map(|f| f.get("size").and_then(Value::as_u64)).sum::<u64>();
+    let voices = doc.get("voices").and_then(Value::as_array).cloned().unwrap_or_default();
+    let languages: Vec<(String, Value)> = doc
+        .get("languages")
+        .and_then(Value::as_object)
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+    // GitHub's heading anchors: lower case, spaces as dashes
+    let anchor = |s: &str| s.to_lowercase().replace(' ', "-");
+    let file_rows = |md: &mut String, fs: &[Value]| {
+        md.push_str("| File | Size | SHA-256 |\n|---|---:|---|\n");
+        for f in fs {
+            let path = str_of(f, "path");
+            let size = f.get("size").and_then(Value::as_u64).unwrap_or(0);
+            let _ = writeln!(md, "| [`{path}`]({}) | {} | `{}` |", mirror_url(base, &path), size_label(size), str_of(f, "sha256"));
+        }
+        md.push('\n');
+    };
+
+    let mut all: Vec<Value> = voices.iter().flat_map(&files_of).collect();
+    all.extend(languages.iter().flat_map(|(_, l)| files_of(l)));
+    all.sort_by_key(|f| str_of(f, "path"));
+    all.dedup_by_key(|f| str_of(f, "path"));
+
+    let mut md = String::new();
+    let _ = writeln!(md, "# Mirrored files\n");
+    let _ = writeln!(
+        md,
+        "Every file the voice mirror serves under `{base}/v1/`, as its [`catalog.json`]({base}/v1/catalog.json) lists \
+         them: {} voices and {} language folders unpacked from Loquendo 7's installers and language distributions \
+         (`quoquendo --unpack`), {} files, {} in all. The mirror workflow writes this page (`quoquendo --mirror-table`); \
+         don't edit it by hand.\n",
+        voices.len(),
+        languages.len(),
+        all.len(),
+        size_label(bytes_of(&all))
+    );
+    let _ = writeln!(
+        md,
+        "Each path is relative to an LTTS7 folder: a voice needs its own files and its language folder's, placed as \
+         the paths say (`curl --create-dirs -o \"LTTS7/<path>\" <link>`). The installers they came from are linked \
+         from each voice.\n"
+    );
+    md.push_str("## Voices\n\n| Voice | Language | Installer | Files | Size |\n|---|---|---|---:|---:|\n");
+    for v in &voices {
+        let (name, folder, installer) = (str_of(v, "name"), str_of(v, "language_folder"), str_of(v, "installer"));
+        let fs = files_of(v);
+        let tongue = str_of(v, "mother_tongue");
+        let language = if folder.is_empty() { tongue } else { format!("[{tongue}](#{})", anchor(&folder)) };
+        let _ = writeln!(
+            md,
+            "| [{name}](#{}) | {language} | [{installer}]({}) | {} | {} |",
+            anchor(&name),
+            archive_url(&installer),
+            fs.len(),
+            size_label(bytes_of(&fs))
+        );
+    }
+    md.push('\n');
+    for v in &voices {
+        let _ = writeln!(md, "### {}\n", str_of(v, "name"));
+        file_rows(&mut md, &files_of(v));
+    }
+    md.push_str("## Languages\n\n");
+    for (name, l) in &languages {
+        let _ = writeln!(md, "### {name}\n");
+        file_rows(&mut md, &files_of(l));
+    }
+    std::fs::write(out, md).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(all.len())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
