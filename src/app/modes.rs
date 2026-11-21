@@ -403,18 +403,24 @@ fn lane_button(ui: &mut egui::Ui, playing: bool, enabled: bool) -> bool {
 }
 
 /// The original engine's sounds, timed by the durations it reported; word
-/// starts from its transcription.
+/// starts from its transcription. It reports each phone as its two
+/// half-phones cut to whole ms (pauses exact), about 1 ms short per phone:
+/// what that loses against its audio goes back evenly to every phone.
 #[cfg(not(target_arch = "wasm32"))]
 fn original_marks(r: &crate::dev::oracle::Reference, db: &quoquendo::loquendo::VoiceDatabase) -> Vec<speak::Mark> {
+    use crate::dev::oracle::is_pause;
     let starts: Vec<bool> = r.target_phrases().iter().flat_map(|p| p.phones.iter().map(|t| t.word_start)).collect();
+    let said = r.phones.iter().filter(|(s, _)| !is_pause(s)).count().max(1) as f64;
+    let reported: u32 = r.phones.iter().map(|(_, ms)| ms).sum();
+    let lost = (r.audio.len() as f64 / crate::dev::oracle::RATE as f64 - reported as f64 / 1000.0) / said;
     let mut k = 0;
     let mut t = 0.0;
     r.phones
         .iter()
         .map(|(sym, ms)| {
-            let pause = sym == "#" || sym == "@";
+            let pause = is_pause(sym);
             let start = t;
-            t += *ms as f64 / 1000.0;
+            t += *ms as f64 / 1000.0 + if pause { 0.0 } else { lost };
             let word_start = !pause && {
                 k += 1;
                 starts.get(k - 1).copied().unwrap_or(false)

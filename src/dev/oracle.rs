@@ -36,7 +36,7 @@ pub struct Reference {
 /// The original engine's output rate (Hz).
 pub const RATE: u32 = 32000;
 
-fn is_pause(sym: &str) -> bool {
+pub fn is_pause(sym: &str) -> bool {
     sym == "#" || sym == "@"
 }
 
