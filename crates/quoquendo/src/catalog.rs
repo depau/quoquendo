@@ -71,10 +71,11 @@ pub const INSTALLERS: [Installer; 48] = [
     Installer { file: "Zosia - Polish.exe", label: "Zosia", language: "Polish", voice: "Zosia", gender: "Female", size: 61304127 },
 ];
 
-/// MotherTongues whose language data ships in no installer found (LinLin's
-/// Chinese): their voices can't be read. Catalan, Valencian and Galician come
-/// from the separate language distributions (`pack::unpack_installer`).
-pub const NO_MODULE: [&str; 1] = ["Chinese"];
+/// MotherTongues whose language data ships nowhere found: their voices can't
+/// be read (the app greys them out). None at the moment: Catalan, Valencian
+/// and Galician come from the language distributions, Chinese from LTTS 7.2's
+/// `Chinese.chd` (`pack::unpack_installer`).
+pub const NO_MODULE: [&str; 0] = [];
 
 /// Why an installer's voice can't speak, known from its catalog language
 /// alone: no module anywhere (`Mandarin Chinese` → `no Chinese module`).
@@ -123,13 +124,5 @@ mod tests {
         );
         assert_eq!(installer_for("roberto").unwrap().file, "Raffaele - Italian.exe");
         assert_eq!(archive_url("Federica - Italian.exe"), "https://archive.org/download/loquendo-7-federica-italian/Federica%20-%20Italian.exe");
-    }
-
-    #[test]
-    fn names_missing_modules() {
-        assert_eq!(unsupported("Mandarin Chinese").as_deref(), Some("no Chinese module"));
-        // the language distributions bring Catalan, Valencian and Galician
-        assert_eq!(unsupported("Valencian Catalan"), None);
-        assert_eq!(unsupported("Italian"), None);
     }
 }

@@ -2132,11 +2132,24 @@ when a speed/pitch change asks for it.
   picker already gets them as pauses. Speed and pitch controls.
 - The app's piece player (`src/app.rs`) and the JNI `analyse` read pieces
   from `db.audio`; pieces from a Gilded database need `db.bank(unit)`.
-- LinLin (Chinese) has no LTTS7 language module in any installer found. The
-  original refuses it too: with the voice unpacked into a full engine,
-  `ttsLoadPersona` fails with 12 "Invalid function or API parameter". The
-  Loquendo 6 pack's installers carry an LTTS6 Mandarin module
-  (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from.
+- LinLin (Chinese) has no LTTS 7.0 language data in any installer found
+  (the original refuses her: with the voice unpacked into a full engine,
+  `ttsLoadPersona` fails with 12 "Invalid function or API parameter").
+  LTTS 7.2's Chinese is in Loquendo's Android build (archive.org
+  `loquendo-tts-offline-v-1`): `libLTTS7Chinese.so`, ARM only, not ported,
+  and its dictionary `Chinese.chd`, 58 742 UTF-8 `词\tpinyin` lines with
+  tone sandhi inside words applied (`一万 yi2wan4`). `--unpack Chinese.chd`
+  writes `data/languages/Chinese/` with an `.lde` naming it (7.2 has no
+  `.lde`). `g2p::chinese` splits text by the longest dictionary word, reads
+  typed pinyin (her `DemoSentence` is pinyin) and digits, applies sandhi
+  across words (3-3, 不, 一) and turns syllables into the phones her 3 982
+  recorded sentences use: initial, glide (`j w Hy`), toned final (`xuan2` →
+  c Hy E2 n), with the allophones they show (`d` voiced in tone 5 and after
+  a nasal, `Hg` on a vowel-initial syllable inside a phrase, `fu` → f Hfw U,
+  `in`/`ing` before a pause as `i)`/`I)`). All 1 686 syllables of the
+  dictionary map to recorded phones but `er1` (`ARR1`, never recorded; read
+  `ARR2`). The 7.2 module's phone table (`ELQGetPhonemes`) is LinLin's
+  alphabet; its `FonTrasParola`/`FonAllofonoLingua` are what this fits.
 - Federica (Italian) exists only as an LTTS 7.2 bundle (archive.org
   `loquendo-7-federica-italian`, an Inno installer of the whole 7.2
   engine): voices and languages under `modules/<Name>/`, configured by one

@@ -70,6 +70,18 @@ jobs:
             fi
             ./target/release/quoquendo --unpack "installers/$f" out/LTTS7
           done
+      # Chinese has no LTTS 7.0 language data anywhere: LTTS 7.2's
+      # dictionary, from Loquendo's Android build on archive.org (one member
+      # of its zip), read by g2p::chinese
+      - name: Chinese dictionary
+        run: |
+          set -euo pipefail
+          f=installers/Chinese.chd
+          if [ ! -s "$f" ]; then
+            curl -fL --retry 5 --retry-all-errors -o "$f" \
+              "https://archive.org/download/loquendo-tts-offline-v-1/Loquendo%20TTS%20Offline%20v1.zip/LoquendoTTS/modules/Chinese/Chinese.chd"
+          fi
+          ./target/release/quoquendo --unpack "$f" out/LTTS7
       - name: Catalog
         run: ./target/release/quoquendo --mirror-catalog out/LTTS7 out/catalog.json
       # only the files whose checksum differs from the catalog already on the

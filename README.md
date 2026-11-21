@@ -45,9 +45,12 @@ Every file on the mirror is listed, with links, sizes and checksums, in
 
 Jordi (Catalan), Empar (Valencian) and Carmela (Galician) need their
 language from Loquendo's separate language distributions (`Catalan &
-Valencian Distribution.exe`, `Galician Distribution.exe`; the mirror has it),
-read through its dictionary and built-in rules. LinLin (Chinese) can't be read
-yet: no installer carries her language module.
+Valencian Distribution.exe`, `Galician Distribution.exe`), LinLin (Chinese)
+hers from LTTS 7.2's `Chinese.chd` (in Loquendo's Android build on
+archive.org; `quoquendo --unpack Chinese.chd <LTTS7 dir>`). The mirror has
+all of them; each is read through its dictionary and built-in rules.
+Federica (Italian) comes from an LTTS 7.2 bundle of her own and reads
+Italian from any Italian voice.
 
 ## The app
 

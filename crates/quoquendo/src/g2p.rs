@@ -16,6 +16,8 @@
 
 use crate::phonetics::is_vowel;
 
+mod chinese;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Language {
     Italian,
@@ -30,6 +32,8 @@ pub enum Language {
     /// reduction, with `v` and `Dg`
     Valencian,
     Galician,
+    /// Mandarin (LinLin): `Chinese.chd`'s words and pinyin (`chinese`)
+    Chinese,
     Dutch,
     Swedish,
     Danish,
@@ -82,6 +86,8 @@ impl Language {
             Language::Catalan
         } else if has("galician") || has("gl-es") {
             Language::Galician
+        } else if has("chinese") || has("zh-cn") || has("mandarin") {
+            Language::Chinese
         } else if has("dutch") || has("nl-nl") || has("flemish") {
             Language::Dutch
         } else if has("swedish") || has("sv-se") {
@@ -116,6 +122,7 @@ impl Language {
             Language::Catalan => "Catalan",
             Language::Valencian => "Valencian",
             Language::Galician => "Galician",
+            Language::Chinese => "Chinese",
             Language::Dutch => "Dutch",
             Language::Swedish => "Swedish",
             Language::Danish => "Danish",
@@ -129,7 +136,7 @@ impl Language {
         }
     }
 
-    pub const ALL: [Language; 19] = [
+    pub const ALL: [Language; 20] = [
         Language::Italian,
         Language::English,
         Language::German,
@@ -139,6 +146,7 @@ impl Language {
         Language::Catalan,
         Language::Valencian,
         Language::Galician,
+        Language::Chinese,
         Language::Dutch,
         Language::Swedish,
         Language::Danish,
@@ -162,6 +170,7 @@ impl Language {
             Language::Catalan => "Hola. Sóc una veu de Loquendo i aquest és el text que m'has demanat llegir.",
             Language::Valencian => "Hola. Sóc una veu de Loquendo i este és el text que m'has demanat llegir.",
             Language::Galician => "Ola. Son unha voz de Loquendo e este é o texto que me pediches ler.",
+            Language::Chinese => "你好。我是一个中文语音，这是你让我朗读的文字。",
             Language::Dutch => "Hallo. Ik ben een stem van Loquendo en dit is de tekst die je mij hebt gegeven.",
             Language::Swedish => "Hej. Jag är en röst från Loquendo och detta är texten du bad mig läsa.",
             Language::Danish => "Hej. Jeg er en stemme fra Loquendo, og dette er teksten du bad mig læse.",
@@ -252,7 +261,10 @@ fn plain(w: &[char], i: usize) -> Option<char> {
 use std::collections::HashMap;
 
 pub struct LanguageData {
+    /// spelling → phones; Chinese: word → pinyin syllables (`chinese`)
     dictionary: HashMap<String, Vec<String>>,
+    /// the longest word, in characters (Chinese splits text by it)
+    longest: usize,
 }
 
 /// A voice's front end: its language, and that language's own data
@@ -308,10 +320,14 @@ impl Frontend {
         self.module.is_some()
     }
 
-    /// Read a language's dictionary from its `LexicalDB` (may be missing).
+    /// Read a language's dictionary from its `LexicalDB` (may be missing):
+    /// SQLite's `lessico` table, or for Chinese `Chinese.chd`'s lines.
     pub fn from_files(lang: Language, dbl: Option<&[u8]>) -> Frontend {
         let mut dictionary = HashMap::new();
-        if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
+        let mut longest = 0;
+        if lang == Language::Chinese {
+            (dictionary, longest) = dbl.map(chinese::read_dictionary).unwrap_or_default();
+        } else if let Some(rows) = dbl.and_then(|d| crate::sqlite::read_table(d, "lessico").ok()) {
             for r in rows {
                 let (Some(word), Some(pron)) = (r.first().and_then(|v| v.text()), r.get(1).and_then(|v| v.text())) else {
                     continue;
@@ -322,7 +338,7 @@ impl Frontend {
                 }
             }
         }
-        let data = LanguageData { dictionary };
+        let data = LanguageData { dictionary, longest };
         Frontend {
             lang,
             data: Some(std::sync::Arc::new(data)),
@@ -347,6 +363,10 @@ fn language_data_lookup(word: &str, fe: &Frontend) -> Option<Vec<String>> {
 /// module they read nothing, and the voice reports its language data missing.
 pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
+    // Chinese reads runs of text, not words (its dictionary gives pinyin)
+    if lang == Language::Chinese {
+        return chinese::analyse_run(word, fe).iter().flat_map(|t| t.symbols().iter().cloned()).collect();
+    }
     // the language's own data from the installer (`Frontend::from_files`)
     if let Some(p) = language_data_lookup(word, fe) {
         // the dictionaries write the language's phones, which the voice's
@@ -373,7 +393,7 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
         _ => accent_final,
     };
     let mut out = match lang {
-        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish | Language::Danish | Language::Russian => unreachable!(),
+        Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish | Language::Danish | Language::Russian | Language::Chinese => unreachable!(),
         Language::Catalan => catalan(&w, false),
         Language::Valencian => catalan(&w, true),
         Language::Galician => galician(&w),
@@ -898,8 +918,8 @@ pub const LONG_PAUSE_MS: u32 = 500;
 
 fn pause_for_punctuation(c: char) -> Option<u32> {
     match c {
-        ',' | ';' | ':' => Some(MEDIUM_PAUSE_MS),
-        '.' | '!' | '?' | '\n' => Some(LONG_PAUSE_MS),
+        ',' | ';' | ':' | '，' | '；' | '：' | '、' => Some(MEDIUM_PAUSE_MS),
+        '.' | '!' | '?' | '\n' | '。' | '！' | '？' | '…' => Some(LONG_PAUSE_MS),
         '-' | '\u{2013}' | '\u{2014}' => Some(SHORT_PAUSE_MS),
         _ => None,
     }
@@ -917,9 +937,14 @@ pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
         () => {
             if !word.is_empty() {
                 let w = std::mem::take(&mut word);
-                let symbols = word_to_symbols(&w, fe);
-                if !symbols.is_empty() {
-                    tokens.push(Token::Word { text: w, symbols });
+                if fe.lang == Language::Chinese {
+                    // a run of Chinese text: its words, as the dictionary splits it
+                    tokens.extend(chinese::analyse_run(&w, fe));
+                } else {
+                    let symbols = word_to_symbols(&w, fe);
+                    if !symbols.is_empty() {
+                        tokens.push(Token::Word { text: w, symbols });
+                    }
                 }
             }
         };
@@ -935,9 +960,9 @@ pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
         } else if let Some(ms) = pause_for_punctuation(lc) {
             flush!();
             let reason = match lc {
-                '?' => "question",
-                '!' => "exclamation",
-                '.' | '\n' => "sentence break",
+                '?' | '？' => "question",
+                '!' | '！' => "exclamation",
+                '.' | '\n' | '。' => "sentence break",
                 _ => "phrase break",
             };
             tokens.push(Token::Pause { ms, reason: reason.into() });

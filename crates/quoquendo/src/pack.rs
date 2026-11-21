@@ -53,7 +53,8 @@ fn folder(path: &str) -> &str {
     path.rsplit_once('/').map(|(d, _)| d).unwrap_or("")
 }
 
-/// Unpack a voice installer into the files its voices need.
+/// Unpack a voice installer, a language distribution or LTTS 7.2's
+/// `Chinese.chd` into the files its voices or language need.
 pub fn unpack_installer(exe: &[u8]) -> Result<Unpacked, String> {
     let files: Vec<(String, Vec<u8>)> = if is_inno(exe) {
         // 7.2 bundles keep voices and languages in `modules/`, described by
@@ -66,10 +67,32 @@ pub fn unpack_installer(exe: &[u8]) -> Result<Unpacked, String> {
         };
         let files = inno::files(exe, keep)?.into_iter().map(|(p, d)| (p[INNO_ROOT.len()..].to_string(), d)).collect();
         place_ttsconf(files)
+    } else if is_chinese_dictionary(exe) {
+        chinese_language(exe)
     } else {
         place_wise(wise::files(exe)?)?
     };
     select(files)
+}
+
+/// LTTS 7.2's `Chinese.chd`: UTF-8 lines of a word and its toned pinyin
+/// (`一\tyi1`). No installer carries it (Loquendo's Android build does).
+fn is_chinese_dictionary(data: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&data[..data.len().min(256)]);
+    head.lines().next().and_then(|l| l.split_once('\t')).is_some_and(|(word, pinyin)| {
+        word.chars().all(|c| c as u32 >= 0x3400) && !word.is_empty() && pinyin.trim_end().ends_with(|c: char| ('1'..='5').contains(&c))
+    })
+}
+
+/// The Chinese language folder from its dictionary: `Chinese.chd` and an
+/// `.lde` naming it as the `LexicalDB` (LTTS 7.2 configures the language in
+/// `global.ttsconf` instead; there is no 7.0 one), read by `g2p::chinese`.
+fn chinese_language(chd: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let lde = "; Language descriptor for Loquendo TTS, written by quoquendo for LTTS 7.2's Chinese.chd\r\n\r\n\"Language\" = \"Chinese,zh-CN,zh,Mandarin\"\r\n\"DefaultVariant\" = \"yes\"\r\n\"LexicalDB\" = \"Chinese.chd\"\r\n";
+    vec![
+        ("data/languages/Chinese/Chinese.lde".into(), lde.as_bytes().to_vec()),
+        ("data/languages/Chinese/Chinese.chd".into(), chd.to_vec()),
+    ]
 }
 
 /// A 7.2 bundle (`global.ttsconf`, `modules/<Name>/`) as the 7.0 tree the

@@ -796,7 +796,7 @@ mod web {
     /// Ask for an installer file, then hand its bytes back as `Fetched`.
     pub fn pick_installer(tx: Tx) {
         spawn_local(async move {
-            let Some(f) = rfd::AsyncFileDialog::new().add_filter("Loquendo voice installer", &["exe", "EXE"]).pick_file().await else {
+            let Some(f) = rfd::AsyncFileDialog::new().add_filter("Loquendo installer or Chinese.chd", &["exe", "EXE", "chd"]).pick_file().await else {
                 return;
             };
             let _ = tx.send(StoreEvent::Fetched {
@@ -810,7 +810,7 @@ mod web {
 /// Ask for an installer file, then hand its bytes back as `Fetched`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn pick_installer(tx: Tx) {
-    let Some(path) = rfd::FileDialog::new().add_filter("Loquendo voice installer", &["exe", "EXE"]).pick_file() else {
+    let Some(path) = rfd::FileDialog::new().add_filter("Loquendo installer or Chinese.chd", &["exe", "EXE", "chd"]).pick_file() else {
         return;
     };
     std::thread::spawn(move || {
