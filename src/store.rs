@@ -575,7 +575,12 @@ mod web {
 
     pub fn list(tx: Tx) {
         spawn_local(async move {
-            let index = load_index().await;
+            // each voice's state is saved as the build storing it saw it;
+            // recompute it, as a later build may read languages an earlier
+            // one could not (Catalan, Galician)
+            let mut index = load_index().await;
+            refresh(&mut index).await;
+            let _ = save_index(&index).await;
             let _ = tx.send(StoreEvent::Listed(index.voices.into_iter().map(|v| v.info).collect()));
         });
     }
