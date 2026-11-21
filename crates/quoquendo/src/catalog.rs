@@ -1,13 +1,15 @@
 //! The voice installers of the Loquendo 7 pack on archive.org
 //! (`text-to-speech-oddcast-voices-pack-2024`, folder `Loquendo 7`): file,
-//! size, and the voice each installs (Raffaele installs Roberto).
+//! size, and the voice each installs (`Raffaele - Italian.exe` installs
+//! Roberto).
 
 /// One installer of the pack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Installer {
     /// its file name (`Raffaele - Italian.exe`)
     pub file: &'static str,
-    /// the name on the file
+    /// the name shown: the voice it installs (the files say `Raffaele`,
+    /// `Catherine`, `Jolie` for Roberto, Kate, Juliette)
     pub label: &'static str,
     /// the language on the file
     pub language: &'static str,
@@ -28,7 +30,7 @@ pub const INSTALLERS: [Installer; 47] = [
     Installer { file: "Carlos - Colombia Spanish.exe", label: "Carlos", language: "Colombia Spanish", voice: "Carlos", gender: "Male", size: 57594192 },
     Installer { file: "Carmela - Galician.exe", label: "Carmela", language: "Galician", voice: "Carmela", gender: "Female", size: 45793280 },
     Installer { file: "Carmen - European Spanish.exe", label: "Carmen", language: "European Spanish", voice: "Carmen", gender: "Female", size: 52051369 },
-    Installer { file: "Catherine - UK English.exe", label: "Catherine", language: "UK English", voice: "Kate", gender: "Female", size: 70328215 },
+    Installer { file: "Catherine - UK English.exe", label: "Kate", language: "UK English", voice: "Kate", gender: "Female", size: 70328215 },
     Installer { file: "Dave - US English.exe", label: "Dave", language: "US English", voice: "Dave", gender: "Male", size: 65374438 },
     Installer { file: "Diego - Argentine Spanish.exe", label: "Diego", language: "Argentine Spanish", voice: "Diego", gender: "Male", size: 45120562 },
     Installer { file: "Dmitri - Russian.exe", label: "Dmitri", language: "Russian", voice: "Dmitri", gender: "Male", size: 68036163 },
@@ -44,7 +46,7 @@ pub const INSTALLERS: [Installer; 47] = [
     Installer { file: "Gabriela - Brazilian Portuguese.exe", label: "Gabriela", language: "Brazilian Portuguese", voice: "Gabriela", gender: "Female", size: 63031068 },
     Installer { file: "Giulia - Italian.exe", label: "Giulia", language: "Italian", voice: "Giulia", gender: "Female", size: 59893348 },
     Installer { file: "Grace - Australian English.exe", label: "Grace", language: "Australian English", voice: "Grace", gender: "Female", size: 68022784 },
-    Installer { file: "Jolie - French.exe", label: "Jolie", language: "French", voice: "Juliette", gender: "Female", size: 55537481 },
+    Installer { file: "Jolie - French.exe", label: "Juliette", language: "French", voice: "Juliette", gender: "Female", size: 55537481 },
     Installer { file: "Jordi - Catalan.exe", label: "Jordi", language: "Catalan", voice: "Jordi", gender: "Male", size: 51994624 },
     Installer { file: "Jorge - European Spanish.exe", label: "Jorge", language: "European Spanish", voice: "Jorge", gender: "Male", size: 47893037 },
     Installer { file: "Katrin - German.exe", label: "Katrin", language: "German", voice: "Katrin", gender: "Female", size: 69003336 },
@@ -56,7 +58,7 @@ pub const INSTALLERS: [Installer; 47] = [
     Installer { file: "Matteo - Italian.exe", label: "Matteo", language: "Italian", voice: "Matteo", gender: "Male", size: 57640492 },
     Installer { file: "Olga - Russian.exe", label: "Olga", language: "Russian", voice: "Olga", gender: "Female", size: 66356200 },
     Installer { file: "Paola - Italian.exe", label: "Paola", language: "Italian", voice: "Paola", gender: "Female", size: 60046486 },
-    Installer { file: "Raffaele - Italian.exe", label: "Raffaele", language: "Italian", voice: "Roberto", gender: "Male", size: 52762973 },
+    Installer { file: "Raffaele - Italian.exe", label: "Roberto", language: "Italian", voice: "Roberto", gender: "Male", size: 52762973 },
     Installer { file: "Simon - UK English.exe", label: "Simon", language: "UK English", voice: "Simon", gender: "Male", size: 66891693 },
     Installer { file: "Soledad - Colombia Spanish.exe", label: "Soledad", language: "Colombia Spanish", voice: "Soledad", gender: "Female", size: 52802628 },
     Installer { file: "Stefan - German.exe", label: "Stefan", language: "German", voice: "Stefan", gender: "Male", size: 65896124 },

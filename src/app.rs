@@ -341,7 +341,8 @@ impl App {
                         Some(i) => self.downloads[i].state = DownloadState::Unpacking,
                         None => {}
                     }
-                    self.status = format!("Unpacking {file}…");
+                    let name = INSTALLERS.iter().find(|i| i.file == file).map_or(file.as_str(), |i| i.label);
+                    self.status = format!("Unpacking {name}…");
                     self.unpacking = Some(file.clone());
                     store::import_installer(file, bytes, self.tx.clone());
                 }
@@ -986,12 +987,13 @@ impl App {
                 });
         });
         let needle = self.filter.to_lowercase();
-        let shown: Vec<&'static Installer> = INSTALLERS
+        let mut shown: Vec<&'static Installer> = INSTALLERS
             .iter()
             .filter(|i| needle.is_empty() || i.label.to_lowercase().contains(&needle) || i.language.to_lowercase().contains(&needle) || i.voice.to_lowercase().contains(&needle))
             .filter(|i| self.filter_language.is_empty() || i.language == self.filter_language)
             .filter(|i| self.filter_gender.is_empty() || i.gender == self.filter_gender)
             .collect();
+        shown.sort_by_key(|i| i.label.to_lowercase());
         let can_fetch = !cfg!(target_arch = "wasm32") || self.mirror().is_some();
         let mut queue = None;
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
@@ -1002,8 +1004,7 @@ impl App {
                 }
                 ui.end_row();
                 for inst in shown {
-                    let label = if inst.voice != inst.label { format!("{} ({})", inst.label, inst.voice) } else { inst.label.to_string() };
-                    ui.label(label);
+                    ui.label(inst.label);
                     ui.label(inst.language);
                     ui.label(RichText::new(inst.gender).color(MUTED));
                     ui.label(RichText::new(catalog::size_label(inst.size)).monospace());
