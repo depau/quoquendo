@@ -226,7 +226,11 @@ pub struct Launch {
     pub screenshot: Option<std::path::PathBuf>,
 }
 
+/// The app's own dark look. egui keeps a light and a dark style and follows
+/// the system's preference, so the theme is pinned: under a light
+/// preference the light style (white bars, dark text) would show instead.
 fn style(ctx: &egui::Context) {
+    ctx.set_theme(egui::Theme::Dark);
     let mut v = egui::Visuals::dark();
     v.panel_fill = PANEL;
     v.window_fill = PANEL;
