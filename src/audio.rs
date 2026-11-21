@@ -47,7 +47,25 @@ impl Player {
         }
     }
 
-    /// Where the playing track is (s), None when nothing plays.
+    /// Hold the track where it is; `position` stays there.
+    pub fn pause(&mut self) {
+        if let Some(sink) = &self.sink {
+            sink.pause();
+        }
+    }
+
+    /// Go on from where `pause` held it.
+    pub fn resume(&mut self) {
+        if let Some(sink) = &self.sink {
+            sink.play();
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.sink.as_ref().is_some_and(|s| s.is_paused() && !s.empty())
+    }
+
+    /// Where the playing or paused track is (s), None when nothing plays.
     pub fn position(&self) -> Option<f64> {
         let sink = self.sink.as_ref().filter(|s| !s.empty())?;
         Some(self.offset + sink.get_pos().as_secs_f64())
@@ -70,11 +88,15 @@ pub fn save(speech: &Speech, format: Format, tags: &Tagged) -> Result<Option<Sav
 #[cfg(target_arch = "wasm32")]
 pub struct Player {
     ctx: Option<web_sys::AudioContext>,
+    /// the track, kept to go on after a pause
+    buffer: Option<web_sys::AudioBuffer>,
     source: Option<web_sys::AudioBufferSourceNode>,
     /// the context's time when the track's sample `offset` played
     started_at: f64,
     offset: f64,
     duration: f64,
+    /// where a paused track was held (s)
+    paused_at: Option<f64>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -82,10 +104,12 @@ impl Player {
     pub fn new() -> Player {
         Player {
             ctx: None,
+            buffer: None,
             source: None,
             started_at: 0.0,
             offset: 0.0,
             duration: 0.0,
+            paused_at: None,
         }
     }
 
@@ -104,10 +128,18 @@ impl Player {
         let mut samples = samples.to_vec();
         samples.resize(n as usize, 0.0);
         buffer.copy_to_channel(&samples, 0).map_err(js)?;
-        let source = ctx.create_buffer_source().map_err(js)?;
-        source.set_buffer(Some(&buffer));
-        source.connect_with_audio_node(&ctx.destination()).map_err(js)?;
         self.duration = n as f64 / rate as f64;
+        self.buffer = Some(buffer);
+        self.start(from)
+    }
+
+    /// Play the kept track from `from` seconds in.
+    fn start(&mut self, from: f64) -> Result<(), String> {
+        let js = |e: wasm_bindgen::JsValue| format!("audio: {e:?}");
+        let (Some(ctx), Some(buffer)) = (&self.ctx, &self.buffer) else { return Ok(()) };
+        let source = ctx.create_buffer_source().map_err(js)?;
+        source.set_buffer(Some(buffer));
+        source.connect_with_audio_node(&ctx.destination()).map_err(js)?;
         self.offset = from.clamp(0.0, self.duration);
         source.start_with_when_and_grain_offset(0.0, self.offset).map_err(js)?;
         self.started_at = ctx.current_time();
@@ -116,14 +148,42 @@ impl Player {
     }
 
     pub fn stop(&mut self) {
+        self.paused_at = None;
         if let Some(s) = self.source.take() {
             #[allow(deprecated)]
             let _ = s.stop();
         }
     }
 
-    /// Where the playing track is (s), None when nothing plays.
+    /// Hold the track where it is; `position` stays there. The source is
+    /// stopped and a new one starts at that moment on `resume`, so the
+    /// position is exact whatever the output's latency.
+    pub fn pause(&mut self) {
+        if let Some(at) = self.position().filter(|_| self.paused_at.is_none()) {
+            if let Some(s) = self.source.take() {
+                #[allow(deprecated)]
+                let _ = s.stop();
+            }
+            self.paused_at = Some(at);
+        }
+    }
+
+    /// Go on from where `pause` held it.
+    pub fn resume(&mut self) {
+        if let Some(at) = self.paused_at.take() {
+            let _ = self.start(at);
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
+    }
+
+    /// Where the playing or paused track is (s), None when nothing plays.
     pub fn position(&self) -> Option<f64> {
+        if self.paused_at.is_some() {
+            return self.paused_at;
+        }
         let ctx = self.ctx.as_ref()?;
         self.source.as_ref()?;
         let at = self.offset + (ctx.current_time() - self.started_at).max(0.0);

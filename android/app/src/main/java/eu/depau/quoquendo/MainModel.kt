@@ -3,18 +3,18 @@ package eu.depau.quoquendo
 import android.app.Application
 import android.content.ContentValues
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import android.provider.Settings
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.compose.runtime.getValue
@@ -62,6 +62,9 @@ data class SaveFormat(val ext: String, val label: String, val hint: String, val 
 
 /** What an analysis was made of: its voice, text, joining and reading language (null: the voice's own). */
 data class AnalysisKey(val voice: String, val text: String, val smooth: Boolean, val language: String?)
+
+/** Try it's player. */
+enum class Playback { Stopped, Playing, Paused }
 
 /** What the analysis shows: sounds, recorded pieces, words and the waveform outline, all timed. */
 class Analysis(
@@ -154,9 +157,10 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var status by mutableStateOf<Status?>(null)
         private set
-    var speaking by mutableStateOf(false)
+    /** Try it's player: stopped, playing [spoken], or paused in it. */
+    var playback by mutableStateOf(Playback.Stopped)
         private set
-    /** The analysis being spoken, and how far into it. */
+    /** The analysis being played, and how far into it. */
     var spoken by mutableStateOf<Analysis?>(null)
         private set
     var playheadS by mutableStateOf<Double?>(null)
@@ -169,17 +173,21 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var isDefaultEngine by mutableStateOf(true)
         private set
-    var ttsReady by mutableStateOf(false)
-        private set
 
-    private val tts: TextToSpeech = TextToSpeech(app, { ok ->
-        ttsReady = ok == TextToSpeech.SUCCESS
-        refreshDefaultEngine()
-    }, app.packageName)
-    private var utterance = 0
-    private var speakJob: Job? = null
     private var analysisJob: Job? = null
     private var pendingKey: AnalysisKey? = null
+
+    // Try it's player
+    private val audioManager = app.getSystemService(AudioManager::class.java)
+    private val speechAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        .setAudioAttributes(speechAttributes)
+        .setOnAudioFocusChangeListener { change -> if (change < 0) pause() }
+        .build()
+    private var track: AudioTrack? = null
+    private var startJob: Job? = null
+    private var writer: Job? = null
+    private var ticker: Job? = null
 
     /** The voice loaded in this process for analysis, saving and piece playback. */
     private var handle = 0L
@@ -188,8 +196,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     private var pieceTrack: AudioTrack? = null
 
     init {
-        tts.setOnUtteranceProgressListener(Progress())
         refresh()
+        refreshDefaultEngine()
     }
 
     // ---- library ----
@@ -401,11 +409,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshDefaultEngine() {
-        isDefaultEngine = try {
-            tts.defaultEngine == getApplication<Application>().packageName
-        } catch (_: Exception) {
-            false
-        }
+        val app = getApplication<Application>()
+        isDefaultEngine = Settings.Secure.getString(app.contentResolver, Settings.Secure.TTS_DEFAULT_SYNTH) == app.packageName
     }
 
     // ---- try it ----
@@ -435,6 +440,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
 
     fun updateVolume(v: Float) {
         volume = v
+        track?.setVolume(v)
         prefs.edit().putFloat("volume", v).apply()
     }
 
@@ -490,6 +496,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         }
         d?.let { details = it }
         analysis = a
+        // what was playing or paused no longer matches the preview
+        if (spoken != null && spoken !== a) stop()
         playingPiece = null
         if (status?.kind == Status.Kind.Error) status = null
         a
@@ -501,100 +509,97 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         null
     }
 
-    /** Speak the rendered preview through the engine, rendering it first if the text just changed. */
+    /**
+     * Speak: play the rendered preview from the start, rendering it first if
+     * the text just changed; when paused, go on from where it stopped.
+     */
     fun speak() {
+        if (playback == Playback.Paused && track != null && spoken === analysis) {
+            play()
+            return
+        }
         val v = selectedVoice() ?: return
         val key = currentKey(v) ?: return
-        speaking = true
-        speakJob?.cancel()
-        speakJob = viewModelScope.launch {
+        stop()
+        startJob = viewModelScope.launch {
             val a = analysis?.takeIf { it.key == key } ?: run {
                 analysisJob?.cancel()
                 pendingKey = null
                 analyse(v, key)
-            }
-            if (a == null) {
-                speaking = false
-                return@launch
-            }
-            val locale = v.locales.firstOrNull()
-            tts.voices?.firstOrNull { locale != null && it.name == VoiceStore.ttsVoiceName(v.name, locale) }
-                ?.let { tts.voice = it }
-                ?: locale?.let { tts.language = it }
-            val id = "qq-${++utterance}"
-            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume) }
-            a.rendered?.let {
-                Prerendered.put(id, a.text, it)
-                params.putString(Prerendered.KEY, id)
-            }
-            current = Utterance(id, a.audio?.rate ?: 0)
+            } ?: return@launch
+            val r = a.rendered?.takeIf { it.pcm.isNotEmpty() } ?: return@launch
+            val t = AudioTrack.Builder()
+                .setAudioAttributes(speechAttributes)
+                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(r.rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setBufferSizeInBytes(maxOf(AudioTrack.getMinBufferSize(r.rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT), r.rate / 2))
+                .build()
+            t.setVolume(volume)
+            track = t
             spoken = a
-            tts.speak(a.text, TextToSpeech.QUEUE_FLUSH, params, id)
-        }
-    }
-
-    fun stop() {
-        tts.stop()
-        finishSpeaking(null)
-    }
-
-    /**
-     * Where the utterance being spoken is: the time since playback started,
-     * set right at each word as playback reaches it.
-     */
-    private class Utterance(val id: String, @Volatile var rate: Int) {
-        @Volatile var anchorS = 0.0
-        @Volatile var anchorAt = 0L
-        fun at(now: Long): Double = anchorS + (now - anchorAt) / 1000.0
-    }
-    @Volatile private var current: Utterance? = null
-
-    private inner class Progress : UtteranceProgressListener() {
-        override fun onBeginSynthesis(id: String, sampleRate: Int, audioFormat: Int, channelCount: Int) {
-            current?.takeIf { it.id == id }?.let { it.rate = sampleRate }
-        }
-
-        override fun onStart(id: String) {
-            val u = current?.takeIf { it.id == id } ?: return
-            u.anchorAt = SystemClock.elapsedRealtime()
-            viewModelScope.launch {
-                val total = spoken?.audio?.seconds ?: Double.MAX_VALUE
-                while (isActive && current === u) {
-                    playheadS = u.at(SystemClock.elapsedRealtime()).coerceAtMost(total)
-                    delay(16)
+            playheadS = 0.0
+            // the samples, then a little silence so the last of them play out;
+            // written without blocking, on this thread, so stop() can release the track at any time
+            writer = launch {
+                suspend fun feed(data: ShortArray) {
+                    var at = 0
+                    while (at < data.size) {
+                        val n = t.write(data, at, minOf(WRITE_CHUNK, data.size - at), AudioTrack.WRITE_NON_BLOCKING)
+                        if (n < 0) return
+                        at += n
+                        if (n == 0) delay(20)
+                    }
                 }
+                feed(r.pcm)
+                feed(ShortArray(r.rate / 5))
+            }
+            play()
+        }
+    }
+
+    /** Play [track] from its playback head, which drives the playhead, until its samples have all played. */
+    private fun play() {
+        val t = track ?: return
+        val r = spoken?.rendered ?: return
+        if (audioManager.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return
+        t.play()
+        playback = Playback.Playing
+        ticker?.cancel()
+        ticker = viewModelScope.launch {
+            while (isActive) {
+                val at = t.playbackHeadPosition
+                playheadS = minOf(at, r.pcm.size).toDouble() / r.rate
+                if (at >= r.pcm.size) {
+                    stop()
+                    break
+                }
+                delay(16)
             }
         }
-
-        override fun onRangeStart(id: String, start: Int, end: Int, frame: Int) {
-            val u = current?.takeIf { it.id == id } ?: return
-            if (u.rate <= 0) return
-            u.anchorS = frame.toDouble() / u.rate
-            u.anchorAt = SystemClock.elapsedRealtime()
-        }
-
-        override fun onDone(id: String) {
-            current?.takeIf { it.id == id }?.let { finishSpeaking(it) }
-        }
-
-        override fun onStop(id: String, interrupted: Boolean) {
-            current?.takeIf { it.id == id }?.let { finishSpeaking(it) }
-        }
-
-        @Deprecated("Deprecated in Java")
-        override fun onError(id: String) = onError(id, TextToSpeech.ERROR)
-
-        override fun onError(id: String, errorCode: Int) {
-            val u = current?.takeIf { it.id == id } ?: return
-            finishSpeaking(u)
-            status = Status(Status.Kind.Error, "Speaking failed (engine error $errorCode)")
-        }
     }
 
-    private fun finishSpeaking(u: Utterance?) {
-        if (u == null || current === u) current = null
-        speakJob?.cancel()
-        speaking = false
+    /** Hold the playhead where it is; Speak goes on from there. */
+    fun pause() {
+        if (playback != Playback.Playing) return
+        track?.pause()
+        ticker?.cancel()
+        audioManager.abandonAudioFocusRequest(focus)
+        playback = Playback.Paused
+    }
+
+    /** Stop, back to the start. */
+    fun stop() {
+        startJob?.cancel()
+        ticker?.cancel()
+        writer?.cancel()
+        track?.let {
+            it.pause()
+            it.flush()
+            it.release()
+        }
+        track = null
+        audioManager.abandonAudioFocusRequest(focus)
+        playback = Playback.Stopped
         spoken = null
         playheadS = null
     }
@@ -700,7 +705,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        tts.shutdown()
+        stop()
         synchronized(handleLock) { freeHandle() }
     }
 
@@ -758,6 +763,9 @@ class MainModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val ANALYSIS_DELAY_MS = 400L
+
+        /** Samples handed to the player per write. */
+        private const val WRITE_CHUNK = 4096
     }
 }
 

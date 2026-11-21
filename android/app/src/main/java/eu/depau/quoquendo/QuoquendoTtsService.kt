@@ -10,30 +10,6 @@ import android.util.Log
 import java.util.Locale
 import java.util.MissingResourceException
 
-/**
- * Speech the app has rendered already (Try it's preview), handed to the
- * service in this same process: the speak params' [KEY] names it, and the
- * service plays it instead of rendering the text again.
- */
-object Prerendered {
-    const val KEY = "eu.depau.quoquendo.prerendered"
-
-    private class Entry(val token: String, val text: String, val audio: Rendered)
-
-    @Volatile private var entry: Entry? = null
-
-    fun put(token: String, text: String, audio: Rendered) {
-        entry = Entry(token, text, audio)
-    }
-
-    /** The audio put under [token] for [text], once. */
-    fun take(token: String, text: String): Rendered? = synchronized(this) {
-        val e = entry?.takeIf { it.token == token && it.text == text } ?: return null
-        entry = null
-        e.audio
-    }
-}
-
 /** quoquendo as an Android text-to-speech engine. */
 class QuoquendoTtsService : TextToSpeechService() {
     private lateinit var store: VoiceStore
@@ -189,7 +165,7 @@ class QuoquendoTtsService : TextToSpeechService() {
         stopped = false
         val text = request.charSequenceText?.toString().orEmpty()
         Log.i(TAG, "onSynthesizeText voice=${request.voiceName} lang=${request.language}-${request.country} chars=${text.length}")
-        val speech = request.params?.getString(Prerendered.KEY)?.let { Prerendered.take(it, text) } ?: try {
+        val speech = try {
             synchronized(lock) {
                 val wanted = byVoiceName(request.voiceName)?.first
                     ?: best(request.language, request.country, request.variant)?.first

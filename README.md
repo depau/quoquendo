@@ -61,8 +61,11 @@ quoquendo --selftest
 The window has a Speak tab and a Voices tab. Speak shows what the engine
 makes of the text while you type: its sounds (green when the voice recorded
 them, red when it never did), the recorded pieces chosen for them, each
-playable on its own, and the waveform with the sounds under it. Speak plays
-it, lighting the word, the sound and the piece being said. Save writes WAV,
+playable on its own, and the waveform with the sounds under it; the pointer
+over the waveform shows the sound and the time under it, labels left out
+for room included. Speak plays it, lighting the word, the sound and the
+piece being said; Pause holds it there, Resume goes on and Stop goes back to
+the start. Save writes WAV,
 FLAC (the default), MP3 or Opus; each file carries the text with each
 word's time: cue markers in WAV, synced lyrics (LRC in `LYRICS`/`USLT`, and
 `SYLT` in MP3) in the others. `--say` picks the format by the file's
@@ -84,7 +87,8 @@ Two modes, in Settings, are off by default:
 
 `--screenshot <file.png>` draws the window once everything is ready, saves
 it and quits (with `--play-at <seconds>`, showing the speech at that moment
-as if playing); add `--advanced` or `--original` for those modes.
+as if playing, and `--hover-at <seconds>`, with the pointer over the audio at
+that moment); add `--advanced` or `--original` for those modes.
 
 ### In the browser
 
@@ -111,11 +115,12 @@ link to a voice that isn't installed offers to download it.
 `android/` is a system text-to-speech engine: install it, pick Quoquendo in
 the system's TTS settings, and get voices in its Voices screen. Try it shows
 the sounds, recorded pieces and waveform of the text as you type, follows
-them word by word while it speaks, and saves WAV, FLAC, MP3 or Opus files
-with the text and its timing embedded. Apps that read aloud get the word
-being spoken too. Settings chooses the voice apps get for each language;
-Advanced adds the reading language, the voice's details and how pieces are
-joined.
+them word by word while it speaks (pause and resume where you left off;
+touch and hold the waveform to read the sound under your finger), and saves
+WAV, FLAC, MP3 or Opus files with the text and its timing embedded. Apps
+that read aloud get the word being spoken too. Settings chooses the voice
+apps get for each language; Advanced adds the reading language, the
+voice's details and how pieces are joined.
 
 The nightly is `eu.depau.quoquendo.nightly`; Obtainium uses the release date
 as its version and offers each new one as an update. To build it yourself:

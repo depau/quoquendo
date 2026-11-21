@@ -261,6 +261,8 @@ pub struct App {
     playing: Option<Track>,
     /// a moment the speech shows as playing without playing it (screenshots)
     pinned: Option<f64>,
+    /// a moment shown under the pointer without a pointer (screenshots)
+    hover_at: Option<f64>,
     /// the piece the Pieces list last scrolled to while speaking
     followed_piece: Option<usize>,
     explore: Explore,
@@ -291,6 +293,8 @@ pub struct Launch {
     pub screenshot: Option<std::path::PathBuf>,
     #[cfg(not(target_arch = "wasm32"))]
     pub play_at: Option<f64>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub hover_at: Option<f64>,
 }
 
 /// The app's own dark look. egui keeps a light and a dark style and follows
@@ -372,6 +376,10 @@ impl App {
             player: Player::new(),
             playing: None,
             pinned: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            hover_at: launch.hover_at,
+            #[cfg(target_arch = "wasm32")]
+            hover_at: None,
             followed_piece: None,
             explore: Explore::default(),
             status: "Looking for voices…".into(),
@@ -595,7 +603,7 @@ impl App {
         if self.playing.is_some() && self.pinned.is_none() && self.player.position().is_none() {
             self.playing = None;
         }
-        if self.playing.is_some() {
+        if self.playing.is_some() && !self.player.is_paused() {
             ctx.request_repaint();
         }
     }

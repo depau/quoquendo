@@ -15,6 +15,9 @@ pub struct LaunchOptions {
     /// `--play-at <seconds>`: the screenshot shows the speech playing at
     /// that moment
     pub play_at: Option<f64>,
+    /// `--hover-at <seconds>`: the screenshot shows the pointer over the
+    /// audio at that moment
+    pub hover_at: Option<f64>,
     /// `--advanced`: Advanced mode on in the window
     pub advanced: bool,
     /// `--original`: Original engine (Wine) mode on in the window
@@ -58,6 +61,8 @@ pub fn parse_args() -> LaunchOptions {
             opts.screenshot = Some(PathBuf::from(rest));
         } else if a == "--play-at" {
             opts.play_at = args.next().and_then(|s| s.parse().ok());
+        } else if a == "--hover-at" {
+            opts.hover_at = args.next().and_then(|s| s.parse().ok());
         } else if a == "--advanced" {
             opts.advanced = true;
         } else if a == "--original" {

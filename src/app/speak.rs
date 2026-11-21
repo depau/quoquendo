@@ -215,7 +215,8 @@ impl App {
     }
 
     fn accept(&mut self, want: Want, result: Result<Preview, String>) {
-        if self.playing == Some(Track::Ours) {
+        // the audio playing or paused no longer matches: start over
+        if self.playing.is_some_and(|t| t != Track::Clip) {
             self.player.stop();
             self.playing = None;
         }
@@ -450,9 +451,25 @@ impl App {
         let ready = self.voice.is_some() && self.can_speak().is_none() && !self.text.trim().is_empty();
         let fresh = self.fresh();
         ui.horizontal_wrapped(|ui| {
-            let speak = egui::Button::new(RichText::new("▶ Speak").color(GROUND).strong()).fill(AMBER);
-            if ui.add_enabled(ready, speak).clicked() {
-                self.speak();
+            // Speak, Pause while the text (or the original) plays, Resume when paused
+            let paused = self.player.is_paused();
+            let speaking = self.playing.is_some_and(|t| t != Track::Clip) && !paused;
+            let label = if paused {
+                "▶ Resume"
+            } else if speaking {
+                "⏸ Pause"
+            } else {
+                "▶ Speak"
+            };
+            let speak = egui::Button::new(RichText::new(label).color(GROUND).strong()).fill(AMBER);
+            if ui.add_enabled(ready || paused || speaking, speak).clicked() {
+                if paused {
+                    self.player.resume();
+                } else if speaking {
+                    self.player.pause();
+                } else {
+                    self.speak();
+                }
             }
             if ui.add_enabled(self.playing.is_some() || self.speak_queued, egui::Button::new("■ Stop")).clicked() {
                 self.stop();
@@ -708,25 +725,43 @@ impl App {
         );
     }
 
-    /// Our waveform, its sounds and the time axis.
+    /// Our waveform, its sounds and the time axis; under the pointer, a line
+    /// and the sound at that moment.
     fn single_lane(&self, ui: &mut egui::Ui, now: Option<&Now>) {
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), WAVE_H + STRIP_H + AXIS_H), egui::Sense::hover());
+            let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), WAVE_H + STRIP_H + AXIS_H), egui::Sense::hover());
             let (Some(p), Some(v)) = (&self.preview, &self.voice) else { return };
             let painter = ui.painter_at(rect.expand(2.0));
-            let axis = Axis::new(rect, p.speech.duration_s() as f64);
+            let duration = p.speech.duration_s() as f64;
+            let axis = Axis::new(rect, duration);
             let wave = Rect::from_min_size(rect.min, vec2(rect.width(), WAVE_H));
             let strip = Rect::from_min_size(wave.left_bottom(), vec2(rect.width(), STRIP_H));
             let ticks = Rect::from_min_size(strip.left_bottom(), vec2(rect.width(), AXIS_H));
             let played = now.map(|n| n.t);
+            let marks = our_marks(&p.speech, &v.db);
+            let hover = self.hover_time(&response, wave.union(strip), &axis, duration);
             paint_wave(&painter, wave, &axis, &p.speech.samples, p.speech.rate, played, AMBER);
-            paint_strip(&painter, strip, &axis, &our_marks(&p.speech, &v.db), now.and_then(|n| n.sound), true);
+            paint_strip(&painter, strip, &axis, &marks, now.and_then(|n| n.sound), true);
             paint_axis(&painter, ticks, &axis);
             if let Some(t) = played {
-                paint_playhead(&painter, wave.top(), strip.bottom(), axis.x(t), true);
+                paint_playhead(&painter, wave.top(), strip.bottom(), axis.x(t), Head::Playing);
+            }
+            if let Some(t) = hover {
+                paint_playhead(&painter, wave.top(), strip.bottom(), axis.x(t), Head::Hover);
+                paint_hovered(&painter, strip, &axis, &marks, t, true);
             }
         });
+    }
+
+    /// The moment under the pointer when it is over `area` (or the one
+    /// `--hover-at` pins for a screenshot), within `0..=duration`.
+    pub(super) fn hover_time(&self, response: &egui::Response, area: Rect, axis: &Axis, duration: f64) -> Option<f64> {
+        let t = match response.hover_pos() {
+            Some(p) if area.contains(p) => axis.t(p.x),
+            _ => self.hover_at?,
+        };
+        (0.0..=duration).contains(&t).then_some(t)
     }
 }
 
@@ -901,6 +936,11 @@ impl Axis {
     pub(super) fn x(&self, t: f64) -> f32 {
         self.left + (t / self.total) as f32 * self.width
     }
+
+    /// The moment at `x`.
+    pub(super) fn t(&self, x: f32) -> f64 {
+        ((x - self.left) / self.width) as f64 * self.total
+    }
 }
 
 /// A waveform as its peaks, one per pixel: before `played` in amber, after
@@ -1012,13 +1052,57 @@ fn trim_float(t: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-/// The playhead from `top` to `bottom`: solid with a marker on the lane
-/// playing, dashed across another.
-pub(super) fn paint_playhead(painter: &Painter, top: f32, bottom: f32, x: f32, solid: bool) {
-    if solid {
-        painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5f32, TEXT));
-        painter.add(egui::Shape::convex_polygon(vec![pos2(x - 4.0, top), pos2(x + 4.0, top), pos2(x, top + 6.0)], TEXT, Stroke::NONE));
-    } else {
-        painter.extend(egui::Shape::dashed_line(&[pos2(x, top), pos2(x, bottom)], Stroke::new(1.0f32, TEXT.gamma_multiply(0.6)), 3.0, 3.0));
+/// What a line across the lanes marks.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Head {
+    /// the playhead on the lane playing: solid, with a marker
+    Playing,
+    /// the playhead across another lane: dashed (Original engine mode)
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Other,
+    /// the pointer: like the playhead, muted
+    Hover,
+}
+
+/// A line from `top` to `bottom` at `x`: the playhead or the pointer.
+pub(super) fn paint_playhead(painter: &Painter, top: f32, bottom: f32, x: f32, head: Head) {
+    let marker = |color: Color32| egui::Shape::convex_polygon(vec![pos2(x - 4.0, top), pos2(x + 4.0, top), pos2(x, top + 6.0)], color, Stroke::NONE);
+    match head {
+        Head::Playing => {
+            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5f32, TEXT));
+            painter.add(marker(TEXT));
+        }
+        Head::Hover => {
+            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.0f32, MUTED.gamma_multiply(0.8)));
+            painter.add(marker(MUTED.gamma_multiply(0.8)));
+        }
+        Head::Other => {
+            painter.extend(egui::Shape::dashed_line(&[pos2(x, top), pos2(x, bottom)], Stroke::new(1.0f32, TEXT.gamma_multiply(0.6)), 3.0, 3.0));
+        }
     }
+}
+
+/// The sound at `t` on a strip painted by `paint_strip`: its span tinted
+/// and a chip on the label row at `t` with its symbol (green recorded, red
+/// never recorded) and the time, shown even where its label was left out.
+pub(super) fn paint_hovered(painter: &Painter, rect: Rect, axis: &Axis, marks: &[Mark], t: f64, ticks_up: bool) {
+    let Some(m) = marks.iter().find(|m| m.start <= t && t < m.end).or_else(|| marks.last().filter(|m| t == m.end)) else { return };
+    let span = Rect::from_x_y_ranges(axis.x(m.start)..=axis.x(m.end).max(axis.x(m.start) + 1.0), rect.y_range());
+    painter.rect_filled(span, 2.0, AMBER.gamma_multiply(0.18));
+    let font = FontId::monospace(11.0);
+    let mut job = LayoutJob::default();
+    let (sym, color) = match (m.pause, m.known) {
+        (true, _) => ("pause", MUTED),
+        (false, true) => (m.sym.as_str(), GREEN),
+        (false, false) => (m.sym.as_str(), RED),
+    };
+    job.append(sym, 0.0, TextFormat::simple(font.clone(), color));
+    job.append(&format!("  {t:.2} s"), 0.0, TextFormat::simple(font, MUTED));
+    let galley = painter.layout_job(job);
+    let size = galley.size();
+    let label_y = if ticks_up { rect.top() + 8.0 } else { rect.top() + 2.0 };
+    let left = (axis.x(t) - size.x / 2.0).clamp(rect.left() + 3.0, (rect.right() - size.x - 3.0).max(rect.left() + 3.0));
+    let chip = Rect::from_min_size(pos2(left, label_y), size).expand2(vec2(3.0, 1.0));
+    painter.rect(chip, 3.0, PANEL, Stroke::new(1.0f32, AMBER.gamma_multiply(0.7)));
+    painter.galley(pos2(left, label_y), galley, TEXT);
 }

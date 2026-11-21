@@ -271,7 +271,7 @@ impl App {
     /// sounds, the same sounds joined between them; a play button on each
     /// switches between them at the same moment.
     pub(super) fn original_lanes(&mut self, ui: &mut egui::Ui, position: Option<(Track, f64)>) {
-        use speak::{our_marks, paint_axis, paint_playhead, paint_strip, paint_wave, Axis};
+        use speak::{our_marks, paint_axis, paint_hovered, paint_playhead, paint_strip, paint_wave, Axis, Head};
         const WAVE: f32 = 72.0;
         const STRIP: f32 = 22.0;
         const LINKS: f32 = 16.0;
@@ -279,6 +279,7 @@ impl App {
         let samples = self.original_samples();
         let mut toggle = None;
         let playing = self.playing;
+        let paused = self.player.is_paused();
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
             let (Some(p), Some(v)) = (&self.preview, &self.voice) else {
@@ -289,12 +290,12 @@ impl App {
             let reference = self.dev.refs.get(&key);
             let error = self.dev.ref_errors.get(&key);
             ui.horizontal(|ui| {
-                if lane_button(ui, playing == Some(Track::Ours), true) {
+                if lane_button(ui, playing == Some(Track::Ours) && !paused, true) {
                     toggle = Some(Track::Ours);
                 }
                 ui.label(RichText::new("quoquendo").strong().small());
             });
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 2.0 * (WAVE + STRIP) + LINKS + AXIS), egui::Sense::hover());
+            let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 2.0 * (WAVE + STRIP) + LINKS + AXIS), egui::Sense::hover());
             let painter = ui.painter_at(rect.expand(2.0));
             let ours_s = p.speech.duration_s() as f64;
             let orig_s = reference.map(|r| r.audio.len() as f64 / crate::dev::oracle::RATE as f64);
@@ -307,17 +308,24 @@ impl App {
             let their_wave = row(their_strip.bottom(), WAVE);
             let ticks = row(their_wave.bottom(), AXIS);
             let t = position.map(|(_, t)| t);
+            let hover = self.hover_time(&response, rect.with_max_y(ticks.top()), &axis, ours_s.max(orig_s.unwrap_or(0.0)));
             let on = |track: Track| position.filter(|(k, _)| *k == track).map(|(_, t)| t);
             let ours = our_marks(&p.speech, &v.db);
             let ours_current = on(Track::Ours).and_then(|t| p.speech.timeline.sound_at((t * p.speech.rate as f64) as usize));
             paint_wave(&painter, our_wave, &axis, &p.speech.samples, p.speech.rate, on(Track::Ours), AMBER);
             paint_strip(&painter, our_strip, &axis, &ours, ours_current, true);
+            if let Some(t) = hover {
+                paint_hovered(&painter, our_strip, &axis, &ours, t, true);
+            }
             match (reference, &samples) {
                 (Some(r), Some(s)) => {
                     let theirs = original_marks(r, &v.db);
                     let theirs_current = on(Track::Original).and_then(|t| theirs.iter().position(|m| !m.pause && m.start <= t && t < m.end));
                     paint_links(&painter, links, &axis, &ours, &theirs);
                     paint_strip(&painter, their_strip, &axis, &theirs, theirs_current, false);
+                    if let Some(t) = hover {
+                        paint_hovered(&painter, their_strip, &axis, &theirs, t, false);
+                    }
                     paint_wave(&painter, their_wave, &axis, s, crate::dev::oracle::RATE, on(Track::Original), WAVE_ORIGINAL);
                 }
                 _ => {
@@ -344,13 +352,19 @@ impl App {
             paint_axis(&painter, ticks, &axis);
             if let (Some(t), Some((track, _))) = (t, position) {
                 let x = axis.x(t);
-                paint_playhead(&painter, our_wave.top(), our_strip.bottom(), x, track == Track::Ours);
+                let head = |lane: Track| if track == lane { Head::Playing } else { Head::Other };
+                paint_playhead(&painter, our_wave.top(), our_strip.bottom(), x, head(Track::Ours));
                 if reference.is_some() {
-                    paint_playhead(&painter, their_strip.top(), their_wave.bottom(), x, track == Track::Original);
+                    paint_playhead(&painter, their_strip.top(), their_wave.bottom(), x, head(Track::Original));
                 }
             }
+            if let Some(t) = hover {
+                // one line across both lanes, at the same moment
+                let bottom = if reference.is_some() { their_wave.bottom() } else { our_strip.bottom() };
+                paint_playhead(&painter, our_wave.top(), bottom, axis.x(t), Head::Hover);
+            }
             ui.horizontal(|ui| {
-                if lane_button(ui, playing == Some(Track::Original), reference.is_some()) {
+                if lane_button(ui, playing == Some(Track::Original) && !paused, reference.is_some()) {
                     toggle = Some(Track::Original);
                 }
                 ui.label(RichText::new("original (Wine)").strong().small());
@@ -366,11 +380,20 @@ impl App {
         });
         if let Some(track) = toggle {
             if self.playing == Some(track) {
-                self.stop();
+                // this lane: go on when paused, else stop
+                if paused {
+                    self.player.resume();
+                } else {
+                    self.stop();
+                }
             } else {
-                // the other lane playing: carry on from the same moment
+                // the other lane playing or paused: carry on from (or stay
+                // paused at) the same moment
                 let from = position.map_or(0.0, |(_, t)| t);
                 self.play(track, from);
+                if paused {
+                    self.player.pause();
+                }
             }
         }
     }

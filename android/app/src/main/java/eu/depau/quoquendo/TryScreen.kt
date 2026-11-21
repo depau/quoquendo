@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -53,6 +56,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -75,7 +79,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -122,7 +128,7 @@ private fun capitalized(s: String) = s.replaceFirstChar { it.titlecase(Locale.RO
 /** What is playing at the playhead: the sound, its word and the piece (indices into the analysis). */
 private class Moment(val seconds: Double, val sound: Int?, val word: Int?, val piece: Int?)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
@@ -182,21 +188,29 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             Text("${(model.volume * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(36.dp), textAlign = TextAlign.End)
         }
         val canRender = voice != null && voice.ready && model.text.isNotBlank()
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (model.speaking) {
-                Button(onClick = model::stop) {
-                    Icon(Icons.Filled.Stop, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Stop")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (model.playback) {
+                    Playback.Playing -> Button(onClick = model::pause, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                        Icon(Icons.Filled.Pause, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pause")
+                    }
+                    Playback.Paused -> Button(onClick = model::speak, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Resume")
+                    }
+                    Playback.Stopped -> Button(onClick = model::speak, enabled = canRender, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Speak")
+                    }
                 }
-            } else {
-                Button(onClick = model::speak, enabled = canRender && model.ttsReady) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Speak")
+                OutlinedIconButton(onClick = model::stop, enabled = model.playback != Playback.Stopped) {
+                    Icon(Icons.Filled.Stop, contentDescription = "Stop")
                 }
             }
-            Spacer(Modifier.width(12.dp))
             SaveControl(model, enabled = canRender && !model.saving)
         }
         val status = model.status ?: voice?.let { v -> model.cannotSpeak(v)?.let { Status(Status.Kind.Warn, it) } }
@@ -309,9 +323,10 @@ private fun TextBox(model: MainModel, live: Analysis?, moment: Moment?) {
 @Composable
 private fun SaveControl(model: MainModel, enabled: Boolean) {
     var menu by remember { mutableStateOf(false) }
+    val padding = PaddingValues(horizontal = 12.dp)
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box {
-            OutlinedButton(onClick = { menu = true }, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+            OutlinedButton(onClick = { menu = true }, contentPadding = padding) {
                 Text(model.saveFormat.label)
                 Spacer(Modifier.width(4.dp))
                 Icon(if (menu) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = "Format", Modifier.size(18.dp))
@@ -333,7 +348,7 @@ private fun SaveControl(model: MainModel, enabled: Boolean) {
                 }
             }
         }
-        OutlinedButton(onClick = model::save, enabled = enabled, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+        OutlinedButton(onClick = model::save, enabled = enabled, contentPadding = padding) {
             Icon(Icons.Outlined.Save, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Save")
@@ -520,7 +535,11 @@ private fun Pieces(model: MainModel, a: Analysis, moment: Moment?) {
 
 private const val PIECES_SHOWN = 12
 
-/** The waveform and, on its time axis, the strip of sounds; both scroll sideways when long, following the playhead. */
+/**
+ * The waveform and, on its time axis, the strip of sounds; both scroll
+ * sideways when long, following the playhead. Touch and hold shows the sound
+ * under the finger.
+ */
 @Composable
 private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
     val primary = MaterialTheme.colorScheme.primary
@@ -542,6 +561,9 @@ private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontFamily = mono, fontSize = 9.sp, letterSpacing = (-0.5).sp)
     val labels = remember(a, measurer) { a.sounds.map { if (it.pause) null else measurer.measure(it.sym, labelStyle) } }
+    val chipStyle = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurface)
+    val chipBack = MaterialTheme.colorScheme.surfaceContainerHighest
+    val scrubMark = MaterialTheme.colorScheme.secondaryContainer
     Panel {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val density = LocalDensity.current
@@ -549,13 +571,27 @@ private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
             val width = maxOf(maxWidth, (audio.seconds * DP_PER_SECOND).dp)
             val widthPx = with(density) { width.toPx() }
             val scroll = rememberScrollState()
+            var scrub by remember(a) { mutableStateOf<Float?>(null) }
             // keep the playhead in view while speaking
             val x = moment?.let { (it.seconds / audio.seconds).toFloat().coerceIn(0f, 1f) * widthPx }
             LaunchedEffect(x) {
                 if (x != null && (x < scroll.value || x > scroll.value + viewport * 0.8f)) scroll.scrollTo((x - viewport * 0.2f).toInt().coerceAtLeast(0))
             }
             Box(Modifier.horizontalScroll(scroll)) {
-                Canvas(Modifier.width(width).height(112.dp)) {
+                Canvas(
+                    Modifier.width(width).height(112.dp).pointerInput(a) {
+                        // after a long press, so a plain swipe still scrolls
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { scrub = it.x },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                scrub = change.position.x.coerceIn(0f, size.width.toFloat())
+                            },
+                            onDragEnd = { scrub = null },
+                            onDragCancel = { scrub = null },
+                        )
+                    },
+                ) {
                     val waveH = 72.dp.toPx()
                     val perS = size.width / audio.seconds.toFloat().coerceAtLeast(0.001f)
                     val env = audio.envelope
@@ -609,6 +645,41 @@ private fun Audio(a: Analysis, audio: AnAudio, moment: Moment?) {
                         drawLine(head, Offset(x, 4.dp.toPx()), Offset(x, labelTop + labelH), 2.dp.toPx())
                         drawCircle(head, 4.dp.toPx(), Offset(x, 4.dp.toPx()))
                     }
+                    // touch and hold: the sound under the finger, its label shown even where it didn't fit
+                    val sx = scrub ?: return@Canvas
+                    val t = sx / perS
+                    val si = a.sounds.indexOfLast { it.atS <= t }.takeIf { it >= 0 && t < a.sounds[it].endS }
+                    val s = si?.let { a.sounds[it] }
+                    val label = si?.let { labels[it] }
+                    if (s != null && label != null) {
+                        val x0 = (s.atS * perS).toFloat()
+                        val w = maxOf((s.endS * perS).toFloat() - x0, label.size.width + 4.dp.toPx())
+                        val left = x0 + ((s.endS * perS).toFloat() - x0) / 2 - w / 2
+                        drawRect(scrubMark, Offset(left, labelTop), Size(w, labelH))
+                        drawText(label, color = if (s.known) recorded else missing, topLeft = Offset(left + (w - label.size.width) / 2, labelTop + (labelH - label.size.height) / 2))
+                    }
+                    drawLine(head.copy(alpha = 0.45f), Offset(sx, 4.dp.toPx()), Offset(sx, labelTop + labelH), 2.dp.toPx())
+                    drawCircle(head.copy(alpha = 0.45f), 4.dp.toPx(), Offset(sx, 4.dp.toPx()))
+                    val chip = measurer.measure(
+                        buildAnnotatedString {
+                            if (s != null && !s.pause) {
+                                withStyle(SpanStyle(color = if (s.known) recorded else missing, fontFamily = mono)) { append(s.sym) }
+                                append("  ")
+                            }
+                            append("%.2f s".format(Locale.ROOT, t))
+                        },
+                        chipStyle,
+                    )
+                    val pad = 6.dp.toPx()
+                    val chipW = chip.size.width + 2 * pad
+                    val chipH = chip.size.height + pad
+                    // beside the line, on whichever side stays in view
+                    val right = sx + 8.dp.toPx()
+                    val chipX = if (right + chipW <= scroll.value + viewport) right else sx - 8.dp.toPx() - chipW
+                    val chipY = 10.dp.toPx()
+                    drawRoundRect(chipBack, Offset(chipX, chipY), Size(chipW, chipH), CornerRadius(6.dp.toPx()))
+                    drawRoundRect(axis, Offset(chipX, chipY), Size(chipW, chipH), CornerRadius(6.dp.toPx()), style = Stroke(1.dp.toPx()))
+                    drawText(chip, topLeft = Offset(chipX + pad, chipY + pad / 2))
                 }
             }
         }

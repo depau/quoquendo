@@ -57,6 +57,7 @@ fn main() -> eframe::Result<()> {
         original: opts.original,
         screenshot: opts.screenshot.clone(),
         play_at: opts.play_at,
+        hover_at: opts.hover_at,
     };
     eframe::run_native("quoquendo", native, Box::new(|cc| Ok(Box::new(app::App::new(cc, launch)))))
 }
