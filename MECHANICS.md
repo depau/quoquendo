@@ -2132,14 +2132,28 @@ when a speed/pitch change asks for it.
   picker already gets them as pauses. Speed and pitch controls.
 - The app's piece player (`src/app.rs`) and the JNI `analyse` read pieces
   from `db.audio`; pieces from a Gilded database need `db.bank(unit)`.
-- Four voices have no LTTS7 language module in any installer of the pack:
-  Jordi (Catalan), Empar (Valencian), Carmela (Galician), LinLin (Chinese).
-  The original refuses them too: with the voice unpacked into a full engine,
-  `ttsLoadPersona` fails with 12 "Invalid function or API parameter" (Jordi,
-  LinLin). The Loquendo 6 pack's installers carry LTTS6 modules for Catalan
-  (`LoqCatalan6.1.dll`, `Catalan6.1.phd`/`.lex`) and Mandarin
-  (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from; none for
-  Galician or Valencian was found.
+- LinLin (Chinese) has no LTTS7 language module in any installer found. The
+  original refuses it too: with the voice unpacked into a full engine,
+  `ttsLoadPersona` fails with 12 "Invalid function or API parameter". The
+  Loquendo 6 pack's installers carry an LTTS6 Mandarin module
+  (`LoqChinese6.2.dll`, `Chinese6.2.phd`), a source to port from.
+- Jordi (Catalan), Empar (Valencian) and Carmela (Galician) have no module
+  in their voice installers either; theirs come in Loquendo's separate
+  language distributions (`Catalan & Valencian Distribution.exe`,
+  `Galician Distribution.exe`, Wise MSIs like the voices'; one
+  `data/languages/Catalan` folder holds `CatalanCe` and `CatalanVa`). Their
+  `LTTS7Catalan.dll`/`LTTS7Galician.dll` are not ported: the dictionaries
+  (`.dbl`) are read, and the built-in rules (`g2p::catalan`, `galician`)
+  are fitted to those dictionaries and the voices' recordings (no plain
+  `t`/`d`; Empar has `v` and `Dg` but no `Zg`/`HEh`). Carmela's library
+  lists nasal vowels (`a)`) that her recordings never use (`u N`, not
+  `u) N`): her unported phone stage makes them oral, so the dictionary's
+  are read oral. Against the dictionaries' own words (irregular ones,
+  mostly) the rules miss 25% (Central), 18% (Valencian) and 20% (Galician,
+  nasality aside) of the phones. The `German Distribution.exe` of that
+  archive is damaged (`unzip -t` reports a bad CRC; its cabinet's MSZIP
+  blocks fail their checksums from the fifth on); German's data comes with
+  Katrin's and Stefan's voice installers anyway.
 - German numbers (§4): slot 9 matches the original on every traced call
   (541, `numeri::tests::replay_slot9`). What still differs on
   `oracle/bench-de-text.txt` is the engine's side: the reading's words are

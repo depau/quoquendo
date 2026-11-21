@@ -115,7 +115,7 @@ fn list_voices(store: &str) -> String {
 }
 
 /// Why an installer's voice can't speak yet, known from its name alone: its
-/// language has no module in the pack (`Valencian Catalan` → `no Valencian module`).
+/// language has no module anywhere (`Mandarin Chinese` → `no Chinese module`).
 fn catalog_unsupported(language: &str) -> Option<String> {
     language
         .split_whitespace()
@@ -427,8 +427,9 @@ mod tests {
 
     #[test]
     fn catalog_names_missing_modules() {
-        assert_eq!(catalog_unsupported("Valencian Catalan").as_deref(), Some("no Valencian module"));
-        assert_eq!(catalog_unsupported("Chinese").as_deref(), Some("no Chinese module"));
+        assert_eq!(catalog_unsupported("Mandarin Chinese").as_deref(), Some("no Chinese module"));
+        // the language distributions bring Catalan, Valencian and Galician
+        assert_eq!(catalog_unsupported("Valencian Catalan"), None);
         assert_eq!(catalog_unsupported("Italian"), None);
     }
 }

@@ -24,7 +24,12 @@ pub enum Language {
     French,
     Spanish,
     Portuguese,
+    /// Central Catalan (Jordi, `CatalanCe`)
     Catalan,
+    /// Valencian (Empar, `CatalanVa`): Catalan's rules without its vowel
+    /// reduction, with `v` and `Dg`
+    Valencian,
+    Galician,
     Dutch,
     Swedish,
     Danish,
@@ -71,8 +76,12 @@ impl Language {
             Language::Spanish
         } else if has("brazilian") || has("portuguese") || has("pt-br") || has("pt-pt") {
             Language::Portuguese
-        } else if has("catalan") || has("valencian") || has("ca-es") {
+        } else if has("valencian") || has("catalanva") || has("ca-es-valencia") {
+            Language::Valencian
+        } else if has("catalan") || has("ca-es") {
             Language::Catalan
+        } else if has("galician") || has("gl-es") {
+            Language::Galician
         } else if has("dutch") || has("nl-nl") || has("flemish") {
             Language::Dutch
         } else if has("swedish") || has("sv-se") {
@@ -105,6 +114,8 @@ impl Language {
             Language::Spanish => "Spanish",
             Language::Portuguese => "Portuguese",
             Language::Catalan => "Catalan",
+            Language::Valencian => "Valencian",
+            Language::Galician => "Galician",
             Language::Dutch => "Dutch",
             Language::Swedish => "Swedish",
             Language::Danish => "Danish",
@@ -118,7 +129,7 @@ impl Language {
         }
     }
 
-    pub const ALL: [Language; 17] = [
+    pub const ALL: [Language; 19] = [
         Language::Italian,
         Language::English,
         Language::German,
@@ -126,6 +137,8 @@ impl Language {
         Language::Spanish,
         Language::Portuguese,
         Language::Catalan,
+        Language::Valencian,
+        Language::Galician,
         Language::Dutch,
         Language::Swedish,
         Language::Danish,
@@ -147,6 +160,8 @@ impl Language {
             Language::Spanish => "Hola. Soy una voz de Loquendo y este es el texto que me has pedido leer.",
             Language::Portuguese => "Olá. Eu sou uma voz do Loquendo e este é o texto que você pediu para eu ler.",
             Language::Catalan => "Hola. Sóc una veu de Loquendo i aquest és el text que m'has demanat llegir.",
+            Language::Valencian => "Hola. Sóc una veu de Loquendo i este és el text que m'has demanat llegir.",
+            Language::Galician => "Ola. Son unha voz de Loquendo e este é o texto que me pediches ler.",
             Language::Dutch => "Hallo. Ik ben een stem van Loquendo en dit is de tekst die je mij hebt gegeven.",
             Language::Swedish => "Hej. Jag är en röst från Loquendo och detta är texten du bad mig läsa.",
             Language::Danish => "Hej. Jeg er en stemme fra Loquendo, og dette er teksten du bad mig læse.",
@@ -214,9 +229,10 @@ pub fn strip_accent(c: char) -> char {
     c
 }
 
-/// Lower-case letters only; accents are kept so each language can read them.
+/// Lower-case letters only (and Catalan's `·` of `l·l`); accents are kept so
+/// each language can read them.
 pub fn bare_word(w: &str) -> Vec<char> {
-    w.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic()).collect()
+    w.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic() || *c == '·').collect()
 }
 
 fn starts(w: &[char], i: usize, pat: &str) -> bool {
@@ -333,6 +349,13 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     let lang = fe.lang;
     // the language's own data from the installer (`Frontend::from_files`)
     if let Some(p) = language_data_lookup(word, fe) {
+        // the dictionaries write the language's phones, which the voice's
+        // phone stage (not ported for these languages) turns into its own:
+        // Galician's nasal vowels (`chegan` → T$ `e GH a) N) Carmela
+        // recorded oral, her sentences transcribed `u N`, never `u) N`
+        if lang == Language::Galician {
+            return p.into_iter().map(|s| s.replace(')', "")).collect();
+        }
         return p;
     }
     if lang.is_ported() {
@@ -344,14 +367,43 @@ pub fn word_to_symbols(word: &str, fe: &Frontend) -> Vec<String> {
     }
     let accent_final = word.chars().last().map(|c| ACCENTS.iter().any(|(a, _)| *a == c)).unwrap_or(false);
     let w = raw;
+    let final_stress = match lang {
+        Language::Catalan | Language::Valencian => catalan_oxytone(&w),
+        Language::Galician => galician_oxytone(&w),
+        _ => accent_final,
+    };
     let mut out = match lang {
         Language::Italian | Language::German | Language::Spanish | Language::English | Language::French | Language::Greek | Language::Portuguese | Language::Dutch | Language::Swedish | Language::Polish | Language::Danish | Language::Russian => unreachable!(),
-        Language::Catalan => catalan(&w),
+        Language::Catalan => catalan(&w, false),
+        Language::Valencian => catalan(&w, true),
+        Language::Galician => galician(&w),
         Language::Norwegian => nordic(&w),
         Language::Finnish => finnish(&w),
         Language::Turkish | Language::Generic => generic(&w),
     };
-    stress(&mut out, lang, accent_final);
+    // the rules stress only what a written accent marks; an unmarked stressed
+    // e/o is more often open than not in these languages' dictionaries
+    let written = out.iter().any(|s| s.starts_with('`'));
+    stress(&mut out, lang, final_stress);
+    if !written && matches!(lang, Language::Catalan | Language::Valencian | Language::Galician) {
+        for s in out.iter_mut().filter(|s| s.starts_with('`')) {
+            if let Some(rest) = s.strip_prefix("`e").or_else(|| s.strip_prefix("`o")).map(str::to_string) {
+                *s = format!("{}{rest}", if s.starts_with("`e") { "`E" } else { "`Oa" });
+            }
+        }
+    }
+    // Central Catalan reduces its unstressed a/e to the schwa `HEh` and o to
+    // u (`academia` → HEh k HEh DH `E m i HEh); Valencian keeps them
+    if lang == Language::Catalan {
+        for s in out.iter_mut() {
+            let reduced = match s.as_str() {
+                "a" | "e" | "E" => "HEh",
+                "o" | "Oa" => "u",
+                _ => continue,
+            };
+            *s = reduced.to_string();
+        }
+    }
     out
 }
 
@@ -361,65 +413,304 @@ fn push_all(out: &mut Vec<String>, items: &[&str]) {
     }
 }
 
-// --- Catalan ------------------------------------------------------------------
+// --- Catalan, Valencian and Galician ------------------------------------------
+//
+// Fitted to the dictionaries of the language distributions (`CatalanCe.dbl`,
+// `CatalanVa.dbl`, `Galician.dbl`) and written in their voices' phone sets,
+// which have no plain `t` or `d`: t is `tt`, d `dd`, and b/d/g soften to
+// `BH DH GH` after anything but a pause or a nasal. A written accent
+// stresses its vowel and gives its quality (è `E`, ò `Oa`); the
+// `*_oxytone` rules place the rest (`stress`).
 
-fn catalan(w: &[char]) -> Vec<String> {
+/// A vowel letter of these orthographies, accented or not.
+fn vowel_letter(c: Option<&char>) -> bool {
+    c.is_some_and(|c| matches!(strip_accent(*c), 'a' | 'e' | 'i' | 'o' | 'u'))
+}
+
+/// Whether the letter at `i` is e or i (c, g and qu/gu change before them).
+fn front_at(w: &[char], i: usize) -> bool {
+    matches!(w.get(i).map(|c| strip_accent(*c)), Some('e' | 'i'))
+}
+
+/// Whether b/d/g/s soften here: after a vowel, a glide or a consonant
+/// other than a nasal, not at the start of the word.
+fn soft(out: &[String]) -> bool {
+    !out.is_empty() && !matches!(out.last().map(String::as_str), Some("m" | "n" | "N"))
+}
+
+fn after_vowel(out: &[String]) -> bool {
+    out.last().is_some_and(|s| is_vowel(s) || s == "j" || s == "w")
+}
+
+/// An accented vowel letter as its stressed phone (`None` for the rest).
+fn accented(c: char) -> Option<&'static str> {
+    Some(match c {
+        'à' | 'á' => "`a",
+        'è' => "`E",
+        'é' => "`e",
+        'í' => "`i",
+        'ò' => "`Oa",
+        'ó' => "`o",
+        'ú' => "`u",
+        _ => return None,
+    })
+}
+
+/// i/y and u/ü: the vowel, or the glide (`j`, `w`) after a vowel or, with
+/// `rising`, before one.
+fn high(out: &mut Vec<String>, c: char, rising: bool) {
+    let glide = rising || out.last().is_some_and(|s| is_vowel(s));
+    let s = match (strip_accent(c), glide) {
+        ('u', true) => "w",
+        ('u', false) => "u",
+        (_, true) => "j",
+        (_, false) => "i",
+    };
+    out.push(s.into());
+}
+
+/// qu and gu: u is silent before e/i, `w` before a/o and as ü. Pushes the
+/// `w` and says how many letters the pair takes (1 when u is not part of it).
+fn u_after(out: &mut Vec<String>, w: &[char], i: usize) -> usize {
+    let u = w.get(i + 1).copied();
+    if !matches!(u, Some('u' | 'ü')) || !vowel_letter(w.get(i + 2)) {
+        return 1;
+    }
+    if u == Some('ü') || !front_at(w, i + 2) {
+        out.push("w".into());
+    }
+    2
+}
+
+/// Catalan stresses the last syllable of a word ending in a consonant or a
+/// falling diphthong (-iu, -eus), except -s after a vowel and -en, -in(s).
+fn catalan_oxytone(w: &[char]) -> bool {
+    let c: Vec<char> = w.iter().rev().take(3).map(|c| strip_accent(*c)).collect();
+    let v = |k: usize| c.get(k).is_some_and(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'));
+    let diphthong = |k: usize| matches!(c.get(k), Some('i' | 'u')) && v(k + 1);
+    match c.first() {
+        None => false,
+        Some('s') if c.get(1) == Some(&'n') => !matches!(c.get(2), Some('e' | 'i')),
+        Some('s') => diphthong(1) || !v(1),
+        Some('n') => !matches!(c.get(1), Some('e' | 'i')),
+        Some(_) if v(0) => diphthong(0),
+        Some(_) => true,
+    }
+}
+
+/// Galician stresses the last syllable of a word ending in a consonant other
+/// than n or s, or in a falling diphthong (`despois`, `falou`).
+fn galician_oxytone(w: &[char]) -> bool {
+    let c: Vec<char> = w.iter().rev().take(3).map(|c| strip_accent(*c)).collect();
+    let v = |k: usize| c.get(k).is_some_and(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'));
+    let diphthong = |k: usize| matches!(c.get(k), Some('i' | 'u')) && v(k + 1);
+    match c.first() {
+        None => false,
+        Some('s' | 'n') => diphthong(1),
+        Some(_) if v(0) => diphthong(0),
+        Some(_) => true,
+    }
+}
+
+/// Catalan (`valencian` false: Jordi's Central) or Valencian (Empar's). They
+/// differ where the voices' phone sets do: Empar has no `Zg` (j and g before
+/// e/i are `Dg`) and keeps v as `v`; Jordi merges v into b and drops the i of
+/// -ix- (`caixa` → k `a $ HEh).
+fn catalan(w: &[char], valencian: bool) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    let mut i = 0usize;
     let n = w.len();
+    let zh = if valencian { "Dg" } else { "Zg" };
+    let polysyllable = w.iter().filter(|c| vowel_letter(Some(c))).count() > 1;
+    let mut i = 0usize;
     while i < n {
-        let c = plain(w, i).unwrap_or(' ');
+        let c = w[i];
+        let next = w.get(i + 1).copied();
+        let last = i + 1 == n;
         let mut used = 1;
-        if starts(w, i, "ll") {
-            push_all(&mut out, &["Gl"]);
-            used = 2;
-        } else if starts(w, i, "ny") {
-            push_all(&mut out, &["Gn"]);
-            used = 2;
-        } else if starts(w, i, "ig") || starts(w, i, "tx") {
-            push_all(&mut out, &["T$"]);
-            used = 2;
-        } else if starts(w, i, "qu") {
-            push_all(&mut out, &["k"]);
-            used = 2;
-        } else if starts(w, i, "gu") {
-            push_all(&mut out, &["g"]);
-            used = 2;
-        } else {
-            match c {
-                'c' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["s"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["k"]);
-                    }
-                }
-                'g' => {
-                    if matches!(plain(w, i + 1), Some('e') | Some('i')) {
-                        push_all(&mut out, &["Zg"]);
-                        used = 2;
-                    } else {
-                        push_all(&mut out, &["g"]);
-                    }
-                }
-                'j' => push_all(&mut out, &["Zg"]),
-                'x' => push_all(&mut out, &["$"]),
-                'z' => push_all(&mut out, &["z"]),
-                'h' => {}
-                'a' => push_all(&mut out, &["a"]),
-                'e' => push_all(&mut out, &["e"]),
-                'i' => push_all(&mut out, &["i"]),
-                'o' => push_all(&mut out, &["o"]),
-                'u' => push_all(&mut out, &["u"]),
-                'b' | 'd' | 'f' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't' | 'v' => {
-                    let s = c.to_string();
-                    out.push(s);
-                }
-                _ => {}
-            }
+        if let Some(v) = accented(c) {
+            out.push(v.into());
+            i += 1;
+            continue;
         }
-        i += used.max(1);
+        match c {
+            'a' | 'e' | 'o' => out.push(c.to_string()),
+            'ï' => out.push("i".into()),
+            // -ig after a vowel (`roig`, `passeig`): `T$`
+            'i' if next == Some('g') && i + 2 == n && vowel_letter(i.checked_sub(1).and_then(|p| w.get(p))) => {
+                out.push("T$".into());
+                used = 2;
+            }
+            // the i of -ix- after a vowel belongs to the palatal
+            'i' if next == Some('x') && out.last().is_some_and(|s| is_vowel(s)) => {
+                if valencian {
+                    out.push("j".into());
+                }
+            }
+            'i' | 'u' | 'ü' | 'y' => {
+                let rising = out.is_empty() && vowel_letter(w.get(i + 1));
+                high(&mut out, c, rising)
+            }
+            'v' if valencian => out.push("v".into()),
+            'b' | 'v' => out.push(if last && c == 'b' { "p" } else if soft(&out) { "BH" } else { "b" }.into()),
+            'd' => out.push(if last {
+                "tt"
+            } else if soft(&out) && !matches!(out.last().map(String::as_str), Some("l" | "Gl")) {
+                "DH"
+            } else {
+                "dd"
+            }.into()),
+            // -nt(s): the t is silent (`cantant` → k HEh n tt `a n)
+            't' if i > 0 && w[i - 1] == 'n' && (last || (i + 2 == n && next == Some('s'))) => {}
+            't' if next == Some('x') => {
+                out.push("T$".into());
+                used = 2;
+            }
+            't' if starts(w, i, "tll") => {
+                push_all(&mut out, &["Gl", "Gl"]);
+                used = 3;
+            }
+            't' if next == Some('z') => {
+                out.push("Dz".into());
+                used = 2;
+            }
+            't' if next == Some('j') || (next == Some('g') && front_at(w, i + 2)) => {
+                out.push("Dg".into());
+                used = 2;
+            }
+            't' if next == Some('s') && i + 2 == n => {
+                out.push("Ts".into());
+                used = 2;
+            }
+            't' => out.push("tt".into()),
+            'c' if front_at(w, i + 1) => out.push("s".into()),
+            'c' | 'k' => out.push("k".into()),
+            'ç' => out.push("s".into()),
+            'q' => {
+                out.push("k".into());
+                used = u_after(&mut out, w, i);
+            }
+            'g' if front_at(w, i + 1) => out.push(zh.into()),
+            // -ng final or before a consonant is `N` alone (`sang` → s `a N)
+            'g' if i > 0 && w[i - 1] == 'n' && (last || !vowel_letter(next.as_ref()) && next != Some('u')) => {}
+            'g' => {
+                out.push(if last { "k" } else if soft(&out) { "GH" } else { "g" }.into());
+                used = u_after(&mut out, w, i);
+            }
+            'j' => out.push(zh.into()),
+            // l·l is one l (`al·legro` → a l `e GH hr o)
+            'l' if next == Some('·') => {
+                out.push("l".into());
+                used = if w.get(i + 2) == Some(&'l') { 3 } else { 2 };
+            }
+            'l' if next == Some('l') => {
+                out.push("Gl".into());
+                used = 2;
+            }
+            'n' if next == Some('y') => {
+                out.push("Gn".into());
+                used = 2;
+            }
+            'n' => out.push(match next {
+                Some('k' | 'q') => "N",
+                Some('c' | 'g') if !front_at(w, i + 2) => "N",
+                Some('p' | 'b' | 'm' | 'f' | 'v') => "m",
+                _ => "n",
+            }.into()),
+            'r' if next == Some('r') => {
+                out.push("r:".into());
+                used = 2;
+            }
+            // infinitives and -dor drop their final r (`afixar` → HEh f i k s `a)
+            'r' if last && polysyllable && matches!(w[i - 1], 'a' | 'e' | 'i' | 'o') => {}
+            'r' => out.push(if out.is_empty() || last || !vowel_letter(next.as_ref()) || matches!(out.last().map(String::as_str), Some("n" | "l" | "s" | "z" | "Gl")) {
+                "r:"
+            } else {
+                "hr"
+            }.into()),
+            's' if next == Some('s') => {
+                out.push("s".into());
+                used = 2;
+            }
+            's' => out.push(if after_vowel(&out) && vowel_letter(w.get(i + 1)) { "z" } else { "s" }.into()),
+            'x' if out.is_empty() || (i >= 2 && w[i - 1] == 'i' && vowel_letter(w.get(i - 2))) => out.push("$".into()),
+            'x' => push_all(&mut out, &["k", "s"]),
+            'z' => out.push("z".into()),
+            'f' | 'l' | 'm' | 'p' | 'w' => out.push(c.to_string()),
+            _ => {}
+        }
+        i += used;
+    }
+    out
+}
+
+/// Galician, as Carmela recorded it: no vowel reduction, θ (`Th`) for z and
+/// c before e/i, ll `J`, nh and a final n or m `N`, n before f `M`
+/// (`triunfo` → tt hr i `u M f o), and oral vowels where the dictionary
+/// writes nasal ones (`word_to_symbols`).
+fn galician(w: &[char]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let n = w.len();
+    let mut i = 0usize;
+    while i < n {
+        let c = w[i];
+        let next = w.get(i + 1).copied();
+        let last = i + 1 == n;
+        let mut used = 1;
+        if let Some(v) = accented(c) {
+            out.push(v.into());
+            i += 1;
+            continue;
+        }
+        match c {
+            'a' | 'e' | 'o' => out.push(c.to_string()),
+            'i' | 'u' | 'ü' | 'y' => high(&mut out, c, vowel_letter(w.get(i + 1))),
+            'b' | 'v' => out.push(if soft(&out) { "BH" } else { "b" }.into()),
+            'd' => out.push(if soft(&out) && out.last().map(String::as_str) != Some("l") { "DH" } else { "dd" }.into()),
+            't' => out.push("tt".into()),
+            'c' if next == Some('h') => {
+                out.push("T$".into());
+                used = 2;
+            }
+            'c' | 'z' if c == 'z' || front_at(w, i + 1) => out.push("Th".into()),
+            'c' | 'k' => out.push("k".into()),
+            'q' => {
+                out.push("k".into());
+                used = u_after(&mut out, w, i);
+            }
+            'g' => {
+                out.push(if soft(&out) { "GH" } else { "g" }.into());
+                used = u_after(&mut out, w, i);
+            }
+            'j' => out.push("$".into()),
+            // x is ʃ, but ks after e (`exame`, `anexo`) and before a consonant
+            'x' if (i > 0 && strip_accent(w[i - 1]) == 'e') || (next.is_some() && !vowel_letter(next.as_ref())) => push_all(&mut out, &["k", "s"]),
+            'x' => out.push("$".into()),
+            'l' if next == Some('l') => {
+                out.push("J".into());
+                used = 2;
+            }
+            'ñ' => out.push("Gn".into()),
+            'n' if next == Some('h') => {
+                out.push("N".into());
+                used = 2;
+            }
+            'n' => out.push(match next {
+                None | Some('k' | 'q' | 'g') => "N",
+                Some('c') if !front_at(w, i + 2) => "N",
+                Some('p' | 'b' | 'm' | 'v') => "m",
+                Some('f') => "M",
+                _ => "n",
+            }.into()),
+            'm' => out.push(if last { "N" } else { "m" }.into()),
+            'r' if next == Some('r') => {
+                out.push("r:".into());
+                used = 2;
+            }
+            'r' => out.push(if out.is_empty() || matches!(out.last().map(String::as_str), Some("n" | "N" | "l" | "s")) { "r:" } else { "hr" }.into()),
+            'f' | 'l' | 'p' | 's' | 'w' => out.push(c.to_string()),
+            _ => {}
+        }
+        i += used;
     }
     out
 }
@@ -573,12 +864,18 @@ fn generic(w: &[char]) -> Vec<String> {
 
 // --- stress -----------------------------------------------------------------
 
-fn stress(symbols: &mut [String], lang: Language, accent_final: bool) {
+/// Stress a word's penultimate vowel, or its last with `final_stress`
+/// (its first in Finnish and Turkish), unless the rules have already
+/// stressed the vowel a written accent marks.
+fn stress(symbols: &mut [String], lang: Language, final_stress: bool) {
+    if symbols.iter().any(|s| s.starts_with('`')) {
+        return;
+    }
     let vowels: Vec<usize> = symbols.iter().enumerate().filter(|(_, s)| is_vowel(s)).map(|(i, _)| i).collect();
     if vowels.is_empty() {
         return;
     }
-    let target = if accent_final {
+    let target = if final_stress {
         *vowels.last().unwrap()
     } else {
         match lang {
@@ -587,10 +884,7 @@ fn stress(symbols: &mut [String], lang: Language, accent_final: bool) {
             _ => vowels[0],
         }
     };
-    let sym = symbols[target].clone();
-    if !sym.starts_with('`') {
-        symbols[target] = format!("`{sym}");
-    }
+    symbols[target].insert(0, '`');
 }
 
 // --- text → tokens ----------------------------------------------------------
@@ -633,7 +927,8 @@ pub fn analyse(text: &str, fe: &Frontend) -> Vec<Token> {
 
     for c in text.chars() {
         let lc = c.to_lowercase().next().unwrap_or(c);
-        if lc.is_alphabetic() || lc.is_numeric() {
+        // Catalan's l·l keeps its dot: the dictionaries write `al·legro`
+        if lc.is_alphabetic() || lc.is_numeric() || lc == '·' {
             word.push(lc);
         } else if lc == '\'' || lc == '\u{2019}' {
             // an elision joins the two halves into one word

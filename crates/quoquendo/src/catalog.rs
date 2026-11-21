@@ -70,9 +70,10 @@ pub const INSTALLERS: [Installer; 47] = [
     Installer { file: "Zosia - Polish.exe", label: "Zosia", language: "Polish", voice: "Zosia", gender: "Female", size: 61304127 },
 ];
 
-/// MotherTongues whose language module ships in no installer of the pack
-/// (Jordi, Empar, Carmela, LinLin): their voices can't be read properly yet.
-pub const NO_MODULE: [&str; 4] = ["Catalan", "Valencian", "Galician", "Chinese"];
+/// MotherTongues whose language data ships in no installer found (LinLin's
+/// Chinese): their voices can't be read. Catalan, Valencian and Galician come
+/// from the separate language distributions (`pack::unpack_installer`).
+pub const NO_MODULE: [&str; 1] = ["Chinese"];
 
 /// Where archive.org serves an installer (with ranges; its storage nodes
 /// send no CORS header for `.exe` files, so browsers can't fetch it directly).
