@@ -1244,6 +1244,12 @@ fn join_like_original(plan: &[Phrase], db: &VoiceDatabase, rate: u32) -> (Vec<i1
     (out, lens, ends)
 }
 
+/// The speech as 16-bit samples, rounded like the original's 16-bit output
+/// (so a replay can match it exactly).
+pub fn to_pcm16(samples: &[f32]) -> Vec<i16> {
+    samples.iter().map(|s| (s * 32768.0).round().clamp(-32768.0, 32767.0) as i16).collect()
+}
+
 /// A 16-bit mono PCM WAV of the rendered speech.
 pub fn to_wav_bytes(speech: &Speech) -> Vec<u8> {
     let data_len = speech.samples.len() * 2;
@@ -1261,12 +1267,30 @@ pub fn to_wav_bytes(speech: &Speech) -> Vec<u8> {
     out.extend_from_slice(&16u16.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&(data_len as u32).to_le_bytes());
-    for s in &speech.samples {
-        // round like the original's 16-bit output, so a replay can match it exactly
-        let v = (s * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+    for v in to_pcm16(&speech.samples) {
         out.extend_from_slice(&v.to_le_bytes());
     }
     out
+}
+
+/// A mono MP3 (MPEG-1 Layer III, 96 kbit/s, with a Xing/Info frame for its
+/// exact length) of 16-bit samples at `rate`: 32, 44.1 or 48 kHz.
+pub fn mp3_bytes(pcm: &[i16], rate: u32) -> Result<Vec<u8>, String> {
+    use audio2mp3_core::{Bitrate, EncoderConfig, Mp3Encoder};
+    let err = |e: audio2mp3_core::Error| format!("MP3 at {rate} Hz: {e:?}");
+    let mut enc = Mp3Encoder::new(EncoderConfig { sample_rate: rate, channels: 1, bitrate: Bitrate::Kbps96 }).map_err(err)?;
+    enc.enable_info_frame().map_err(err)?;
+    let mut out = Vec::with_capacity(pcm.len() / 2);
+    enc.encode(pcm, &mut out).map_err(err)?;
+    enc.flush(&mut out).map_err(err)?;
+    let n = enc.info_frame_size();
+    enc.info_frame_into(&mut out[..n]).map_err(err)?;
+    Ok(out)
+}
+
+/// A mono MP3 of the rendered speech (`mp3_bytes`).
+pub fn to_mp3_bytes(speech: &Speech) -> Result<Vec<u8>, String> {
+    mp3_bytes(&to_pcm16(&speech.samples), speech.rate)
 }
 
 /// Peak envelope for the waveform display, `buckets` values in 0..1.

@@ -27,7 +27,7 @@ fn main() -> eframe::Result<()> {
         std::process::exit(code);
     }
     let mut native = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1180.0, 860.0]).with_title("quoquendo"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1180.0, 860.0]).with_title("Quoquendo"),
         ..Default::default()
     };
     if opts.screenshot.is_some() {
@@ -72,7 +72,7 @@ fn main() {
         if let Some(loading) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("qq_loading")) {
             match started {
                 Ok(()) => loading.remove(),
-                Err(e) => loading.set_inner_html(&format!("quoquendo could not start: {e:?}")),
+                Err(e) => loading.set_inner_html(&format!("Quoquendo could not start: {e:?}")),
             }
         }
     });

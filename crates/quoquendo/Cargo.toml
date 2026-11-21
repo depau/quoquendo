@@ -7,4 +7,6 @@ description = "Loquendo 7 (LTTS7) text-to-speech for its original voice files, w
 [dependencies]
 lzma-rs = { version = "0.3", features = ["stream"] }
 miniz_oxide = "0.8"
+# pure-Rust MPEG-1 Layer III encoder, for saving speech as MP3
+audio2mp3-core = "0.2"
 

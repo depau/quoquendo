@@ -250,7 +250,9 @@ fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::pa
         eprintln!("never recorded by {name}: {m}");
     }
     let speech = synth::render(&run.plan, &v.db, Settings { volume: 1.0, join: stages.sig })?;
-    std::fs::write(out, synth::to_wav_bytes(&speech)).map_err(|e| format!("{}: {e}", out.display()))?;
+    // `--out x.mp3` writes an MP3, anything else a WAV
+    let bytes = if out.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp3")) { synth::to_mp3_bytes(&speech)? } else { synth::to_wav_bytes(&speech) };
+    std::fs::write(out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
     eprintln!(
         "{name}: {:.2} s from {} pieces → {}",
         speech.duration_s(),

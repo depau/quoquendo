@@ -1,5 +1,5 @@
 //! The window, the same on the desktop and in the browser: a Speak tab
-//! (voice, text, Speak/Stop/Save WAV, and behind a toggle what the engine
+//! (voice, text, Speak/Stop/Save WAV or MP3, and behind a toggle what the engine
 //! did with the text) and a Voices tab (the library: installed voices,
 //! downloads, the pack's catalog). Developer mode (desktop only, off by
 //! default) adds the voice's details, the stage selectors and the
@@ -553,12 +553,12 @@ impl App {
         }
     }
 
-    fn save_wav(&mut self) {
+    fn save(&mut self, format: crate::audio::Format) {
         if self.speech.is_none() && !self.render() {
             return;
         }
         if let Some(s) = &self.speech {
-            match crate::audio::save_wav(s) {
+            match crate::audio::save(s, format) {
                 Ok(Some(p)) => self.status = format!("Saved {p}"),
                 Ok(None) => {}
                 Err(e) => self.error = Some(e),
@@ -578,12 +578,14 @@ impl App {
         egui::TopBottomPanel::top("head").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("quoquendo").strong().size(17.0).color(AMBER));
+                ui.label(RichText::new("Quoquendo").strong().size(17.0).color(AMBER));
                 ui.label(RichText::new(format!("v{VERSION}")).small().color(MUTED));
                 ui.add_space(8.0);
                 ui.selectable_value(&mut self.tab, Tab::Speak, "Speak");
-                ui.selectable_value(&mut self.tab, Tab::Voices, "Voices");
-                ui.selectable_value(&mut self.tab, Tab::Explore, "Explore");
+                // a voice's recordings open from its row in Voices
+                if ui.selectable_label(matches!(self.tab, Tab::Voices | Tab::Explore), "Voices").clicked() {
+                    self.tab = Tab::Voices;
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 if self.dev.on {
                     ui.separator();
@@ -612,6 +614,7 @@ impl App {
                         ui.separator();
                         ui.hyperlink_to("About quoquendo", "https://github.com/depau/quoquendo");
                     });
+                    ui.hyperlink_to("GitHub", "https://github.com/depau/quoquendo").on_hover_text("quoquendo's source, issues and Android nightlies");
                 });
             });
             ui.add_space(2.0);
@@ -636,8 +639,9 @@ impl App {
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mode = if self.dev_on() { "developer mode" } else { "egui" };
-                    ui.label(RichText::new(format!("quoquendo {VERSION} · {mode}")).small().color(MUTED));
+                    if self.dev_on() {
+                        ui.label(RichText::new("developer mode").small().color(AMBER));
+                    }
                     let stored: u64 = self.installed.iter().filter(|v| v.root.is_none()).map(|v| v.bytes).sum();
                     ui.label(
                         RichText::new(format!("{} voices installed · {} used", self.installed.len(), catalog::size_label(stored)))
@@ -711,8 +715,10 @@ impl App {
             if ui.add_enabled(self.player.is_playing(), egui::Button::new("Stop")).clicked() {
                 self.player.stop();
             }
-            if ui.add_enabled(ready, egui::Button::new("Save WAV")).clicked() {
-                self.save_wav();
+            for format in [crate::audio::Format::Wav, crate::audio::Format::Mp3] {
+                if ui.add_enabled(ready, egui::Button::new(format!("Save {}", format.ext().to_uppercase()))).clicked() {
+                    self.save(format);
+                }
             }
             ui.add_space(16.0);
             ui.label("Volume");
@@ -847,7 +853,7 @@ impl App {
             ui.label(RichText::new("Audio").strong());
             match &self.speech {
                 Some(s) => ui.label(RichText::new(format!("· {:.2} s · {} Hz · {} samples", s.duration_s(), s.rate, s.samples.len())).small().color(MUTED)),
-                None => ui.label(RichText::new("· press Speak or Save WAV").small().color(MUTED)),
+                None => ui.label(RichText::new("· press Speak or Save").small().color(MUTED)),
             };
         });
         let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 96.0), egui::Sense::hover());
@@ -896,6 +902,7 @@ impl App {
             let mut delete = None;
             let mut keep = false;
             let mut choose = None;
+            let mut explore = None;
             let mut rows: Vec<&InstalledVoice> = self.installed.iter().collect();
             self.sort_installed.apply(&mut rows, |v, col| match col {
                 Col::Voice => text_key(&v.name),
@@ -922,6 +929,9 @@ impl App {
                         (None, None) => ui.label(RichText::new(format!("Ready · {}", catalog::size_label(v.bytes))).color(GREEN)),
                     };
                     ui.horizontal(|ui| {
+                        if v.can_speak() && ui.button("Explore").on_hover_text("Hear this voice's recordings, phone by phone and sentence by sentence").clicked() {
+                            explore = Some(v.name.clone());
+                        }
                         if v.root.is_some() {
                             ui.label(RichText::new("other installation").small().color(MUTED));
                         } else if self.confirm_delete.as_deref() == Some(v.name.as_str()) {
@@ -949,6 +959,12 @@ impl App {
             if let Some(name) = choose {
                 self.choose(&name);
                 self.tab = Tab::Speak;
+            }
+            if let Some(name) = explore {
+                if self.voice.as_ref().is_none_or(|v| !v.descriptor.name.eq_ignore_ascii_case(&name)) {
+                    self.choose(&name);
+                }
+                self.tab = Tab::Explore;
             }
         });
 
@@ -1189,8 +1205,18 @@ impl App {
     }
 
     fn explore_tab(&mut self, ui: &mut egui::Ui) {
+        if let Some(name) = &self.loading {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(format!("Loading {name}…"));
+            });
+            return;
+        }
         if self.voice.is_none() {
-            ui.label(RichText::new("Pick a voice in the Speak tab to explore its recordings.").color(MUTED));
+            if ui.button("◀ Voices").clicked() {
+                self.tab = Tab::Voices;
+            }
+            ui.label(RichText::new("Pick a voice in Voices and press Explore to hear its recordings.").color(MUTED));
             return;
         }
         self.explore_index();
@@ -1204,7 +1230,9 @@ impl App {
         let mut open_unit: Option<Option<usize>> = None;
         let mut pick_phone: Option<String> = None;
         let mut page = self.explore.page;
+        let mut back = false;
         ui.horizontal(|ui| {
+            back = ui.button("◀ Voices").clicked();
             ui.heading(format!("{}'s recordings", voice.descriptor.name));
             let secs = db.audio.as_ref().map(|a| a.total_samples() / a.rate as usize).unwrap_or(0);
             ui.label(
@@ -1382,6 +1410,9 @@ impl App {
             });
         });
         self.explore.page = page;
+        if back {
+            self.tab = Tab::Voices;
+        }
         if let Some(s) = pick_phone {
             self.explore.phone = Some(s);
             self.explore.unit = None;
@@ -1558,7 +1589,7 @@ impl App {
                 egui::ComboBox::from_id_salt("fon").selected_text(["Built-in rules", "Original engine (Wine)", "Command"][fon]).show_ui(ui, |ui| {
                     ui.selectable_value(&mut fon, 0, "Built-in rules");
                     ui.selectable_value(&mut fon, 1, "Original engine (Wine)").on_hover_text(
-                        "Runs the real Loquendo engine as a separate program under Wine on this text and takes its pronunciation; quoquendo's own code does the rest. No Loquendo code is loaded into quoquendo.",
+                        "Runs the real Loquendo engine as a separate program under Wine on this text and takes its pronunciation; Quoquendo's own code does the rest. No Loquendo code is loaded into Quoquendo.",
                     );
                     ui.selectable_value(&mut fon, 2, "Command");
                 });
@@ -1578,7 +1609,7 @@ impl App {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut cat, Cat::Builtin, "Built-in");
                         ui.selectable_value(&mut cat, Cat::Original, "Original engine (Wine)").on_hover_text(
-                            "Runs the real Loquendo engine as a separate program under Wine and replays the recorded pieces it chose (with its own pronunciation) through quoquendo's decoder and joining. No Loquendo code is loaded into quoquendo.",
+                            "Runs the real Loquendo engine as a separate program under Wine and replays the recorded pieces it chose (with its own pronunciation) through Quoquendo's decoder and joining. No Loquendo code is loaded into Quoquendo.",
                         );
                     });
                 self.dev.stages.cat = cat;

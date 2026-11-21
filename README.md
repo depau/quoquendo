@@ -35,10 +35,11 @@ quoquendo --say "Attenzione! Allontanarsi dalla linea gialla." --voice Roberto -
 quoquendo --selftest
 ```
 
-The window has a Speak tab (with what the engine did, behind a toggle:
-sounds, the recorded pieces chosen, each playable on its own, and the
-waveform), a Voices tab (the library) and an Explore tab (every recorded take
-of every phone, and every recorded sentence). Developer mode, off by default,
+The window has a Speak tab (Save WAV or MP3; with what the engine did, behind
+a toggle: sounds, the recorded pieces chosen, each playable on its own, and
+the waveform) and a Voices tab (the library; each voice's Explore button opens
+every recorded take of every phone, and every recorded sentence). Developer
+mode, off by default,
 adds the voice's details, swappable stages and the comparison with the
 original engine.
 
