@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -126,10 +127,10 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                         Icon(Icons.Outlined.Info, contentDescription = null, Modifier.padding(top = 2.dp).size(20.dp))
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("quoquendo isn't your default text-to-speech engine", style = MaterialTheme.typography.titleSmall)
+                            Text("Quoquendo isn't your default text-to-speech engine", style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Other apps read aloud with the default engine. Pick quoquendo under Preferred engine.",
+                                "Other apps read aloud with the default engine. Pick Quoquendo under Preferred engine.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -182,10 +183,17 @@ fun TryScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                     Text("Speak")
                 }
             }
-            OutlinedButton(onClick = model::saveWav, enabled = voice != null && voice.ready) {
-                Icon(Icons.Outlined.Save, contentDescription = null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Save WAV")
+            Box {
+                var saveMenu by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { saveMenu = true }, enabled = voice != null && voice.ready) {
+                    Icon(Icons.Outlined.Save, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save")
+                }
+                DropdownMenu(expanded = saveMenu, onDismissRequest = { saveMenu = false }) {
+                    DropdownMenuItem(text = { Text("WAV") }, onClick = { saveMenu = false; model.save(mp3 = false) })
+                    DropdownMenuItem(text = { Text("MP3") }, onClick = { saveMenu = false; model.save(mp3 = true) })
+                }
             }
         }
         val status = model.status ?: voice?.let { v -> model.cannotSpeak(v)?.let { Status(Status.Kind.Warn, it) } }

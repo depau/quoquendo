@@ -45,6 +45,16 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SampleTextActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Quoquendo.Invisible">
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.GET_SAMPLE_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".QuoquendoTtsService"
             android:exported="true"

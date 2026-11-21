@@ -38,6 +38,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +100,7 @@ private fun Setting(
 fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     var editingMirror by remember { mutableStateOf(false) }
+    var choosingFor by remember { mutableStateOf<Locale?>(null) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         if (!model.isDefaultEngine) {
             Card(
@@ -109,12 +112,12 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null)
                         Spacer(Modifier.width(12.dp))
-                        Text("Set quoquendo as the default engine", style = MaterialTheme.typography.titleMedium)
+                        Text("Set Quoquendo as the default engine", style = MaterialTheme.typography.titleMedium)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         buildAnnotatedString {
-                            append("Apps read aloud with Android's default engine. Choose quoquendo under ")
+                            append("Apps read aloud with Android's default engine. Choose Quoquendo under ")
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Preferred engine") }
                             append(".")
                         },
@@ -154,6 +157,22 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             onClick = { model.updateShowCurtain(!model.showCurtain) },
         ) { Switch(checked = model.showCurtain, onCheckedChange = model::updateShowCurtain) }
 
+        // the voice apps get where several installed voices speak a language
+        val languages = model.installed.filter { it.speakable }.flatMap { it.locales }.distinct().sortedBy { it.displayName }
+        if (languages.isNotEmpty()) {
+            Section("Voice apps use")
+            for (locale in languages) {
+                val speakers = model.installed.count { it.speakable && locale in it.locales }
+                val name = model.defaultVoiceFor(locale)?.name.orEmpty()
+                Setting(
+                    Icons.Outlined.RecordVoiceOver,
+                    locale.displayName,
+                    if (speakers > 1) "$name · $speakers voices speak it" else "$name, the only voice installed for it",
+                    onClick = if (speakers > 1) ({ choosingFor = locale }) else null,
+                ) { if (speakers > 1) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
+            }
+        }
+
         Section("Voices")
         Setting(
             Icons.Outlined.Storage,
@@ -170,14 +189,14 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
         Setting(
             Icons.Outlined.FileDownload,
             "Download on Wi-Fi only",
-            "Only while quoquendo is open",
+            "Only while Quoquendo is open",
             onClick = { model.updateWifiOnly(!model.wifiOnly) },
         ) { Switch(checked = model.wifiOnly, onCheckedChange = model::updateWifiOnly) }
 
         Section("About")
         Setting(
             Icons.Outlined.Info,
-            "quoquendo ${BuildConfig.VERSION_NAME}",
+            "Quoquendo ${BuildConfig.VERSION_NAME}",
             "Open-source Loquendo 7 rebuild",
             onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/depau/quoquendo"))) },
         ) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) }
@@ -198,6 +217,38 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             },
             dismissButton = { TextButton(onClick = { editingMirror = false }) { Text("Cancel") } },
             confirmButton = { TextButton(onClick = { model.updateMirror(url); editingMirror = false }) { Text("Save") } },
+        )
+    }
+
+    choosingFor?.let { locale ->
+        AlertDialog(
+            onDismissRequest = { choosingFor = null },
+            title = { Text("Voice for ${locale.displayName}") },
+            text = {
+                Column {
+                    Text("Apps that read ${locale.displayName} aloud use this voice, unless they pick one themselves.")
+                    Spacer(Modifier.height(8.dp))
+                    val chosen = model.defaultVoiceFor(locale)?.name
+                    for (v in model.installed.filter { it.speakable && locale in it.locales }) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { model.updateDefaultVoice(locale, v.name); choosingFor = null }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = v.name == chosen, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(v.name)
+                                Text(
+                                    listOfNotNull(v.gender.ifEmpty { null }, if (v.languageMissing) "needs language data" else null).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingFor = null }) { Text("Close") } },
         )
     }
 }

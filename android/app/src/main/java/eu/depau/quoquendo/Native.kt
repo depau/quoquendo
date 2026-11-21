@@ -27,6 +27,8 @@ object Native {
 
     @JvmStatic external fun freeVoice(handle: Long)
     @JvmStatic external fun synthesize(handle: Long, text: String): ShortArray
+    /** [pcm] at [rate] (32, 44.1 or 48 kHz) as an MP3 file. */
+    @JvmStatic external fun encodeMp3(pcm: ShortArray, rate: Int): ByteArray
     @JvmStatic external fun deleteVoice(storeDir: String, name: String)
 
     /**

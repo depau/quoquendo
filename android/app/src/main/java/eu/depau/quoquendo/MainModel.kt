@@ -2,7 +2,6 @@ package eu.depau.quoquendo
 
 import android.app.Application
 import android.content.ContentValues
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -80,7 +79,7 @@ data class AnAudio(val rate: Int, val samples: Long, val seconds: Double, val en
 
 /** The app's state; its work lives as long as the app is open. */
 class MainModel(app: Application) : AndroidViewModel(app) {
-    private val prefs = app.getSharedPreferences("quoquendo", Context.MODE_PRIVATE)
+    private val prefs = VoiceStore.prefs(app)
     val store = VoiceStore(app)
     val catalog: List<Installer> = VoiceStore.catalog().sortedBy { it.label.lowercase() }
 
@@ -95,6 +94,11 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     var wifiOnly by mutableStateOf(prefs.getBoolean("wifi_only", true))
         private set
     var showCurtain by mutableStateOf(prefs.getBoolean("show_curtain", false))
+        private set
+    /** The voice apps get, by locale tag, where Settings chose one. */
+    var chosenVoices by mutableStateOf(
+        prefs.all.mapNotNull { (k, v) -> if (k.startsWith(VoiceStore.DEFAULT_VOICE) && v is String) k.removePrefix(VoiceStore.DEFAULT_VOICE) to v else null }.toMap(),
+    )
         private set
 
     // voices
@@ -317,6 +321,14 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         if (on && v != null && v.ready && text.isNotBlank()) analyse(v, text)
     }
 
+    /** The voice apps get for [locale] (`VoiceStore.defaultFor`). */
+    fun defaultVoiceFor(locale: java.util.Locale): InstalledVoice? = VoiceStore.defaultFor(installed, locale, chosenVoices[locale.toLanguageTag()])
+
+    fun updateDefaultVoice(locale: java.util.Locale, name: String) {
+        chosenVoices = chosenVoices + (locale.toLanguageTag() to name)
+        prefs.edit().putString(VoiceStore.defaultVoiceKey(locale), name).apply()
+    }
+
     fun refreshDefaultEngine() {
         isDefaultEngine = try {
             tts.defaultEngine == getApplication<Application>().packageName
@@ -519,8 +531,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Render with the picked voice in this process and save it to Downloads as quoquendo.wav. */
-    fun saveWav() {
+    /** Render with the picked voice in this process and save it to Downloads as quoquendo.wav or .mp3. */
+    fun save(mp3: Boolean) {
         val v = selectedVoice() ?: return
         cannotSpeak(v)?.let { status = Status(Status.Kind.Warn, it); return }
         if (text.isBlank()) {
@@ -531,15 +543,16 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         status = Status(Status.Kind.Busy, "Rendering ${v.name}…")
         viewModelScope.launch {
             try {
-                val (wav, seconds) = withContext(Dispatchers.Default) {
+                val (bytes, seconds) = withContext(Dispatchers.Default) {
                     val (pcm, rate) = synchronized(handleLock) {
                         val h = handleFor(v)
                         Native.synthesize(h, words) to Native.sampleRate(h)
                     }
-                    wav(pcm, rate) to pcm.size.toDouble() / rate
+                    (if (mp3) Native.encodeMp3(pcm, rate) else wav(pcm, rate)) to pcm.size.toDouble() / rate
                 }
-                val where = withContext(Dispatchers.IO) { writeDownload("quoquendo.wav", wav) }
-                status = Status(Status.Kind.Ok, "Saved %s · %.2f s · %d KB".format(java.util.Locale.ROOT, where, seconds, wav.size / 1000))
+                val name = if (mp3) "quoquendo.mp3" else "quoquendo.wav"
+                val where = withContext(Dispatchers.IO) { writeDownload(name, bytes, if (mp3) "audio/mpeg" else "audio/wav") }
+                status = Status(Status.Kind.Ok, "Saved %s · %.2f s · %d KB".format(java.util.Locale.ROOT, where, seconds, bytes.size / 1000))
             } catch (e: Exception) {
                 Log.e(VoiceStore.TAG, "save failed", e)
                 status = Status(Status.Kind.Error, "Could not save: ${e.message}")
@@ -547,12 +560,12 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun writeDownload(name: String, bytes: ByteArray): String {
+    private fun writeDownload(name: String, bytes: ByteArray, mime: String): String {
         val app = getApplication<Application>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
             val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

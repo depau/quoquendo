@@ -7,8 +7,8 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use jni::objects::{JClass, JString};
-use jni::sys::{jint, jlong, jshortArray, jstring};
+use jni::objects::{JClass, JShortArray, JString};
+use jni::sys::{jbyteArray, jint, jlong, jshortArray, jstring};
 use jni::JNIEnv;
 use quoquendo::{catalog, codec, synth, Voice, VoiceFiles};
 use serde_json::{json, Value};
@@ -163,14 +163,6 @@ fn delete_voice(store: &str, name: &str) -> Result<(), String> {
         rm(lib, false)?;
     }
     rm(&info.vcf, false)
-}
-
-/// Samples in [-1, 1] to 16-bit PCM, rounded and clamped.
-fn to_pcm16(samples: &[f32]) -> Vec<i16> {
-    samples
-        .iter()
-        .map(|s| (s * 32768.0).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16)
-        .collect()
 }
 
 /// The recordings bank, or why there is none.
@@ -359,10 +351,27 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_synthesize<'l>(
     guard(&mut env, std::ptr::null_mut(), |env| {
         let text = jstr(env, &text)?;
         let speech = voice(handle)?.say(&text)?;
-        let pcm = to_pcm16(&speech.samples);
+        let pcm = synth::to_pcm16(&speech.samples);
         let array = env.new_short_array(pcm.len() as i32).map_err(|e| e.to_string())?;
         env.set_short_array_region(&array, 0, &pcm).map_err(|e| e.to_string())?;
         Ok(array.into_raw())
+    })
+}
+
+/// The 16-bit `pcm` at `rate` as an MP3 file (`synth::mp3_bytes`).
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_encodeMp3<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    pcm: JShortArray<'l>,
+    rate: jint,
+) -> jbyteArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let n = env.get_array_length(&pcm).map_err(|e| e.to_string())? as usize;
+        let mut samples = vec![0i16; n];
+        env.get_short_array_region(&pcm, 0, &mut samples).map_err(|e| e.to_string())?;
+        let mp3 = synth::mp3_bytes(&samples, rate as u32)?;
+        Ok(env.byte_array_from_slice(&mp3).map_err(|e| e.to_string())?.into_raw())
     })
 }
 
@@ -399,7 +408,7 @@ mod tests {
 
     #[test]
     fn pcm_rounds_and_clamps() {
-        assert_eq!(to_pcm16(&[0.0, 1.0, -1.0, 2.0, 0.5 / 32768.0, -0.6 / 32768.0]), vec![0, 32767, -32768, 32767, 1, -1]);
+        assert_eq!(synth::to_pcm16(&[0.0, 1.0, -1.0, 2.0, 0.5 / 32768.0, -0.6 / 32768.0]), vec![0, 32767, -32768, 32767, 1, -1]);
     }
 
     #[test]

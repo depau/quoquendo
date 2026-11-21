@@ -71,11 +71,20 @@ class QuoquendoTtsService : TextToSpeechService() {
     }
 
     /** The best (voice, locale, level) for a request, or null. */
-    private fun best(lang: String?, country: String?, variant: String?): Triple<InstalledVoice, Locale, Int>? =
-        voices().flatMap { v -> v.locales.map { Triple(v, it, level(it, lang, country, variant)) } }
+    private fun best(lang: String?, country: String?, variant: String?): Triple<InstalledVoice, Locale, Int>? {
+        val prefs = VoiceStore.prefs(this)
+        return voices().flatMap { v -> v.locales.map { Triple(v, it, level(it, lang, country, variant)) } }
             .filter { it.third >= TextToSpeech.LANG_AVAILABLE }
-            // the strongest match; among equals, a voice whose language data is present
-            .maxWithOrNull(compareBy({ it.third }, { !it.first.languageMissing }))
+            // the strongest match; among equals, the voice chosen in Settings for
+            // its locale, then one whose language data is present
+            .maxWithOrNull(
+                compareBy(
+                    { it.third },
+                    { prefs.getString(VoiceStore.defaultVoiceKey(it.second), null) == it.first.name },
+                    { !it.first.languageMissing },
+                ),
+            )
+    }
 
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
         best(lang, country, variant)?.third ?: TextToSpeech.LANG_NOT_SUPPORTED

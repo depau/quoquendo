@@ -1,6 +1,7 @@
 package eu.depau.quoquendo
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
@@ -279,6 +280,18 @@ class VoiceStore(context: Context) {
 
         /** The Android TTS voice name of [voice] speaking [locale]. */
         fun ttsVoiceName(voice: String, locale: Locale) = "$voice-${locale.toLanguageTag()}"
+
+        /** The app's settings, shared by the app and the TTS service. */
+        fun prefs(context: Context): SharedPreferences = context.getSharedPreferences("quoquendo", Context.MODE_PRIVATE)
+
+        /** The settings key naming the voice apps get for [locale] when several speak it. */
+        fun defaultVoiceKey(locale: Locale) = "$DEFAULT_VOICE${locale.toLanguageTag()}"
+        const val DEFAULT_VOICE = "default_voice."
+
+        /** Among [voices], the one apps get for [locale]: [chosen] in Settings, else one with its language data. */
+        fun defaultFor(voices: List<InstalledVoice>, locale: Locale, chosen: String?): InstalledVoice? =
+            voices.filter { it.speakable && locale in it.locales }
+                .maxWithOrNull(compareBy({ it.name == chosen }, { !it.languageMissing }))
     }
 }
 

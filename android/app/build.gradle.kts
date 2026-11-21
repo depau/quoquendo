@@ -20,7 +20,7 @@ android {
         targetSdk = 35
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "0.1.0"
-        manifestPlaceholders["appName"] = "quoquendo"
+        manifestPlaceholders["appName"] = "Quoquendo"
         val mirror = (System.getenv("QQ_MIRROR_URL") ?: "").trimEnd('/')
         buildConfigField("String", "QQ_MIRROR_URL", "\"$mirror\"")
         ndk {
@@ -28,7 +28,7 @@ android {
         }
         if (nightly) {
             applicationIdSuffix = ".nightly"
-            manifestPlaceholders["appName"] = "quoquendo Nightly"
+            manifestPlaceholders["appName"] = "Quoquendo Nightly"
         }
     }
 

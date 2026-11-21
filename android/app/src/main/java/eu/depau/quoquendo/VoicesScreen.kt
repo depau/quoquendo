@@ -334,7 +334,7 @@ private fun ImportDialog(state: Import, onCancel: () -> Unit) {
         title = { Text("Importing ${state.name.replace(" - ", " – ")}") },
         text = {
             Column {
-                Text("Unpacking the installer and copying the voice to quoquendo's storage. This takes a few seconds.")
+                Text("Unpacking the installer and copying the voice to Quoquendo's storage. This takes a few seconds.")
                 Spacer(Modifier.height(20.dp))
                 if (state.unpacking || state.total <= 0) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.primaryContainer)
