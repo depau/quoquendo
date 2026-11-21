@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// CI nightlies: `-Pnightly=true -PversionCode=… -PversionName=…`, signed with
+// the key in SIGNING_STORE_FILE / SIGNING_STORE_PASSWORD / SIGNING_KEY_ALIAS /
+// SIGNING_KEY_PASSWORD. The nightly is its own app (eu.depau.quoquendo.nightly).
+val nightly = (findProperty("nightly") as String?) == "true"
+val signingStore = System.getenv("SIGNING_STORE_FILE")?.takeIf { it.isNotEmpty() }
+
 android {
     namespace = "eu.depau.quoquendo"
     compileSdk = 35
@@ -12,18 +18,35 @@ android {
         applicationId = "eu.depau.quoquendo"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "0.1.0"
+        manifestPlaceholders["appName"] = "quoquendo"
         val mirror = (System.getenv("QQ_MIRROR_URL") ?: "").trimEnd('/')
         buildConfigField("String", "QQ_MIRROR_URL", "\"$mirror\"")
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+        if (nightly) {
+            applicationIdSuffix = ".nightly"
+            manifestPlaceholders["appName"] = "quoquendo Nightly"
+        }
+    }
+
+    signingConfigs {
+        if (signingStore != null) {
+            create("ci") {
+                storeFile = file(signingStore)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("ci")?.let { signingConfig = it }
         }
     }
     compileOptions {
