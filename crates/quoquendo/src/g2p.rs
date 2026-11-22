@@ -17,6 +17,7 @@
 use crate::phonetics::is_vowel;
 
 mod chinese;
+pub(crate) use chinese::is_hanzi;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Language {

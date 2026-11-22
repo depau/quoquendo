@@ -118,7 +118,9 @@ pub fn utf16_range(text: &str, r: Range<usize>) -> Range<usize> {
     start..start + text[a..b].encode_utf16().count()
 }
 
-/// The text's letters and digits, folded, with where each is.
+/// The text's letters and digits, folded, with where each is. Chinese
+/// writes no spaces, so each hanzi is a word of its own here (the front end's
+/// words, 琳琳, span several).
 fn letters(text: &str) -> Vec<Ch> {
     let mut out: Vec<Ch> = Vec::with_capacity(text.len());
     let mut in_word = false;
@@ -127,16 +129,17 @@ fn letters(text: &str) -> Vec<Ch> {
             in_word = false;
             continue;
         }
+        let hanzi = crate::g2p::is_hanzi(c);
         let at = i..i + c.len_utf8();
         for (k, f) in fold(c).enumerate() {
             out.push(Ch {
                 c: f,
                 at: at.clone(),
-                first: k == 0 && !in_word,
+                first: k == 0 && (!in_word || hanzi),
                 last: false,
             });
         }
-        in_word = true;
+        in_word = !hanzi;
     }
     for i in 0..out.len() {
         out[i].last = out.get(i + 1).is_none_or(|n| n.first);
@@ -295,5 +298,14 @@ mod tests {
         assert_eq!(utf16_range("a😀b", 5..6), 3..4);
         assert_eq!(utf16_range("a😀b", 2..99), 1..4);
         assert_eq!(utf16_range("a😀b", Range { start: 3, end: 1 }), 1..1);
+    }
+
+    #[test]
+    fn chinese_words_inside_unspaced_text() {
+        // as the Chinese front end splits it: dictionary words, Latin left out
+        assert_eq!(
+            said("我叫琳琳，我是Loquendo的女声录音员。", &["我", "叫", "琳琳", ",", "我", "是", "的", "女声", "录音员", "."]),
+            ["我", "叫", "琳琳", "我", "是", "的", "女声", "录音员"]
+        );
     }
 }

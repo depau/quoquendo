@@ -117,7 +117,7 @@ fn number(digits: &str) -> Vec<String> {
     out.into_iter().map(str::to_string).collect()
 }
 
-fn is_hanzi(c: char) -> bool {
+pub(crate) fn is_hanzi(c: char) -> bool {
     matches!(c, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}' | '\u{20000}'..='\u{2ffff}')
 }
 
