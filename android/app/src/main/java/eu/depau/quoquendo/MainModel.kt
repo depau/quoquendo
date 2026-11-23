@@ -132,6 +132,13 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     /** The voice chosen for each language (`en`) in Settings. */
     var voiceChoices by mutableStateOf(readChoices())
         private set
+    /** Save speech requests: on, how many days they're kept (0: kept), and how many there are. */
+    var saveRequests by mutableStateOf(SpeechLog.enabled(prefs))
+        private set
+    var requestDays by mutableStateOf(SpeechLog.days(prefs))
+        private set
+    var requests by mutableStateOf<List<SpeechRequest>>(emptyList())
+        private set
 
     // voices
     val downloads = mutableStateMapOf<String, Download>()
@@ -217,6 +224,13 @@ class MainModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 fail("Could not list voices: ${e.message}")
             }
+        }
+        refreshRequests()
+    }
+
+    fun refreshRequests() {
+        viewModelScope.launch {
+            requests = withContext(Dispatchers.IO) { runCatching { SpeechLog.all(getApplication(), prefs) }.getOrDefault(emptyList()) }
         }
     }
 
@@ -379,6 +393,22 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         scheduleAnalysis()
     }
 
+    fun updateSaveRequests(on: Boolean) {
+        saveRequests = on
+        prefs.edit().putBoolean(SpeechLog.ENABLED, on).apply()
+    }
+
+    fun updateRequestDays(days: Int) {
+        requestDays = days
+        prefs.edit().putInt(SpeechLog.DAYS, days).apply()
+        refreshRequests()
+    }
+
+    fun clearRequests() {
+        SpeechLog.clear(getApplication())
+        requests = emptyList()
+    }
+
     private fun refreshProfiles() {
         profiles = ProfileStore.all(prefs)
         activeProfile = ProfileStore.activeName(prefs)
@@ -424,6 +454,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         o.put("wifi_only", wifiOnly)
         o.put("volume", volume.toDouble())
         o.put("save_format", saveFormat.ext)
+        o.put(SpeechLog.ENABLED, saveRequests)
+        o.put(SpeechLog.DAYS, requestDays)
         return o.toString()
     }
 
@@ -436,6 +468,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         updateWifiOnly(o.optBoolean("wifi_only", wifiOnly))
         if (o.has("volume")) updateVolume(o.optDouble("volume", volume.toDouble()).toFloat())
         formats.firstOrNull { it.ext == o.optString("save_format") }?.let { saveFormat = it }
+        updateSaveRequests(o.optBoolean(SpeechLog.ENABLED, saveRequests))
+        o.optInt(SpeechLog.DAYS, -1).takeIf { it in SpeechLog.RETENTION }?.let { updateRequestDays(it) }
         refreshProfiles()
         return null
     }

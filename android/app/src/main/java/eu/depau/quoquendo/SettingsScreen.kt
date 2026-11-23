@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Storage
@@ -40,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -165,6 +167,18 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             model.activeProfile,
             onClick = { go(Screen.Profiles) },
         ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
+        // the row opens the log, the switch turns saving on and off
+        Setting(
+            Icons.Outlined.History,
+            "Save speech requests",
+            if (model.saveRequests || model.requests.isNotEmpty()) "${model.requests.size} saved · ${retention(model.requestDays)}" else "Off",
+            onClick = { go(Screen.Requests) },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                VerticalDivider(Modifier.height(32.dp).padding(end = 16.dp))
+                Switch(checked = model.saveRequests, onCheckedChange = model::updateSaveRequests)
+            }
+        }
 
         Section("Engine")
         Setting(

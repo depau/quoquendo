@@ -161,10 +161,31 @@ class QuoquendoTtsService : TextToSpeechService() {
         stopped = true
     }
 
+    /** Into the speech request log, when Save speech requests is on. */
+    private fun save(request: SynthesisRequest, text: String) {
+        val prefs = VoiceStore.prefs(this)
+        if (!SpeechLog.enabled(prefs) || text.isBlank()) return
+        val pm = packageManager
+        // apps sharing a uid can't be told apart: Settings and the other system apps are "Android System"
+        val packages = pm.getPackagesForUid(request.callerUid).orEmpty()
+        val app = packages.singleOrNull() ?: "android".takeIf { it in packages } ?: pm.getNameForUid(request.callerUid) ?: "uid ${request.callerUid}"
+        val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(app, 0)).toString() }.getOrDefault(app)
+        // a float from Bundle params, a string from the old HashMap ones
+        @Suppress("DEPRECATION")
+        val volume = when (val v = request.params?.get(TextToSpeech.Engine.KEY_PARAM_VOLUME)) {
+            is Number -> v.toFloat()
+            is String -> v.toFloatOrNull()
+            else -> null
+        }?.takeIf { it < 1f }
+        val entry = SpeechRequest(System.currentTimeMillis(), app, label, text, request.language.orEmpty(), request.pitch.takeIf { it != 100 }, volume)
+        runCatching { SpeechLog.add(this, prefs, entry) }.onFailure { Log.w(TAG, "saving the speech request failed", it) }
+    }
+
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         stopped = false
         val text = request.charSequenceText?.toString().orEmpty()
         Log.i(TAG, "onSynthesizeText voice=${request.voiceName} lang=${request.language}-${request.country} chars=${text.length}")
+        save(request, text)
         val speech = try {
             synchronized(lock) {
                 val wanted = byVoiceName(request.voiceName)?.first

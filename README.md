@@ -124,7 +124,10 @@ touch and hold the waveform to read the sound under your finger), and saves
 WAV, FLAC, MP3 or Opus files with the text and its timing embedded. Apps
 that read aloud get the word being spoken too. Settings chooses the voice
 apps get for each language; Advanced adds the reading language, the
-voice's details and how pieces are joined.
+voice's details and how pieces are joined. Save speech requests (off by
+default) keeps what apps ask Quoquendo to say, with the app, language and
+any pitch or volume they set, for 1, 7 or 30 days or until cleared, so a
+profile can be written for them. It never leaves the device.
 
 The nightly is `eu.depau.quoquendo.nightly`; Obtainium uses the release date
 as its version and offers each new one as an update. To build it yourself:

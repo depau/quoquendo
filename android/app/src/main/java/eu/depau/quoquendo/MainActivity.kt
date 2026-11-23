@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
@@ -46,11 +48,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
-enum class Screen(val title: String, val icon: ImageVector) {
+/** The app's screens; those with a [parent] open from it, outside the navigation bar. */
+enum class Screen(val title: String, val icon: ImageVector, val parent: Screen? = null) {
     Voices("Voices", Icons.Outlined.RecordVoiceOver),
     Try("Try it", Icons.Outlined.PlayCircle),
     Settings("Settings", Icons.Outlined.Settings),
-    Profiles("Profiles", Icons.Outlined.Tune),
+    Profiles("Profiles", Icons.Outlined.Tune, Settings),
+    Requests("Speech requests", Icons.Outlined.History, Settings),
 }
 
 class MainActivity : ComponentActivity() {
@@ -121,6 +125,8 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
         }
     }
     val search = remember { mutableStateOf<String?>(null) }
+    val requestSearch = remember { mutableStateOf<String?>(null) }
+    screen.parent?.let { parent -> BackHandler { go(parent) } }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
@@ -129,6 +135,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
                 Screen.Try -> TryTopBar(model)
                 Screen.Settings -> SettingsTopBar()
                 Screen.Profiles -> ProfilesTopBar(go)
+                Screen.Requests -> RequestsTopBar(model, go, requestSearch)
             }
         },
         snackbarHost = {
@@ -153,9 +160,9 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
         },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                Screen.entries.filter { it != Screen.Profiles }.forEach { s ->
+                Screen.entries.filter { it.parent == null }.forEach { s ->
                     NavigationBarItem(
-                        selected = s == screen,
+                        selected = s == screen || s == screen.parent,
                         onClick = { go(s) },
                         icon = { Icon(s.icon, contentDescription = null) },
                         label = { Text(s.title) },
@@ -171,6 +178,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
             Screen.Try -> TryScreen(model, go, modifier)
             Screen.Settings -> SettingsScreen(model, go, modifier)
             Screen.Profiles -> ProfilesScreen(model, go, modifier)
+            Screen.Requests -> RequestsScreen(model, requestSearch.value, modifier)
         }
     }
 }
