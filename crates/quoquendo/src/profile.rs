@@ -11,6 +11,15 @@ use regex::{Captures, Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
+/// A regular expression compiled once, on first use: profiles are applied
+/// every frame the window draws.
+macro_rules! re {
+    ($pattern:expr) => {{
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new($pattern).unwrap());
+        &*RE
+    }};
+}
+
 /// How a date is spoken.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -695,11 +704,11 @@ impl Mapped {
 
     /// One space between words, none at either end.
     fn tidy(self) -> Mapped {
-        let ws = Regex::new(r"\s+").unwrap();
+        let ws = re!(r"\s+");
         let m = self.rewrite(&ws, " ", false);
-        let lead = Regex::new(r"^\s+").unwrap();
+        let lead = re!(r"^\s+");
         let m = m.rewrite(&lead, "", false);
-        let trail = Regex::new(r"\s+$").unwrap();
+        let trail = re!(r"\s+$");
         m.rewrite(&trail, "", false)
     }
 
@@ -1406,7 +1415,7 @@ fn singular(amount: &str) -> bool {
 
 fn date_spans(text: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
-    let iso = Regex::new(r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b").unwrap();
+    let iso = re!(r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b");
     for c in iso.captures_iter(text) {
         let y = c[1].parse::<i32>().unwrap_or(0);
         let m = c[2].parse::<i32>().unwrap_or(0);
@@ -1415,7 +1424,7 @@ fn date_spans(text: &str) -> Vec<Range<usize>> {
             out.push(c.get(0).unwrap().range());
         }
     }
-    let dmy = Regex::new(r"\b([0-9]{1,2})([./-])([0-9]{1,2})([./-])([0-9]{2,4})\b").unwrap();
+    let dmy = re!(r"\b([0-9]{1,2})([./-])([0-9]{1,2})([./-])([0-9]{2,4})\b");
     for c in dmy.captures_iter(text) {
         if c[2] != c[4] {
             continue;
@@ -1435,7 +1444,7 @@ fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
 }
 
 fn dates(m: Mapped, style: Dates, year: Year, lang: Language, now: u32, words: &Words) -> Mapped {
-    let iso = Regex::new(r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b").unwrap();
+    let iso = re!(r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b");
     let m = m.rewrite_matches(&iso, |c| {
         let y = c[1].parse::<u32>().ok()?;
         let month = c[2].parse::<u32>().ok()?;
@@ -1445,7 +1454,7 @@ fn dates(m: Mapped, style: Dates, year: Year, lang: Language, now: u32, words: &
         }
         Some(say_date(day, month, &y.to_string(), style, year, lang, now, words))
     });
-    let dmy = Regex::new(r"\b([0-9]{1,2})([./-])([0-9]{1,2})([./-])([0-9]{2,4})\b").unwrap();
+    let dmy = re!(r"\b([0-9]{1,2})([./-])([0-9]{1,2})([./-])([0-9]{2,4})\b");
     m.rewrite_matches(&dmy, |c| {
         if c[2] != c[4] {
             return None;
@@ -1507,7 +1516,7 @@ fn expand_year(raw: &str, style: Year, now: u32) -> u32 {
 }
 
 fn ranges(m: Mapped, style: Ranges, _lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"\b([0-9]{1,6})\s*[-–—]\s*([0-9]{1,6})\b").unwrap();
+    let re = re!(r"\b([0-9]{1,6})\s*[-–—]\s*([0-9]{1,6})\b");
     let protected = date_spans(&m.text);
     let text = m.text.clone();
     m.rewrite_matches(&re, |c| {
@@ -1535,7 +1544,7 @@ fn before_or_after(text: &str, r: &Range<usize>) -> bool {
 }
 
 fn math(m: Mapped, lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"\b[0-9]+(?:[.,][0-9]+)?(?:\s*[+\-*/^=]\s*[0-9]+(?:[.,][0-9]+)?)+\b").unwrap();
+    let re = re!(r"\b[0-9]+(?:[.,][0-9]+)?(?:\s*[+\-*/^=]\s*[0-9]+(?:[.,][0-9]+)?)+\b");
     let protected = date_spans(&m.text);
     let text = m.text.clone();
     m.rewrite_matches(&re, |c| {
@@ -1590,7 +1599,7 @@ fn math(m: Mapped, lang: Language, words: &Words) -> Mapped {
 }
 
 fn links(m: Mapped, _lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"(?i)\b(?:https?://|www\.)[^\s]+|\b[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}(?:/[^\s]*)?").unwrap();
+    let re = re!(r"(?i)\b(?:https?://|www\.)[^\s]+|\b[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}(?:/[^\s]*)?");
     m.rewrite_matches(&re, |c| {
         let s = c.get(0)?.as_str();
         let mut core = s;
@@ -1642,7 +1651,7 @@ fn say_link(s: &str, words: &Words) -> String {
 }
 
 fn emails(m: Mapped, _lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap();
+    let re = re!(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}");
     let text = m.text.clone();
     m.rewrite_matches(&re, |c| {
         let r = c.get(0)?.range();
@@ -1712,7 +1721,7 @@ fn say_domain(s: &str, words: &Words) -> String {
 }
 
 fn federated(m: Mapped, _lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"@([A-Za-z0-9_.\-]+)@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})").unwrap();
+    let re = re!(r"@([A-Za-z0-9_.\-]+)@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})");
     let text = m.text.clone();
     let m = m.rewrite_matches(&re, |c| {
         let r = c.get(0)?.range();
@@ -1725,7 +1734,7 @@ fn federated(m: Mapped, _lang: Language, words: &Words) -> Mapped {
         }
         Some(clean_spaces(&format!("{} {} {}", &c[1], words.on(), say_domain(&c[2], words))))
     });
-    let re = Regex::new(r"@([A-Za-z0-9_.\-]+):([A-Za-z0-9.\-]+\.[A-Za-z]{2,})").unwrap();
+    let re = re!(r"@([A-Za-z0-9_.\-]+):([A-Za-z0-9.\-]+\.[A-Za-z]{2,})");
     let text = m.text.clone();
     m.rewrite_matches(&re, |c| {
         let r = c.get(0)?.range();
@@ -1741,7 +1750,7 @@ fn federated(m: Mapped, _lang: Language, words: &Words) -> Mapped {
 }
 
 fn handles(m: Mapped, _lang: Language, words: &Words) -> Mapped {
-    let re = Regex::new(r"@[A-Za-z0-9_]{1,30}").unwrap();
+    let re = re!(r"@[A-Za-z0-9_]{1,30}");
     let text = m.text.clone();
     let m = m.rewrite_matches(&re, |c| {
         let r = c.get(0)?.range();
@@ -1754,7 +1763,7 @@ fn handles(m: Mapped, _lang: Language, words: &Words) -> Mapped {
         }
         Some(format!("{} {}", words.at(), &c[0][1..]))
     });
-    let re = Regex::new(r"#[A-Za-z][A-Za-z0-9_]*").unwrap();
+    let re = re!(r"#[A-Za-z][A-Za-z0-9_]*");
     let text = m.text.clone();
     m.rewrite_matches(&re, |c| {
         let r = c.get(0)?.range();
@@ -1766,7 +1775,7 @@ fn handles(m: Mapped, _lang: Language, words: &Words) -> Mapped {
 }
 
 fn cashtags(m: Mapped, _lang: Language) -> Mapped {
-    let re = Regex::new(r"\$([A-Za-z]{1,5})\b").unwrap();
+    let re = re!(r"\$([A-Za-z]{1,5})\b");
     m.rewrite_matches(&re, |c| {
         let letters: Vec<String> = c[1].chars().map(|ch| ch.to_ascii_uppercase().to_string()).collect();
         Some(format!("cashtag {}", letters.join(" ")))
@@ -1774,25 +1783,25 @@ fn cashtags(m: Mapped, _lang: Language) -> Mapped {
 }
 
 fn currencies(m: Mapped, lang: Language, words: &Words) -> Mapped {
-    let before = Regex::new(r"([€$£¥])\s*([0-9]+(?:[.,][0-9]+)?)").unwrap();
+    let before = re!(r"([€$£¥])\s*([0-9]+(?:[.,][0-9]+)?)");
     let m = m.rewrite_matches(&before, |c| {
         let cur = currency_of(&c[1])?;
         let amount = &c[2];
         Some(format!("{} {}", localize_number(amount, lang), words.currency(cur, singular(amount))))
     });
-    let after = Regex::new(r"([0-9]+(?:[.,][0-9]+)?)\s*([€$£¥])").unwrap();
+    let after = re!(r"([0-9]+(?:[.,][0-9]+)?)\s*([€$£¥])");
     let m = m.rewrite_matches(&after, |c| {
         let cur = currency_of(&c[2])?;
         let amount = &c[1];
         Some(format!("{} {}", localize_number(amount, lang), words.currency(cur, singular(amount))))
     });
-    let code_before = Regex::new(r"\b(EUR|USD|GBP|JPY|CHF|CAD|AUD)\s*([0-9]+(?:[.,][0-9]+)?)").unwrap();
+    let code_before = re!(r"\b(EUR|USD|GBP|JPY|CHF|CAD|AUD)\s*([0-9]+(?:[.,][0-9]+)?)");
     let m = m.rewrite_matches(&code_before, |c| {
         let cur = currency_of(&c[1])?;
         let amount = &c[2];
         Some(format!("{} {}", localize_number(amount, lang), words.currency(cur, singular(amount))))
     });
-    let code_after = Regex::new(r"([0-9]+(?:[.,][0-9]+)?)\s*(EUR|USD|GBP|JPY|CHF|CAD|AUD)\b").unwrap();
+    let code_after = re!(r"([0-9]+(?:[.,][0-9]+)?)\s*(EUR|USD|GBP|JPY|CHF|CAD|AUD)\b");
     m.rewrite_matches(&code_after, |c| {
         let cur = currency_of(&c[2])?;
         let amount = &c[1];
@@ -1801,13 +1810,13 @@ fn currencies(m: Mapped, lang: Language, words: &Words) -> Mapped {
 }
 
 fn crypto(m: Mapped, lang: Language, words: &Words) -> Mapped {
-    let after = Regex::new(r"([0-9]+(?:[.,][0-9]+)?)\s*\b(BTC|ETH|USDT|SOL|XRP|ADA|DOT|DOGE|BNB)\b").unwrap();
+    let after = re!(r"([0-9]+(?:[.,][0-9]+)?)\s*\b(BTC|ETH|USDT|SOL|XRP|ADA|DOT|DOGE|BNB)\b");
     let m = m.rewrite_matches(&after, |c| {
         let amount = &c[1];
         let code = &c[2];
         Some(format!("{} {}", localize_number(amount, lang), words.crypto(code)))
     });
-    let before = Regex::new(r"\b(BTC|ETH|USDT|SOL|XRP|ADA|DOT|DOGE|BNB)\s*([0-9]+(?:[.,][0-9]+)?)").unwrap();
+    let before = re!(r"\b(BTC|ETH|USDT|SOL|XRP|ADA|DOT|DOGE|BNB)\s*([0-9]+(?:[.,][0-9]+)?)");
     m.rewrite_matches(&before, |c| {
         let code = &c[1];
         let amount = &c[2];
@@ -1846,11 +1855,16 @@ fn units(m: Mapped, _lang: Language, words: &Words) -> Mapped {
         ("°F", "gradi Fahrenheit", "degrees Fahrenheit"),
         ("%", "per cento", "percent"),
     ];
+    static RES: std::sync::LazyLock<Vec<Regex>> = std::sync::LazyLock::new(|| {
+        UNITS
+            .iter()
+            .map(|(unit, _, _)| Regex::new(&format!(r"(?i)(^|[^A-Za-z])(?:{})([^A-Za-z]|$)", regex::escape(unit))).unwrap())
+            .collect()
+    });
     let mut m = m;
-    for (unit, it, en) in UNITS {
-        let re = Regex::new(&format!(r"(?i)(^|[^A-Za-z])(?:{})([^A-Za-z]|$)", regex::escape(unit))).unwrap();
+    for ((_, it, en), re) in UNITS.iter().zip(RES.iter()) {
         let word = words.unit(it, en);
-        m = m.rewrite_matches(&re, |c| {
+        m = m.rewrite_matches(re, |c| {
             let prefix = c.get(1).map(|m| m.as_str()).unwrap_or("");
             let suffix = c.get(2).map(|m| m.as_str()).unwrap_or("");
             Some(format!("{prefix} {word} {suffix}"))
@@ -1860,9 +1874,9 @@ fn units(m: Mapped, _lang: Language, words: &Words) -> Mapped {
 }
 
 fn inclusive(m: Mapped) -> Mapped {
-    let re = Regex::new(r"[əɜ]").unwrap();
+    let re = re!(r"[əɜ]");
     let m = m.rewrite(&re, "e", false);
-    let re = Regex::new(r"(\p{L}+)\*").unwrap();
+    let re = re!(r"(\p{L}+)\*");
     m.rewrite(&re, "${1}e", true)
 }
 
