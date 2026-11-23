@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -162,7 +163,7 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
 
         Section("Text")
         Setting(
-            Icons.Outlined.Tune,
+            Icons.Outlined.TextFields,
             "Profile",
             model.activeProfile,
             onClick = { go(Screen.Profiles) },
