@@ -129,6 +129,9 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var activeProfileJson by mutableStateOf(ProfileStore.activeJson(prefs))
         private set
+    /** Apps with their own profile: package to profile name. */
+    var appProfiles by mutableStateOf(ProfileStore.appProfiles(prefs))
+        private set
     /** The voice chosen for each language (`en`) in Settings. */
     var voiceChoices by mutableStateOf(readChoices())
         private set
@@ -413,7 +416,14 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         profiles = ProfileStore.all(prefs)
         activeProfile = ProfileStore.activeName(prefs)
         activeProfileJson = ProfileStore.activeJson(prefs)
+        appProfiles = ProfileStore.appProfiles(prefs)
         scheduleAnalysis()
+    }
+
+    /** Give [app] its own profile, or (null) the active one. */
+    fun setAppProfile(app: String, name: String?) {
+        ProfileStore.setAppProfile(prefs, app, name)
+        refreshProfiles()
     }
 
     fun useProfile(name: String) {

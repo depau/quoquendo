@@ -1,5 +1,6 @@
 package eu.depau.quoquendo
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -73,6 +74,8 @@ fun ProfilesTopBar(go: (Screen) -> Unit) {
 @Composable
 fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    var choosingApp by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = editing != null || choosingApp) { editing = null; choosingApp = false }
     val context = LocalContext.current
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -82,7 +85,9 @@ fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     }
     val name = editing
     if (name != null) {
-        ProfileEditor(model, name, onBack = { editing = null }, onOpen = { editing = it }, onDelete = { editing = null })
+        ProfileEditor(model, name, onBack = { editing = null }, onOpen = { editing = it }, onDelete = { editing = null }, modifier)
+    } else if (choosingApp) {
+        ChooseApp(model, onDone = { choosingApp = false }, modifier)
     } else {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Text(
@@ -110,12 +115,22 @@ fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
                     Text("Import profile")
                 }
             }
+            Section("Apps with their own profile")
+            for (app in model.appProfiles.keys.sorted()) {
+                AppProfileRow(model, app, appLabel(app))
+            }
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.clickable { choosingApp = true },
+                leadingContent = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                headlineContent = { Text("Choose an app") },
+            )
         }
     }
 }
 
 @Composable
-private fun ProfileEditor(model: MainModel, name: String, onBack: () -> Unit, onOpen: (String) -> Unit, onDelete: () -> Unit) {
+private fun ProfileEditor(model: MainModel, name: String, onBack: () -> Unit, onOpen: (String) -> Unit, onDelete: () -> Unit, modifier: Modifier) {
     val entry = model.profiles.firstOrNull { it.name.equals(name, ignoreCase = true) }
     if (entry == null) {
         onBack()
@@ -147,7 +162,7 @@ private fun ProfileEditor(model: MainModel, name: String, onBack: () -> Unit, on
         if (error == null) onBack()
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { if (entry.builtin) onBack() else save() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

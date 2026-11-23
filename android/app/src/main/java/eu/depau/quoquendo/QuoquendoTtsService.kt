@@ -161,15 +161,21 @@ class QuoquendoTtsService : TextToSpeechService() {
         stopped = true
     }
 
-    /** Into the speech request log, when Save speech requests is on. */
-    private fun save(request: SynthesisRequest, text: String) {
-        val prefs = VoiceStore.prefs(this)
-        if (!SpeechLog.enabled(prefs) || text.isBlank()) return
+    /**
+     * The app behind a request (its package) and its name. Apps sharing a uid
+     * can't be told apart: Settings and the other system apps are "Android System".
+     */
+    private fun caller(request: SynthesisRequest): Pair<String, String> {
         val pm = packageManager
-        // apps sharing a uid can't be told apart: Settings and the other system apps are "Android System"
         val packages = pm.getPackagesForUid(request.callerUid).orEmpty()
         val app = packages.singleOrNull() ?: "android".takeIf { it in packages } ?: pm.getNameForUid(request.callerUid) ?: "uid ${request.callerUid}"
-        val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(app, 0)).toString() }.getOrDefault(app)
+        return app to runCatching { pm.getApplicationLabel(pm.getApplicationInfo(app, 0)).toString() }.getOrDefault(app)
+    }
+
+    /** Into the speech request log, when Save speech requests is on. */
+    private fun save(request: SynthesisRequest, text: String, app: String, label: String) {
+        val prefs = VoiceStore.prefs(this)
+        if (!SpeechLog.enabled(prefs) || text.isBlank()) return
         // a float from Bundle params, a string from the old HashMap ones
         @Suppress("DEPRECATION")
         val volume = when (val v = request.params?.get(TextToSpeech.Engine.KEY_PARAM_VOLUME)) {
@@ -185,7 +191,8 @@ class QuoquendoTtsService : TextToSpeechService() {
         stopped = false
         val text = request.charSequenceText?.toString().orEmpty()
         Log.i(TAG, "onSynthesizeText voice=${request.voiceName} lang=${request.language}-${request.country} chars=${text.length}")
-        save(request, text)
+        val (app, label) = caller(request)
+        save(request, text, app, label)
         val speech = try {
             synchronized(lock) {
                 val wanted = byVoiceName(request.voiceName)?.first
@@ -193,8 +200,8 @@ class QuoquendoTtsService : TextToSpeechService() {
                     ?: throw IllegalStateException("no installed voice speaks ${request.language}-${request.country}")
                 if (!load(wanted.name)) throw IllegalStateException("could not load ${wanted.name}")
                 // rate and pitch from the request are ignored: the engine has no speed or pitch control yet
-                val prefs = VoiceStore.prefs(this)
-                Native.synthesize(handle, text, ProfileStore.smooth(prefs), null, ProfileStore.activeJson(prefs))
+                val profile = ProfileStore.jsonFor(VoiceStore.prefs(this), app)
+                Native.synthesize(handle, text, ProfileStore.smooth(profile), null, profile)
             }
         } catch (e: Exception) {
             Log.e(TAG, "synthesis failed", e)

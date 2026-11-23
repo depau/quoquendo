@@ -47,12 +47,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -135,13 +131,6 @@ fun RequestsTopBar(model: MainModel, go: (Screen) -> Unit, search: MutableState<
     }
 }
 
-/** An app's launcher icon, or nothing when it can't be read. */
-@Composable
-private fun appIcon(app: String): ImageBitmap? {
-    val pm = LocalContext.current.packageManager
-    return remember(app) { runCatching { pm.getApplicationIcon(app).toBitmap(96, 96).asImageBitmap() }.getOrNull() }
-}
-
 @Composable
 fun RequestsScreen(model: MainModel, query: String?, modifier: Modifier) {
     LaunchedEffect(Unit) { model.refreshRequests() }
@@ -170,6 +159,10 @@ fun RequestsScreen(model: MainModel, query: String?, modifier: Modifier) {
                     )
                 }
             }
+        }
+        // an app the engine can name gets its own profile here
+        apps.firstOrNull { it.app == filter }?.takeIf { !it.app.startsWith("uid ") }?.let { a ->
+            AppProfileRow(model, a.app, a.label, headline = "Profile for ${a.label}")
         }
         if (shown.isEmpty()) {
             Text(

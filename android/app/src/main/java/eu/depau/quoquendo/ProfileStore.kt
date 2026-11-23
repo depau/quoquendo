@@ -57,8 +57,41 @@ object ProfileStore {
         all(prefs).firstOrNull { it.name.equals(activeName(prefs), ignoreCase = true) }?.json
             ?: builtins.first { it.name == "Modern" }.json
 
-    fun smooth(prefs: SharedPreferences): Boolean =
-        runCatching { JSONObject(activeJson(prefs)).optString("joins", "original") == "smooth" }.getOrDefault(false)
+    fun smooth(prefs: SharedPreferences): Boolean = smooth(activeJson(prefs))
+
+    fun smooth(json: String): Boolean =
+        runCatching { JSONObject(json).optString("joins", "original") == "smooth" }.getOrDefault(false)
+
+    /** Apps with their own profile: package to profile name (only profiles that exist). */
+    fun appProfiles(prefs: SharedPreferences): Map<String, String> {
+        val apps = book(prefs).optJSONObject("apps") ?: return emptyMap()
+        val names = all(prefs).map { it.name }
+        return apps.keys().asSequence().mapNotNull { app ->
+            names.firstOrNull { it.equals(apps.optString(app), ignoreCase = true) }?.let { app to it }
+        }.toMap()
+    }
+
+    /** Give [app] its own profile, or (null) let it use the active one. */
+    fun setAppProfile(prefs: SharedPreferences, app: String, name: String?) {
+        val b = book(prefs)
+        val apps = b.optJSONObject("apps") ?: JSONObject()
+        if (name == null) apps.remove(app) else apps.put(app, name)
+        save(prefs, b.put("apps", apps))
+    }
+
+    /** The profile [app]'s speech is read with: its own, else the active one. */
+    fun jsonFor(prefs: SharedPreferences, app: String?): String {
+        val name = app?.let { appProfiles(prefs)[it] } ?: return activeJson(prefs)
+        return all(prefs).first { it.name == name }.json
+    }
+
+    /** Point the apps using [old] at [new] (null: back to the active profile). */
+    private fun renameApps(b: JSONObject, old: String, new: String?) {
+        val apps = b.optJSONObject("apps") ?: return
+        for (app in apps.keys().asSequence().toList()) {
+            if (apps.optString(app).equals(old, ignoreCase = true)) if (new == null) apps.remove(app) else apps.put(app, new)
+        }
+    }
 
     fun setActive(prefs: SharedPreferences, name: String) {
         val b = book(prefs)
@@ -95,6 +128,7 @@ object ProfileStore {
         if (!found) user.put(o)
         b.put("profiles", user)
         if (b.optString("active").equals(oldName, ignoreCase = true)) b.put("active", name)
+        renameApps(b, oldName, name)
         save(prefs, b)
         return null
     }
@@ -127,6 +161,7 @@ object ProfileStore {
         if (!found) return "no profile named $name"
         b.put("profiles", kept)
         if (b.optString("active").equals(name, ignoreCase = true)) b.put("active", "Modern")
+        renameApps(b, name, null)
         save(prefs, b)
         return null
     }
