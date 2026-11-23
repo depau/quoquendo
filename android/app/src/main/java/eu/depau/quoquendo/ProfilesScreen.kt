@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -318,9 +320,11 @@ private fun Toggle(label: String, checked: Boolean, enabled: Boolean, onChange: 
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun Choice(title: String, values: List<String>, labels: List<String>, selected: String, enabled: Boolean, onChange: (String) -> Unit) {
     Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 16.dp, top = 8.dp))
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // chips wrap: four don't fit one line on a phone
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         values.forEachIndexed { i, value ->
             FilterChip(
                 selected = selected == value,
