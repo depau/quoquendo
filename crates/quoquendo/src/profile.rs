@@ -576,6 +576,7 @@ fn current_year() -> u32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::disallowed_methods)] // native only
 fn current_year() -> u32 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

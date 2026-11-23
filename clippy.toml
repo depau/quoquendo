@@ -1,0 +1,6 @@
+# std's clock panics in browsers (wasm32-unknown-unknown), freezing the web
+# app: the site workflow denies these for the wasm build.
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "panics in browsers; use js_sys::Date there" },
+    { path = "std::time::Instant::now", reason = "panics in browsers; use egui's input time or js_sys::Date there" },
+]

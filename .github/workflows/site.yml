@@ -24,6 +24,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -37,6 +38,9 @@ jobs:
           path: ~/.cache/trunk
           key: trunk-tools-${{ hashFiles('Cargo.lock') }}
           restore-keys: trunk-tools-
+      # std's clock panics in browsers and freezes the app (clippy.toml)
+      - name: Lint the browser build
+        run: cargo clippy --release --target wasm32-unknown-unknown --bin quoquendo --bin qq_unpack_worker -- -A clippy::all -D clippy::disallowed_methods
       # the app fetches voices from the site it is served from
       - name: Build
         run: trunk build --release --public-url /
