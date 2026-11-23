@@ -243,15 +243,18 @@ impl App {
                         });
                     });
 
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button("Back up settings…").clicked() {
-                            self.backup_settings();
-                        }
-                        if ui.button("Restore from file…").clicked() {
-                            self.restore_settings();
-                        }
-                    });
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            if ui.button("Back up settings…").clicked() {
+                                self.backup_settings();
+                            }
+                            if ui.button("Restore from file…").clicked() {
+                                self.restore_settings();
+                            }
+                        });
+                    }
                 });
             });
 

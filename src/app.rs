@@ -660,14 +660,17 @@ impl App {
                             self.profile_window = true;
                             ui.close_menu();
                         }
-                        ui.separator();
-                        if ui.button("Back up settings…").clicked() {
-                            self.backup_settings();
-                            ui.close_menu();
-                        }
-                        if ui.button("Restore from file…").clicked() {
-                            self.restore_settings();
-                            ui.close_menu();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            ui.separator();
+                            if ui.button("Back up settings…").clicked() {
+                                self.backup_settings();
+                                ui.close_menu();
+                            }
+                            if ui.button("Restore from file…").clicked() {
+                                self.restore_settings();
+                                ui.close_menu();
+                            }
                         }
                         ui.separator();
                         let advanced = ui.checkbox(&mut self.advanced, "Advanced").changed();
