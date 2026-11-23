@@ -560,6 +560,13 @@ fn lang_name(s: &str) -> Option<Language> {
     Language::ALL.into_iter().find(|l| l.label().eq_ignore_ascii_case(s.trim()))
 }
 
+/// std's clock panics in browsers: ask JavaScript's.
+#[cfg(target_arch = "wasm32")]
+fn current_year() -> u32 {
+    js_sys::Date::new_0().get_full_year()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn current_year() -> u32 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

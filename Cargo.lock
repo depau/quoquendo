@@ -2763,6 +2763,7 @@ version = "0.1.0"
 dependencies = [
  "audio2mp3-core",
  "flacenc",
+ "js-sys",
  "lzma-rs",
  "miniz_oxide 0.8.9",
  "opus-pure",
