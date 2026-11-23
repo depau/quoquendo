@@ -23,6 +23,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -119,6 +124,16 @@ private fun AppProfileDialog(model: MainModel, app: String, label: String, onDis
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChooseAppTopBar(onBack: () -> Unit) {
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+        title = { Text("Choose an app") },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+    )
+}
+
 /** Every app with a launcher icon, apps with their own profile first. */
 @Composable
 fun ChooseApp(model: MainModel, onDone: () -> Unit, modifier: Modifier) {
@@ -135,7 +150,6 @@ fun ChooseApp(model: MainModel, onDone: () -> Unit, modifier: Modifier) {
     }
     val sorted = apps.sortedBy { it.first !in model.appProfiles }
     Column(modifier.fillMaxSize()) {
-        Text("Choose an app", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
         LazyColumn(Modifier.weight(1f)) {
             items(sorted, key = { it.first }) { (app, label) ->
                 AppProfileRow(model, app, label) {

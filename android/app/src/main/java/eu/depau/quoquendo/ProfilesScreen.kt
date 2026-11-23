@@ -47,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,10 +75,9 @@ fun ProfilesTopBar(go: (Screen) -> Unit) {
 }
 
 @Composable
-fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
-    var editing by rememberSaveable { mutableStateOf<String?>(null) }
-    var choosingApp by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = editing != null || choosingApp) { editing = null; choosingApp = false }
+fun ProfilesScreen(model: MainModel, editing: MutableState<String?>, choosingApp: MutableState<Boolean>, modifier: Modifier) {
+    // its sub-screens, editing a profile and choosing an app, live in App: the app bar follows them
+    BackHandler(enabled = editing.value != null || choosingApp.value) { editing.value = null; choosingApp.value = false }
     val context = LocalContext.current
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -85,11 +85,11 @@ fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             model.message(model.importProfile(json) ?: "Profile imported")
         }
     }
-    val name = editing
+    val name = editing.value
     if (name != null) {
-        ProfileEditor(model, name, onBack = { editing = null }, onOpen = { editing = it }, onDelete = { editing = null }, modifier)
-    } else if (choosingApp) {
-        ChooseApp(model, onDone = { choosingApp = false }, modifier)
+        ProfileEditor(model, name, onBack = { editing.value = null }, onOpen = { editing.value = it }, onDelete = { editing.value = null }, modifier)
+    } else if (choosingApp.value) {
+        ChooseApp(model, onDone = { choosingApp.value = false }, modifier)
     } else {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Text(
@@ -101,7 +101,7 @@ fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             for (p in model.profiles) {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.clickable { editing = p.name },
+                    modifier = Modifier.clickable { editing.value = p.name },
                     leadingContent = {
                         RadioButton(selected = model.activeProfile.equals(p.name, ignoreCase = true), onClick = { model.useProfile(p.name) })
                     },
@@ -123,7 +123,7 @@ fun ProfilesScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             }
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.clickable { choosingApp = true },
+                modifier = Modifier.clickable { choosingApp.value = true },
                 leadingContent = { Icon(Icons.Outlined.Add, contentDescription = null) },
                 headlineContent = { Text("Choose an app") },
             )
@@ -164,7 +164,8 @@ private fun ProfileEditor(model: MainModel, name: String, onBack: () -> Unit, on
         if (error == null) onBack()
     }
 
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    // the header is this screen's app bar: it stays while the settings scroll
+    Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { if (entry.builtin) onBack() else save() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -185,100 +186,102 @@ private fun ProfileEditor(model: MainModel, name: String, onBack: () -> Unit, on
                 }
             }
         }
-        if (entry.builtin) {
-            Text(
-                "Built-in profiles can't be changed. Duplicate one to edit it.",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        }
-        if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            if (entry.builtin) {
+                Text(
+                    "Built-in profiles can't be changed. Duplicate one to edit it.",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
 
-        Column(Modifier.padding(horizontal = 16.dp).then(if (entry.builtin) Modifier else Modifier)) {
-            OutlinedTextField(
-                value = o.optString("name"),
-                onValueChange = { edit { p -> p.put("name", it) } },
-                label = { Text("Name") },
-                enabled = !entry.builtin,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            Text("Try it", style = MaterialTheme.typography.titleSmall)
-            OutlinedTextField(
-                value = tryText,
-                onValueChange = { tryText = it },
-                singleLine = true,
-                placeholder = { Text("22/11/26, €10, @anna") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (tryText.isNotBlank()) {
-                val applied = remember(tryText, draft) {
-                    runCatching { JSONObject(Native.applyProfile(tryText, draft, null)) }.getOrNull()
-                }
-                Text(applied?.optString("text").orEmpty(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-                val warnings = applied?.optJSONArray("warnings") ?: JSONArray()
-                for (i in 0 until warnings.length()) {
-                    Text(warnings.optString(i), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Column(Modifier.padding(horizontal = 16.dp).then(if (entry.builtin) Modifier else Modifier)) {
+                OutlinedTextField(
+                    value = o.optString("name"),
+                    onValueChange = { edit { p -> p.put("name", it) } },
+                    label = { Text("Name") },
+                    enabled = !entry.builtin,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Try it", style = MaterialTheme.typography.titleSmall)
+                OutlinedTextField(
+                    value = tryText,
+                    onValueChange = { tryText = it },
+                    singleLine = true,
+                    placeholder = { Text("22/11/26, €10, @anna") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (tryText.isNotBlank()) {
+                    val applied = remember(tryText, draft) {
+                        runCatching { JSONObject(Native.applyProfile(tryText, draft, null)) }.getOrNull()
+                    }
+                    Text(applied?.optString("text").orEmpty(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                    val warnings = applied?.optJSONArray("warnings") ?: JSONArray()
+                    for (i in 0 until warnings.length()) {
+                        Text(warnings.optString(i), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
+
+            Section("Dates & numbers")
+            Choice("Dates", listOf("full", "numeric", "verbatim", "as_written"), listOf("Day, month, year", "Numbers", "As written", "Leave to engine"), o.optString("dates", "as_written"), !entry.builtin) { v -> edit { it.put("dates", v) } }
+            Choice("Two-digit years", listOf("next_ten", "original"), listOf("Next ten years", "Original cutoff"), o.optString("year", "original"), !entry.builtin) { v -> edit { it.put("year", v) } }
+            Choice("Ranges", listOf("words", "numbers", "as_written"), listOf("From 10 to 15", "10 15", "Leave to engine"), o.optString("ranges", "as_written"), !entry.builtin) { v -> edit { it.put("ranges", v) } }
+            Toggle("Formulas", o.optBoolean("math"), !entry.builtin) { v -> edit { it.put("math", v) } }
+
+            Section("Text & web")
+            for ((key, label) in listOf(
+                "inclusive" to "Inclusive Italian (ə, ɜ, *)",
+                "units" to "Units",
+                "handles" to "Handles & hashtags",
+                "federated" to "Fediverse, Matrix & Threads",
+                "emails" to "Emails",
+                "links" to "Links",
+                "cashtags" to "Cashtags",
+                "currencies" to "Currencies",
+                "crypto" to "Crypto",
+            )) {
+                Toggle(label, o.optBoolean(key), !entry.builtin) { v -> edit { it.put(key, v) } }
+            }
+            Choice("Emoji", listOf("describe", "skip"), listOf("Describe", "Skip"), o.optString("emoji", "skip"), !entry.builtin) { v -> edit { it.put("emoji", v) } }
+
+            Section("Audio")
+            Choice("Joining", listOf("smooth", "original"), listOf("Smoothed", "Like the original"), o.optString("joins", "original"), !entry.builtin) { v -> edit { it.put("joins", v) } }
+
+            Section("Easter eggs")
+            Toggle("Italian station announcement", o.optBoolean("station_warning"), !entry.builtin) { v -> edit { it.put("station_warning", v) } }
+
+            Section("Rules")
+            OutlinedTextField(
+                value = o.optString("say_before"),
+                onValueChange = { edit { p -> p.put("say_before", it) } },
+                label = { Text("Say before") },
+                enabled = !entry.builtin,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
+            OutlinedTextField(
+                value = o.optString("say_after"),
+                onValueChange = { edit { p -> p.put("say_after", it) } },
+                label = { Text("Say after") },
+                enabled = !entry.builtin,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            OutlinedTextField(
+                value = o.optString("rules_language"),
+                onValueChange = { edit { p -> if (it.isBlank()) p.remove("rules_language") else p.put("rules_language", it) } },
+                label = { Text("Language (blank = all)") },
+                enabled = !entry.builtin,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
+
+            Replacements(o, !entry.builtin, ::edit)
+            Spacer(Modifier.height(24.dp))
         }
-
-        Section("Dates & numbers")
-        Choice("Dates", listOf("full", "numeric", "verbatim", "as_written"), listOf("Day, month, year", "Numbers", "As written", "Leave to engine"), o.optString("dates", "as_written"), !entry.builtin) { v -> edit { it.put("dates", v) } }
-        Choice("Two-digit years", listOf("next_ten", "original"), listOf("Next ten years", "Original cutoff"), o.optString("year", "original"), !entry.builtin) { v -> edit { it.put("year", v) } }
-        Choice("Ranges", listOf("words", "numbers", "as_written"), listOf("From 10 to 15", "10 15", "Leave to engine"), o.optString("ranges", "as_written"), !entry.builtin) { v -> edit { it.put("ranges", v) } }
-        Toggle("Formulas", o.optBoolean("math"), !entry.builtin) { v -> edit { it.put("math", v) } }
-
-        Section("Text & web")
-        for ((key, label) in listOf(
-            "inclusive" to "Inclusive Italian (ə, ɜ, *)",
-            "units" to "Units",
-            "handles" to "Handles & hashtags",
-            "federated" to "Fediverse, Matrix & Threads",
-            "emails" to "Emails",
-            "links" to "Links",
-            "cashtags" to "Cashtags",
-            "currencies" to "Currencies",
-            "crypto" to "Crypto",
-        )) {
-            Toggle(label, o.optBoolean(key), !entry.builtin) { v -> edit { it.put(key, v) } }
-        }
-        Choice("Emoji", listOf("describe", "skip"), listOf("Describe", "Skip"), o.optString("emoji", "skip"), !entry.builtin) { v -> edit { it.put("emoji", v) } }
-
-        Section("Audio")
-        Choice("Joining", listOf("smooth", "original"), listOf("Smoothed", "Like the original"), o.optString("joins", "original"), !entry.builtin) { v -> edit { it.put("joins", v) } }
-
-        Section("Easter eggs")
-        Toggle("Italian station announcement", o.optBoolean("station_warning"), !entry.builtin) { v -> edit { it.put("station_warning", v) } }
-
-        Section("Rules")
-        OutlinedTextField(
-            value = o.optString("say_before"),
-            onValueChange = { edit { p -> p.put("say_before", it) } },
-            label = { Text("Say before") },
-            enabled = !entry.builtin,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        )
-        OutlinedTextField(
-            value = o.optString("say_after"),
-            onValueChange = { edit { p -> p.put("say_after", it) } },
-            label = { Text("Say after") },
-            enabled = !entry.builtin,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        OutlinedTextField(
-            value = o.optString("rules_language"),
-            onValueChange = { edit { p -> if (it.isBlank()) p.remove("rules_language") else p.put("rules_language", it) } },
-            label = { Text("Language (blank = all)") },
-            enabled = !entry.builtin,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        )
-
-        Replacements(o, !entry.builtin, ::edit)
-        Spacer(Modifier.height(24.dp))
     }
 
     if (confirmDelete) {

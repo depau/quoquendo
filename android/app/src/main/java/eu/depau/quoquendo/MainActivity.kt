@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -126,6 +127,8 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
     }
     val search = remember { mutableStateOf<String?>(null) }
     val requestSearch = remember { mutableStateOf<String?>(null) }
+    val editingProfile = rememberSaveable { mutableStateOf<String?>(null) }
+    val choosingApp = rememberSaveable { mutableStateOf(false) }
     screen.parent?.let { parent -> BackHandler { go(parent) } }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -134,7 +137,12 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
                 Screen.Voices -> VoicesTopBar(model, search)
                 Screen.Try -> TryTopBar(model)
                 Screen.Settings -> SettingsTopBar()
-                Screen.Profiles -> ProfilesTopBar(go)
+                // the profile editor's own header is its app bar
+                Screen.Profiles -> when {
+                    editingProfile.value != null -> {}
+                    choosingApp.value -> ChooseAppTopBar { choosingApp.value = false }
+                    else -> ProfilesTopBar(go)
+                }
                 Screen.Requests -> RequestsTopBar(model, go, requestSearch)
             }
         },
@@ -177,7 +185,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
             Screen.Voices -> VoicesScreen(model, search.value, modifier)
             Screen.Try -> TryScreen(model, go, modifier)
             Screen.Settings -> SettingsScreen(model, go, modifier)
-            Screen.Profiles -> ProfilesScreen(model, go, modifier)
+            Screen.Profiles -> ProfilesScreen(model, editingProfile, choosingApp, modifier)
             Screen.Requests -> RequestsScreen(model, requestSearch.value, modifier)
         }
     }
