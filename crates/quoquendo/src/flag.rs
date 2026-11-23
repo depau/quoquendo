@@ -63,8 +63,15 @@ pub fn of_voice(voice: &str, language: &str) -> Option<&'static [Shape]> {
 }
 
 /// Roberto's flag: the Trenitalia mark on white, in place of the Italian flag.
+/// The mark is an image ([`image`]); this white flag is only the fallback.
 pub fn trenitalia() -> &'static [Shape] {
     TRENITALIA
+}
+
+/// The Trenitalia mark on white, as a PNG, for front ends that can paint it.
+pub fn image(language: &str) -> Option<&'static [u8]> {
+    let key: String = language.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase();
+    (key == "trenitalia").then_some(TRENITALIA_PNG)
 }
 
 use Shape::*;
@@ -73,13 +80,9 @@ const WHITE: u32 = 0xffffff;
 
 const IT: &[Shape] = &[Rect(0.0, 0.0, 10.0, 21.0, 0x009246), Rect(10.0, 0.0, 10.0, 21.0, 0xf1f2f1), Rect(20.0, 0.0, 10.0, 21.0, 0xce2b37)];
 
-/// Roberto's Trenitalia flag: white field, red arrow over a green rail.
-const TRENITALIA: &[Shape] = &[
-    Rect(0.0, 0.0, 30.0, 21.0, WHITE),
-    Poly(&[(3.5, 16.0), (12.0, 4.0), (19.0, 4.0), (10.5, 16.0)], 0xc8102e),
-    Poly(&[(8.5, 16.0), (17.0, 4.0), (24.5, 4.0), (16.0, 16.0)], 0x008d3f),
-    Rect(3.0, 16.8, 24.0, 1.4, 0x008d3f),
-];
+const TRENITALIA_PNG: &[u8] = include_bytes!("../assets/trenitalia.png");
+
+const TRENITALIA: &[Shape] = &[Rect(0.0, 0.0, 30.0, 21.0, WHITE)];
 const FR: &[Shape] = &[Rect(0.0, 0.0, 10.0, 21.0, 0x0055a4), Rect(10.0, 0.0, 10.0, 21.0, WHITE), Rect(20.0, 0.0, 10.0, 21.0, 0xef4135)];
 const MX: &[Shape] = &[
     Rect(0.0, 0.0, 10.0, 21.0, 0x006847),

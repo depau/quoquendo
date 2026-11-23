@@ -30,6 +30,9 @@ object Native {
     /** A language's flag (`US English`, `EnglishGb`) as shapes in a 30×21 box, `[]` for none: see [Flag]. */
     @JvmStatic external fun flag(language: String): String
 
+    /** A flag that is a picture (`Trenitalia`) as PNG bytes, or null. */
+    @JvmStatic external fun flagImage(language: String): ByteArray?
+
     @JvmStatic external fun loadVoice(storeDir: String, name: String): Long
 
     /** The recordings bank's own rate: the rate of [pieceSamples] (44000 for CodecMsx voices). */

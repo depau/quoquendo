@@ -531,6 +531,22 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_flag<'l>(mut env: JNIEnv<'
     })
 }
 
+/// A flag that is a picture (`Trenitalia`) as PNG bytes, or null: see [`flag::image`].
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_flagImage<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    language: JString<'l>,
+) -> jbyteArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let language = jstr(env, &language)?;
+        match quoquendo::flag::image(&language) {
+            Some(bytes) => Ok(env.byte_array_from_slice(bytes).map_err(|e| e.to_string())?.into_raw()),
+            None => Ok(std::ptr::null_mut()),
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_loadVoice<'l>(
     mut env: JNIEnv<'l>,

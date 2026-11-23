@@ -1,6 +1,8 @@
 package eu.depau.quoquendo
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -10,7 +12,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import kotlin.math.PI
@@ -18,6 +23,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private val shapes = HashMap<String, JSONArray>()
+private val pictures = HashMap<String, ImageBitmap?>()
 
 private val flagShape = RoundedCornerShape(2.dp)
 
@@ -31,9 +37,21 @@ fun flagLanguage(voice: String, language: String) = if (voice.equals("Roberto", 
  */
 @Composable
 fun Flag(language: String, modifier: Modifier = Modifier) {
+    val hairline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val picture = pictures.getOrPut(language) {
+        Native.flagImage(language)?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
+    if (picture != null) {
+        Image(
+            bitmap = picture,
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = modifier.clip(flagShape).border(1.dp, hairline, flagShape),
+        )
+        return
+    }
     val flag = shapes.getOrPut(language) { JSONArray(Native.flag(language)) }
     if (flag.length() == 0) return
-    val hairline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
     Canvas(modifier.clip(flagShape).border(1.dp, hairline, flagShape)) {
         val sx = size.width / 30f
         val sy = size.height / 21f

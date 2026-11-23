@@ -2153,5 +2153,7 @@ mod tests {
         assert_eq!(crate::flag::of_voice("Roberto", "Italian"), Some(crate::flag::trenitalia()));
         assert_eq!(crate::flag::of_voice("Marcello", "Italian"), crate::flag::of("Italian"));
         assert_ne!(crate::flag::trenitalia(), crate::flag::of("Italian").unwrap());
+        assert_eq!(&crate::flag::image("Trenitalia").unwrap()[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(crate::flag::image("Italian").is_none());
     }
 }

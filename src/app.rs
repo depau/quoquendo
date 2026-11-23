@@ -1407,9 +1407,13 @@ fn paint_flag_before_text(ui: &egui::Ui, button: egui::Rect, language: &str) {
 /// drawn without feathering, so neighbouring ones meet without a seam.
 fn paint_flag(painter: &egui::Painter, rect: egui::Rect, language: &str) {
     use quoquendo::flag::{self, Shape};
-    let Some(shapes) = flag::of(language) else { return };
     let rect = painter.round_rect_to_pixels(rect);
     let painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    if let Some(texture) = flag_image(painter.ctx(), language) {
+        painter.image(texture.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+        return;
+    }
+    let Some(shapes) = flag::of(language) else { return };
     let (sx, sy) = (rect.width() / flag::W, rect.height() / flag::H);
     let at = |x: f32, y: f32| rect.min + egui::vec2(x * sx, y * sy);
     let rgb = |c: u32| Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
@@ -1439,6 +1443,20 @@ fn paint_flag(painter: &egui::Painter, rect: egui::Rect, language: &str) {
             }
         }
     }
+}
+
+/// A flag that is a picture rather than shapes (`Trenitalia`), loaded once.
+fn flag_image(ctx: &egui::Context, language: &str) -> Option<egui::TextureHandle> {
+    let bytes = quoquendo::flag::image(language)?;
+    let id = egui::Id::new(("flag-image", language));
+    if let Some(texture) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return Some(texture);
+    }
+    let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Png).ok()?.to_rgba8();
+    let image = egui::ColorImage::from_rgba_unmultiplied([image.width() as usize, image.height() as usize], image.as_raw());
+    let texture = ctx.load_texture(format!("flag-{language}"), image, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+    Some(texture)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
