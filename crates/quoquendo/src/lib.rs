@@ -28,6 +28,7 @@ pub mod lang;
 pub mod loquendo;
 pub mod pack;
 pub mod phoneset;
+pub mod profile;
 pub mod phonetics;
 pub mod sig;
 pub mod speex;

@@ -172,7 +172,8 @@ class QuoquendoTtsService : TextToSpeechService() {
                     ?: throw IllegalStateException("no installed voice speaks ${request.language}-${request.country}")
                 if (!load(wanted.name)) throw IllegalStateException("could not load ${wanted.name}")
                 // rate and pitch from the request are ignored: the engine has no speed or pitch control yet
-                Native.synthesize(handle, text, VoiceStore.smoothJoins(VoiceStore.prefs(this)))
+                val prefs = VoiceStore.prefs(this)
+                Native.synthesize(handle, text, ProfileStore.smooth(prefs), null, ProfileStore.activeJson(prefs))
             }
         } catch (e: Exception) {
             Log.e(TAG, "synthesis failed", e)

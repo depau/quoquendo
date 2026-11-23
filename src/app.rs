@@ -8,6 +8,7 @@
 
 mod fonts;
 mod modes;
+mod profiles;
 mod speak;
 
 use crate::audio::Player;
@@ -17,6 +18,7 @@ use eframe::egui::{self, Color32, RichText};
 use quoquendo::export::Format;
 use quoquendo::g2p::Language;
 use quoquendo::loquendo;
+use quoquendo::profile::{ProfileBook, STATION_WARNING};
 use quoquendo::synth::Settings;
 use speak::{Preview, Track, Want};
 use std::sync::mpsc::{channel, Receiver};
@@ -243,6 +245,12 @@ pub struct App {
     text: String,
     last_sample: String,
     settings: Settings,
+    /// the user's speech profiles; `profiles.active` is the one in use
+    profiles: ProfileBook,
+    profile_window: bool,
+    profile_try: String,
+    profile_error: Option<String>,
+    profile_status: Option<String>,
     /// Advanced mode
     advanced: bool,
     /// the pronunciation's language when it isn't the voice's own (Advanced)
@@ -366,6 +374,11 @@ impl App {
             text: get("text").unwrap_or_default(),
             last_sample: String::new(),
             settings: Settings::default(),
+            profiles: get("profiles").and_then(|s| ProfileBook::from_json(&s).ok()).unwrap_or_default(),
+            profile_window: false,
+            profile_try: String::new(),
+            profile_error: None,
+            profile_status: None,
             advanced: on("advanced"),
             language: None,
             format: get("save_format").and_then(|e| Format::from_ext(&e)).unwrap_or(Format::Flac),
@@ -643,6 +656,20 @@ impl App {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Settings", |ui| {
+                        if ui.button("Settings…").clicked() {
+                            self.profile_window = true;
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Back up settings…").clicked() {
+                            self.backup_settings();
+                            ui.close_menu();
+                        }
+                        if ui.button("Restore from file…").clicked() {
+                            self.restore_settings();
+                            ui.close_menu();
+                        }
+                        ui.separator();
                         let advanced = ui.checkbox(&mut self.advanced, "Advanced").changed();
                         #[cfg(not(target_arch = "wasm32"))]
                         {
@@ -839,7 +866,7 @@ impl App {
                 egui::Grid::new("downloads").num_columns(4).spacing([18.0, 6.0]).show(ui, |ui| {
                     for (i, d) in self.downloads.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            flag(ui, d.installer.language);
+                            flag(ui, voice_flag_language(d.installer.voice, d.installer.language));
                             ui.label(d.installer.label);
                         });
                         ui.label(RichText::new(format!("{} · {}", d.installer.language, catalog::size_label(d.installer.size))).color(MUTED));
@@ -967,7 +994,7 @@ impl App {
                     // weaker than the theme's text, whatever that is
                     let ink = |t: &str| if dead.is_some() { RichText::new(t).weak() } else { RichText::new(t) };
                     ui.horizontal(|ui| {
-                        flag(ui, inst.language);
+                        flag(ui, voice_flag_language(inst.voice, inst.language));
                         ui.label(ink(inst.language));
                     });
                     ui.label(ink(inst.label));
@@ -1336,7 +1363,16 @@ const FLAG_SMALL: egui::Vec2 = egui::vec2(16.0, 11.0);
 /// The language a voice's flag stands for: its installer's (`US English`),
 /// else its MotherTongue.
 fn flag_language(v: &InstalledVoice) -> &str {
-    catalog::installer_for(&v.name).map_or(v.mother_tongue.as_str(), |i| i.language)
+    voice_flag_language(&v.name, catalog::installer_for(&v.name).map_or(v.mother_tongue.as_str(), |i| i.language))
+}
+
+/// A voice's flag language: Roberto gets the Trenitalia mark, not Italy's flag.
+fn voice_flag_language<'a>(voice: &str, language: &'a str) -> &'a str {
+    if voice.eq_ignore_ascii_case("roberto") {
+        "Trenitalia"
+    } else {
+        language
+    }
 }
 
 /// A language's flag, or as much room for a language without one.
@@ -1697,6 +1733,7 @@ impl eframe::App for App {
         self.status_bar(ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.report_window(ctx);
+        self.profiles_window(ctx);
         if self.advanced() && self.tab == Tab::Speak {
             self.stage_bar(ctx);
             self.side_panel(ctx);
@@ -1740,5 +1777,6 @@ impl eframe::App for App {
         storage.set_string("voice", self.chosen.clone().unwrap_or_default());
         storage.set_string("text", self.text.clone());
         storage.set_string("mirror_url", self.mirror_url.clone());
+        storage.set_string("profiles", self.profiles.to_json());
     }
 }

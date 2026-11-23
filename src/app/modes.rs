@@ -9,7 +9,6 @@ use super::speak::Track;
 use crate::dev::pipeline;
 #[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::vec2;
-use quoquendo::synth::JoinStyle;
 
 impl App {
     /// The voice's details, its inventory and its language data.
@@ -102,14 +101,10 @@ impl App {
                 #[cfg(not(target_arch = "wasm32"))]
                 self.wine_stages(ui);
                 ui.label("Joining");
-                let mut join = self.settings.join;
-                egui::ComboBox::from_id_salt("sig")
-                    .selected_text(if join == JoinStyle::Original { "Like the original" } else { "Smoothed" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut join, JoinStyle::Original, "Like the original");
-                        ui.selectable_value(&mut join, JoinStyle::Smooth, "Smoothed");
-                    });
-                self.settings.join = join;
+                ui.label(match self.profile_join() {
+                    quoquendo::synth::JoinStyle::Smooth => "Smoothed",
+                    quoquendo::synth::JoinStyle::Original => "Like the original",
+                });
             });
             #[cfg(not(target_arch = "wasm32"))]
             if self.dev.original {

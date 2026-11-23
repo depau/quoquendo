@@ -11,7 +11,8 @@ use eframe::egui::{pos2, vec2, Align2, FontId, Painter, Rect, Stroke};
 use quoquendo::export::Tagged;
 use quoquendo::g2p::Frontend;
 use quoquendo::loquendo::VoiceDatabase;
-use quoquendo::synth::{self, JoinStyle, Phrase, Speech, TargetPhrase, TimedSound};
+use quoquendo::profile::Applied;
+use quoquendo::synth::{self, Phrase, Speech, TargetPhrase, TimedSound};
 use std::ops::Range;
 use std::time::Duration;
 
@@ -26,7 +27,10 @@ const AXIS_H: f32 = 18.0;
 #[derive(Clone, PartialEq)]
 pub(super) struct Want {
     pub(super) voice: String,
+    /// the text the user typed
     pub(super) text: String,
+    /// the same text after the active profile: what the engine reads
+    pub(super) applied: Applied,
     pub(super) stages: Stages,
     pub(super) language: Option<Language>,
     pub(super) settings: Settings,
@@ -72,12 +76,13 @@ fn build(voice: &quoquendo::Voice, want: Want, reference: Option<Reference>) -> 
         }
         None => &voice.frontend,
     };
-    let run = pipeline::run(&want.text, fe, &voice.descriptor.name, &voice.db, &want.stages, reference)?;
+    let run = pipeline::run(&want.applied.text, fe, &voice.descriptor.name, &voice.db, &want.stages, reference)?;
+    let words = run.words.iter().map(|r| want.applied.source_range(r.clone())).collect();
     let speech = synth::render(&run.plan, &voice.db, want.settings)?;
     Ok(Preview {
         want,
         targets: run.targets,
-        words: run.words,
+        words,
         plan: run.plan,
         speech,
     })
@@ -90,14 +95,16 @@ impl App {
         if self.text.trim().is_empty() {
             return None;
         }
+        let lang = self.profile_language();
         Some(Want {
             voice: v.descriptor.name.clone(),
             text: self.text.clone(),
+            applied: self.profiles.active_profile().apply(&self.text, lang),
             stages: self.stages_in_use(),
             language: self.language.filter(|_| self.advanced()),
             settings: Settings {
                 volume: self.settings.volume,
-                join: if self.advanced() { self.settings.join } else { JoinStyle::Original },
+                join: self.profile_join(),
             },
         })
     }
@@ -108,7 +115,7 @@ impl App {
         if !self.advanced() {
             return s;
         }
-        s.sig = self.settings.join;
+        s.sig = self.profile_join();
         #[cfg(not(target_arch = "wasm32"))]
         {
             use pipeline::{Cat, Fon};
@@ -168,7 +175,7 @@ impl App {
         }
         #[cfg(not(target_arch = "wasm32"))]
         if self.dev.original {
-            self.ask_original(&want.voice, &want.text, false, now);
+            self.ask_original(&want.voice, &want.applied.text, false, now);
         }
         if done {
             return;
@@ -206,7 +213,7 @@ impl App {
             if let Some(e) = self.dev.ref_errors.get(&key) {
                 self.failed = Some((want.clone(), e.clone()));
             } else {
-                self.ask_original(&want.voice, &want.text, false, now);
+                self.ask_original(&want.voice, &want.applied.text, false, now);
             }
             return None;
         }
@@ -405,6 +412,18 @@ impl App {
             }
             if let Some(p) = pick {
                 self.choose(&p);
+            }
+            ui.add_space(8.0);
+            ui.label("Profile");
+            let before = self.profiles.active.clone();
+            let mut profile = before.clone();
+            egui::ComboBox::from_id_salt("profile").selected_text(&profile).width(130.0).show_ui(ui, |ui| {
+                for name in self.profiles.all().iter().map(|p| p.name.clone()) {
+                    ui.selectable_value(&mut profile, name.clone(), name);
+                }
+            });
+            if profile != before {
+                self.profiles.set_active(&profile);
             }
             if self.advanced() {
                 // a combo box doesn't move to the next line by itself

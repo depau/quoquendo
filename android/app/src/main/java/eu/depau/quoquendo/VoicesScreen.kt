@@ -110,8 +110,8 @@ fun VoicesTopBar(model: MainModel, search: MutableState<String?>) {
 
 /** A row's language flag; the same room for a language without one. */
 @Composable
-private fun Avatar(language: String) {
-    Box(Modifier.size(40.dp, 28.dp)) { Flag(language, Modifier.fillMaxSize()) }
+private fun Avatar(language: String, voice: String? = null) {
+    Box(Modifier.size(40.dp, 28.dp)) { Flag(if (voice != null) flagLanguage(voice, language) else language, Modifier.fillMaxSize()) }
 }
 
 @Composable
@@ -208,7 +208,7 @@ private fun InstalledRow(model: MainModel, v: InstalledVoice, onDelete: () -> Un
     }
     ListItem(
         colors = listColors,
-        leadingContent = { Avatar(model.languageOf(v)) },
+        leadingContent = { Avatar(model.languageOf(v), v.name) },
         headlineContent = { Text(v.name) },
         supportingContent = supporting,
         trailingContent = {
@@ -238,7 +238,7 @@ private fun CatalogRow(model: MainModel, i: Installer) {
     ListItem(
         colors = listColors,
         modifier = if (state is Download.Failed) Modifier.clickable { model.download(i) } else Modifier,
-        leadingContent = { Avatar(i.language) },
+        leadingContent = { Avatar(i.language, i.voice) },
         // the status beside the name and the details on one line, so every
         // row is the same height (until a download shows its progress)
         headlineContent = {

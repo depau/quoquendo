@@ -21,6 +21,9 @@ private val shapes = HashMap<String, JSONArray>()
 
 private val flagShape = RoundedCornerShape(2.dp)
 
+/** Roberto runs the trains: his flag is the Trenitalia mark, not Italy's. */
+fun flagLanguage(voice: String, language: String) = if (voice.equals("Roberto", ignoreCase = true)) "Trenitalia" else language
+
 /**
  * A language's flag (`US English`, `EnglishGb`), always rectangular, drawn from
  * the engine's shapes (crates/quoquendo/src/flag.rs); nothing for a language

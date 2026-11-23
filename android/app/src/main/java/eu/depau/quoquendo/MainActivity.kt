@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -49,6 +50,7 @@ enum class Screen(val title: String, val icon: ImageVector) {
     Voices("Voices", Icons.Outlined.RecordVoiceOver),
     Try("Try it", Icons.Outlined.PlayCircle),
     Settings("Settings", Icons.Outlined.Settings),
+    Profiles("Profiles", Icons.Outlined.Tune),
 }
 
 class MainActivity : ComponentActivity() {
@@ -126,6 +128,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
                 Screen.Voices -> VoicesTopBar(model, search)
                 Screen.Try -> TryTopBar(model)
                 Screen.Settings -> SettingsTopBar()
+                Screen.Profiles -> ProfilesTopBar(go)
             }
         },
         snackbarHost = {
@@ -150,7 +153,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
         },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                Screen.entries.forEach { s ->
+                Screen.entries.filter { it != Screen.Profiles }.forEach { s ->
                     NavigationBarItem(
                         selected = s == screen,
                         onClick = { go(s) },
@@ -167,6 +170,7 @@ fun App(model: MainModel, screen: Screen, go: (Screen) -> Unit) {
             Screen.Voices -> VoicesScreen(model, search.value, modifier)
             Screen.Try -> TryScreen(model, go, modifier)
             Screen.Settings -> SettingsScreen(model, go, modifier)
+            Screen.Profiles -> ProfilesScreen(model, go, modifier)
         }
     }
 }

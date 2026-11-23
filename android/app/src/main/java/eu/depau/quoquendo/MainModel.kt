@@ -61,7 +61,7 @@ data class Status(val kind: Kind, val text: String) {
 data class SaveFormat(val ext: String, val label: String, val hint: String, val mime: String)
 
 /** What an analysis was made of: its voice, text, joining and reading language (null: the voice's own). */
-data class AnalysisKey(val voice: String, val text: String, val smooth: Boolean, val language: String?)
+data class AnalysisKey(val voice: String, val text: String, val smooth: Boolean, val language: String?, val profile: String)
 
 /** Try it's player. */
 enum class Playback { Stopped, Playing, Paused }
@@ -122,8 +122,12 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         private set
     var advanced by mutableStateOf(prefs.getBoolean(VoiceStore.ADVANCED, false))
         private set
-    /** Joining: Smoothed rather than Like the original (in effect with [advanced]). */
-    var smoothChoice by mutableStateOf(prefs.getBoolean(VoiceStore.SMOOTH, false))
+    /** The speech profiles, and the active one's JSON (what the engine reads). */
+    var profiles by mutableStateOf(ProfileStore.all(prefs))
+        private set
+    var activeProfile by mutableStateOf(ProfileStore.activeName(prefs))
+        private set
+    var activeProfileJson by mutableStateOf(ProfileStore.activeJson(prefs))
         private set
     /** The voice chosen for each language (`en`) in Settings. */
     var voiceChoices by mutableStateOf(readChoices())
@@ -222,6 +226,8 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     fun languageOf(v: InstalledVoice): String = installerOf(v)?.language ?: v.motherTongue
 
     fun installedFor(i: Installer): InstalledVoice? = installed.firstOrNull { it.name.equals(i.voice, ignoreCase = true) }
+
+    fun message(message: String) = snack(message)
 
     private fun snack(message: String) {
         snacks.trySend(Snack(message))
@@ -373,10 +379,65 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         scheduleAnalysis()
     }
 
-    fun updateSmooth(on: Boolean) {
-        smoothChoice = on
-        prefs.edit().putBoolean(VoiceStore.SMOOTH, on).apply()
+    private fun refreshProfiles() {
+        profiles = ProfileStore.all(prefs)
+        activeProfile = ProfileStore.activeName(prefs)
+        activeProfileJson = ProfileStore.activeJson(prefs)
         scheduleAnalysis()
+    }
+
+    fun useProfile(name: String) {
+        ProfileStore.setActive(prefs, name)
+        refreshProfiles()
+    }
+
+    fun saveProfile(oldName: String, json: String): String? {
+        val error = ProfileStore.update(prefs, oldName, json)
+        if (error == null) refreshProfiles()
+        return error
+    }
+
+    fun duplicateProfile(name: String): String? {
+        val created = ProfileStore.duplicate(prefs, name)
+        if (created != null) refreshProfiles()
+        return created
+    }
+
+    fun deleteProfile(name: String): String? {
+        val error = ProfileStore.delete(prefs, name)
+        if (error == null) refreshProfiles()
+        return error
+    }
+
+    fun importProfile(json: String): String? {
+        val name = ProfileStore.import(prefs, json) ?: return "invalid profile"
+        refreshProfiles()
+        return name
+    }
+
+    fun exportProfile(name: String): String? = ProfileStore.export(prefs, name)
+
+    fun backupSettings(): String {
+        val o = org.json.JSONObject(ProfileStore.backup(prefs))
+        o.put("advanced", advanced)
+        o.put("mirror_url", mirror)
+        o.put("wifi_only", wifiOnly)
+        o.put("volume", volume.toDouble())
+        o.put("save_format", saveFormat.ext)
+        return o.toString()
+    }
+
+    fun restoreSettings(json: String): String? {
+        val error = ProfileStore.restore(prefs, json)
+        if (error != null) return error
+        val o = runCatching { org.json.JSONObject(json) }.getOrNull() ?: return "not a settings backup"
+        updateAdvanced(o.optBoolean("advanced", advanced))
+        o.optString("mirror_url").takeIf { it.isNotEmpty() }?.let { updateMirror(it) }
+        updateWifiOnly(o.optBoolean("wifi_only", wifiOnly))
+        if (o.has("volume")) updateVolume(o.optDouble("volume", volume.toDouble()).toFloat())
+        formats.firstOrNull { it.ext == o.optString("save_format") }?.let { saveFormat = it }
+        refreshProfiles()
+        return null
     }
 
     private fun readChoices(): Map<String, String> = VoiceStore.choices(prefs)
@@ -464,7 +525,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
     /** What the Try it screen shows now, or null when there is nothing to analyse. */
     private fun currentKey(v: InstalledVoice? = selectedVoice()): AnalysisKey? {
         if (v == null || !v.ready || text.isBlank()) return null
-        return AnalysisKey(v.name, text, advanced && smoothChoice, language.takeIf { advanced })
+        return AnalysisKey(v.name, text, ProfileStore.smooth(prefs), language.takeIf { advanced }, activeProfileJson)
     }
 
     /** Analyse and render what the screen shows after [delayMs], replacing a pending analysis. */
@@ -491,7 +552,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
             synchronized(handleLock) {
                 val h = handleFor(v)
                 val d = if (details?.voice != v.name) parseDetails(v.name, JSONObject(Native.details(h))) else null
-                parse(key, Native.analyse(h, key.text, key.smooth, key.language)) to d
+                parse(key, Native.analyse(h, key.text, key.smooth, key.language, key.profile)) to d
             }
         }
         d?.let { details = it }
@@ -670,7 +731,7 @@ class MainModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val bytes = withContext(Dispatchers.Default) {
-                    synchronized(handleLock) { Native.export(handleFor(v), key.text, f.ext, key.smooth, key.language) }
+                    synchronized(handleLock) { Native.export(handleFor(v), key.text, f.ext, key.smooth, key.language, key.profile) }
                 }
                 // MediaStore names the file by its own MIME map (audio/x-wav, not audio/wav)
                 val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.ext) ?: f.mime

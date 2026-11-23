@@ -285,10 +285,6 @@ class VoiceStore(context: Context) {
         fun prefs(context: Context): SharedPreferences = context.getSharedPreferences("quoquendo", Context.MODE_PRIVATE)
 
         const val ADVANCED = "advanced"
-        const val SMOOTH = "joining_smooth"
-
-        /** Whether pieces are joined smoothly: Advanced's Joining, for everything Quoquendo speaks. */
-        fun smoothJoins(prefs: SharedPreferences) = prefs.getBoolean(ADVANCED, false) && prefs.getBoolean(SMOOTH, false)
 
         /** The settings key naming the voice apps get for every region of [language] (`en`). */
         fun voiceForKey(language: String) = "$VOICE_FOR$language"

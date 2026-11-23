@@ -3,6 +3,7 @@
 
 use crate::dev::{compare, engines, oracle, pipeline};
 use crate::install;
+use quoquendo::profile::Profile;
 use quoquendo::{g2p, loquendo, synth};
 
 use g2p::{analyse, Token};
@@ -26,9 +27,13 @@ pub struct LaunchOptions {
     /// `--say <text> [--voice <name>] [--out <file.wav|flac|mp3|opus>]`
     say: Option<String>,
     voice: Option<String>,
+    /// `--profile <built-in name | profile.json>`
+    profile: Option<String>,
     out: Option<PathBuf>,
-    /// `--fon rules|original|<command>`, `--cat builtin|original`, `--join original|smooth`
+    /// `--fon rules|original|<command>`, `--cat builtin|original`
     stages: pipeline::Stages,
+    /// `--join original|smooth`; by default the profile's choice
+    join: Option<synth::JoinStyle>,
     /// `--compare <text file, one sentence per line | text>`
     compare: Option<String>,
     /// `--fon-list <word file>`: print "word<TAB>transcription" per line, as
@@ -74,6 +79,8 @@ pub fn parse_args() -> LaunchOptions {
             opts.say = args.next();
         } else if a == "--voice" {
             opts.voice = args.next();
+        } else if a == "--profile" {
+            opts.profile = args.next();
         } else if a == "--out" {
             opts.out = args.next().map(PathBuf::from);
         } else if a == "--fon" {
@@ -87,8 +94,13 @@ pub fn parse_args() -> LaunchOptions {
                 opts.stages.cat = pipeline::Cat::Original;
             }
         } else if a == "--join" {
-            if args.next().as_deref() == Some("smooth") {
-                opts.stages.sig = synth::JoinStyle::Smooth;
+            opts.join = match args.next().as_deref() {
+                Some("smooth") => Some(synth::JoinStyle::Smooth),
+                Some("original") => Some(synth::JoinStyle::Original),
+                _ => None,
+            };
+            if let Some(join) = opts.join {
+                opts.stages.sig = join;
             }
         } else if a == "--compare" {
             opts.compare = args.next();
@@ -262,18 +274,40 @@ fn find_voice(name: Option<&str>) -> Result<quoquendo::Voice, String> {
 
 /// Speak one text with one voice into a file, without a window: WAV, FLAC,
 /// MP3 or Opus by its extension (WAV for any other), the text embedded.
-fn say(text: &str, voice: Option<&str>, stages: &pipeline::Stages, out: &std::path::Path) -> Result<(), String> {
+fn say(
+    text: &str,
+    voice: Option<&str>,
+    profile: Option<&str>,
+    join: Option<synth::JoinStyle>,
+    stages: &pipeline::Stages,
+    out: &std::path::Path,
+) -> Result<(), String> {
     use quoquendo::export::{encode, Format, Tagged};
     let v = find_voice(voice)?;
     let name = &v.descriptor.name;
-    let run = pipeline::run(text, &v.frontend, name, &v.db, stages, None)?;
+    let profile = match profile {
+        Some(path) if std::path::Path::new(path).is_file() => {
+            Profile::from_json(&std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?)?
+        }
+        Some(name) => Profile::builtins()
+            .into_iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .ok_or_else(|| format!("no built-in profile named {name} (or a profile file at that path)"))?,
+        None => Profile::modern(),
+    };
+    let applied = profile.apply(text, v.descriptor.language());
+    let join = join.unwrap_or(match profile.joins {
+        quoquendo::profile::Joins::Smooth => synth::JoinStyle::Smooth,
+        quoquendo::profile::Joins::Original => synth::JoinStyle::Original,
+    });
+    let run = pipeline::run(&applied.text, &v.frontend, name, &v.db, stages, None)?;
     eprintln!("{}", synth::format_transcription(&run.targets));
     for m in run.plan.iter().flat_map(|p| &p.missing) {
         eprintln!("never recorded by {name}: {m}");
     }
-    let speech = synth::render(&run.plan, &v.db, Settings { volume: 1.0, join: stages.sig })?;
+    let speech = synth::render(&run.plan, &v.db, Settings { volume: 1.0, join })?;
     let format = out.extension().and_then(|e| Format::from_ext(&e.to_string_lossy())).unwrap_or(Format::Wav);
-    let words = quoquendo::text::word_spans(text, &analyse(text, &v.frontend));
+    let words: Vec<std::ops::Range<usize>> = run.words.iter().map(|r| applied.source_range(r.clone())).collect();
     let tags = Tagged { text, words: &words, voice: name };
     std::fs::write(out, encode(&speech, format, Some(&tags))?).map_err(|e| format!("{}: {e}", out.display()))?;
     eprintln!(
@@ -515,7 +549,7 @@ pub fn run(opts: &LaunchOptions) -> Option<i32> {
     }
     if let Some(text) = &opts.say {
         let out = opts.out.clone().unwrap_or_else(|| PathBuf::from("quoquendo-speech.wav"));
-        return Some(done(say(text, opts.voice.as_deref(), &opts.stages, &out)));
+        return Some(done(say(text, opts.voice.as_deref(), opts.profile.as_deref(), opts.join, &opts.stages, &out)));
     }
     if let Some(list) = &opts.fon_list {
         return Some(done(fon_list(list, opts.voice.as_deref())));

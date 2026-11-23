@@ -13,6 +13,7 @@ use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jshortArray, jstring,
 use jni::JNIEnv;
 use quoquendo::export::{self, Format, Tagged};
 use quoquendo::g2p::{self, Language};
+use quoquendo::profile::Profile;
 use quoquendo::synth::{self, JoinStyle};
 use quoquendo::{catalog, codec, Speech, Utterance, Voice, VoiceFiles};
 use serde_json::{json, Value};
@@ -233,13 +234,24 @@ struct Rendering {
     utterance: Utterance,
     plan: Vec<synth::Phrase>,
     speech: Result<Speech, String>,
+    /// word ranges in the original text (before any profile transform)
+    words: Vec<Range<usize>>,
 }
 
-fn render(voice: &Voice, text: &str, smooth: bool, language: Option<&str>) -> Rendering {
-    let utterance = utterance(voice, text, language);
+fn render(voice: &Voice, text: &str, smooth: bool, language: Option<&str>, profile: Option<&str>) -> Result<Rendering, String> {
+    let lang = language
+        .and_then(|name| Language::ALL.into_iter().find(|l| l.label() == name))
+        .unwrap_or_else(|| voice.descriptor.language());
+    let profile = match profile.filter(|p| !p.trim().is_empty()) {
+        Some(json) => Profile::from_json(json)?,
+        None => Profile::faithful(),
+    };
+    let applied = profile.apply(text, lang);
+    let utterance = utterance(voice, &applied.text, language);
     let plan = synth::select_all(&voice.db, &utterance.targets);
     let speech = synth::render(&plan, &voice.db, settings(smooth));
-    Rendering { utterance, plan, speech }
+    let words = utterance.words.iter().map(|r| applied.source_range(r.clone())).collect();
+    Ok(Rendering { utterance, plan, speech, words })
 }
 
 /// Per spoken word, in order: its first sample and its UTF-16 range in
@@ -334,7 +346,6 @@ fn analyse_json(voice: &Voice, text: &str, r: &Rendering) -> String {
         .collect();
     let spans: std::collections::HashMap<usize, Range<usize>> = speech.map(|s| s.timeline.word_spans().into_iter().collect()).unwrap_or_default();
     let words: Vec<Value> = r
-        .utterance
         .words
         .iter()
         .enumerate()
@@ -419,13 +430,13 @@ fn formats_json() -> String {
 }
 
 /// `text` spoken by `voice` as a file in the format with extension `ext`.
-fn export_file(voice: &Voice, text: &str, ext: &str, smooth: bool, language: Option<&str>) -> Result<Vec<u8>, String> {
+fn export_file(voice: &Voice, text: &str, ext: &str, smooth: bool, language: Option<&str>, profile: Option<&str>) -> Result<Vec<u8>, String> {
     let format = Format::from_ext(ext).ok_or_else(|| format!("no .{ext} format"))?;
-    let r = render(voice, text, smooth, language);
+    let r = render(voice, text, smooth, language, profile)?;
     let speech = r.speech?;
     let tags = Tagged {
         text,
-        words: &r.utterance.words,
+        words: &r.words,
         voice: &voice.descriptor.name,
     };
     export::encode(&speech, format, Some(&tags))
@@ -481,6 +492,35 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_listVoices<'l>(mut env: JN
 #[no_mangle]
 pub extern "system" fn Java_eu_depau_quoquendo_Native_catalog<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>) -> jstring {
     guard(&mut env, std::ptr::null_mut(), |env| ret_string(env, catalog_json()))
+}
+
+/// The built-in speech profiles, as the JSON the app stores and edits.
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_builtinProfiles<'l>(mut env: JNIEnv<'l>, _class: JClass<'l>) -> jstring {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        ret_string(env, serde_json::to_string(&Profile::builtins()).unwrap_or_else(|_| "[]".into()))
+    })
+}
+
+/// A profile applied to `text`, for the editor's Try it field.
+#[no_mangle]
+pub extern "system" fn Java_eu_depau_quoquendo_Native_applyProfile<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    text: JString<'l>,
+    profile: JString<'l>,
+    language: JString<'l>,
+) -> jstring {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let (text, profile, language) = (jstr(env, &text)?, jstr(env, &profile)?, opt_jstr(env, &language)?);
+        let profile = Profile::from_json(&profile)?;
+        let lang = language
+            .as_deref()
+            .and_then(|name| Language::ALL.into_iter().find(|l| l.label() == name))
+            .unwrap_or(Language::Italian);
+        let applied = profile.apply(&text, lang);
+        ret_string(env, json!({ "text": applied.text, "warnings": applied.warnings }).to_string())
+    })
 }
 
 #[no_mangle]
@@ -559,12 +599,14 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_synthesize<'l>(
     handle: jlong,
     text: JString<'l>,
     smooth: jboolean,
+    language: JString<'l>,
+    profile: JString<'l>,
 ) -> jobject {
     guard(&mut env, std::ptr::null_mut(), |env| {
-        let text = jstr(env, &text)?;
-        let r = render(voice(handle)?, &text, smooth == JNI_TRUE, None);
+        let (text, language, profile) = (jstr(env, &text)?, opt_jstr(env, &language)?, opt_jstr(env, &profile)?);
+        let r = render(voice(handle)?, &text, smooth == JNI_TRUE, language.as_deref(), profile.as_deref())?;
         let speech = r.speech?;
-        let marks = marks(&text, &r.utterance.words, &speech);
+        let marks = marks(&text, &r.words, &speech);
         Ok(rendered(env, &speech, &marks)?.into_raw())
     })
 }
@@ -580,10 +622,11 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_export<'l>(
     ext: JString<'l>,
     smooth: jboolean,
     language: JString<'l>,
+    profile: JString<'l>,
 ) -> jbyteArray {
     guard(&mut env, std::ptr::null_mut(), |env| {
-        let (text, ext, language) = (jstr(env, &text)?, jstr(env, &ext)?, opt_jstr(env, &language)?);
-        let bytes = export_file(voice(handle)?, &text, &ext, smooth == JNI_TRUE, language.as_deref())?;
+        let (text, ext, language, profile) = (jstr(env, &text)?, jstr(env, &ext)?, opt_jstr(env, &language)?, opt_jstr(env, &profile)?);
+        let bytes = export_file(voice(handle)?, &text, &ext, smooth == JNI_TRUE, language.as_deref(), profile.as_deref())?;
         Ok(env.byte_array_from_slice(&bytes).map_err(|e| e.to_string())?.into_raw())
     })
 }
@@ -624,14 +667,15 @@ pub extern "system" fn Java_eu_depau_quoquendo_Native_analyse<'l>(
     text: JString<'l>,
     smooth: jboolean,
     language: JString<'l>,
+    profile: JString<'l>,
 ) -> jobject {
     guard(&mut env, std::ptr::null_mut(), |env| {
-        let (text, language) = (jstr(env, &text)?, opt_jstr(env, &language)?);
+        let (text, language, profile) = (jstr(env, &text)?, opt_jstr(env, &language)?, opt_jstr(env, &profile)?);
         let v = voice(handle)?;
-        let r = render(v, &text, smooth == JNI_TRUE, language.as_deref());
+        let r = render(v, &text, smooth == JNI_TRUE, language.as_deref(), profile.as_deref())?;
         let json = env.new_string(analyse_json(v, &text, &r)).map_err(|e| e.to_string())?;
         let audio = match &r.speech {
-            Ok(s) => rendered(env, s, &marks(&text, &r.utterance.words, s))?,
+            Ok(s) => rendered(env, s, &marks(&text, &r.words, s))?,
             Err(_) => JObject::null(),
         };
         env.new_object(

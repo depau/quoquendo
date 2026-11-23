@@ -2,6 +2,8 @@ package eu.depau.quoquendo
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Storage
@@ -38,9 +39,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -102,6 +100,20 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     var editingMirror by remember { mutableStateOf(false) }
     var choosingFor by remember { mutableStateOf<String?>(null) }
+    val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(model.backupSettings().toByteArray()) }
+            }.onSuccess { model.message("Settings backed up") }.onFailure { model.message("Could not back up: ${it.message}") }
+        }
+    }
+    val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val json = runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText().orEmpty() }.getOrDefault("")
+            val error = model.restoreSettings(json)
+            model.message(error ?: "Settings restored")
+        }
+    }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         if (!model.isDefaultEngine) {
             Card(
@@ -146,6 +158,14 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             }
         }
 
+        Section("Text")
+        Setting(
+            Icons.Outlined.Tune,
+            "Profile",
+            model.activeProfile,
+            onClick = { go(Screen.Profiles) },
+        ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) }
+
         Section("Engine")
         Setting(
             Icons.Outlined.Tune,
@@ -153,18 +173,6 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             null,
             onClick = { model.updateAdvanced(!model.advanced) },
         ) { Switch(checked = model.advanced, onCheckedChange = model::updateAdvanced) }
-        if (model.advanced) {
-            Setting(Icons.Outlined.GraphicEq, "Joining", null)
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(start = 56.dp, end = 16.dp, bottom = 8.dp)) {
-                listOf("Like the original" to false, "Smoothed" to true).forEachIndexed { i, (label, smooth) ->
-                    SegmentedButton(
-                        selected = model.smoothChoice == smooth,
-                        onClick = { model.updateSmooth(smooth) },
-                        shape = SegmentedButtonDefaults.itemShape(i, 2),
-                    ) { Text(label) }
-                }
-            }
-        }
 
         Section("Voices")
         Setting(
@@ -185,6 +193,20 @@ fun SettingsScreen(model: MainModel, go: (Screen) -> Unit, modifier: Modifier) {
             "Only while Quoquendo is open",
             onClick = { model.updateWifiOnly(!model.wifiOnly) },
         ) { Switch(checked = model.wifiOnly, onCheckedChange = model::updateWifiOnly) }
+
+        Section("Backup")
+        Setting(
+            Icons.Outlined.FileDownload,
+            "Back up settings",
+            "Profiles and speech settings, as JSON",
+            onClick = { backup.launch("quoquendo-settings.json") },
+        )
+        Setting(
+            Icons.Outlined.FileDownload,
+            "Restore from file",
+            "Replace profiles and speech settings",
+            onClick = { restore.launch(arrayOf("application/json")) },
+        )
 
         Section("About")
         Setting(
@@ -241,7 +263,7 @@ private fun VoiceChooser(model: MainModel, language: String, onDismiss: () -> Un
                 if (model.regions(language) > 1) Option(MATCH_THE_REGION, null, chosen == null) { model.chooseAppVoice(language, null) }
                 for (v in model.speakersOf(language)) {
                     val region = v.locales.firstOrNull { it.language == language }?.displayCountry.orEmpty()
-                    Option(v.name, listOf(region, v.gender).filter { it.isNotEmpty() }.joinToString(" · "), v.name == chosen, model.languageOf(v)) {
+                    Option(v.name, listOf(region, v.gender).filter { it.isNotEmpty() }.joinToString(" · "), v.name == chosen, flagLanguage(v.name, model.languageOf(v))) {
                         model.chooseAppVoice(language, v.name)
                     }
                 }

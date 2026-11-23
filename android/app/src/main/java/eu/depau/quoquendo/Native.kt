@@ -40,14 +40,20 @@ object Native {
 
     @JvmStatic external fun freeVoice(handle: Long)
 
+    /** The built-in speech profiles, as their JSON array. */
+    @JvmStatic external fun builtinProfiles(): String
+
+    /** [text] with [profile]'s rules, as JSON `{text, warnings}`. */
+    @JvmStatic external fun applyProfile(text: String, profile: String, language: String?): String
+
     /** [text] spoken, pieces joined smoothly when [smooth]. */
-    @JvmStatic external fun synthesize(handle: Long, text: String, smooth: Boolean): Rendered
+    @JvmStatic external fun synthesize(handle: Long, text: String, smooth: Boolean, language: String?, profile: String?): Rendered
 
     /**
      * [text] spoken as a file in the format with extension [ext] ([formats]),
      * the text and its timing embedded. [language] as in [analyse].
      */
-    @JvmStatic external fun export(handle: Long, text: String, ext: String, smooth: Boolean, language: String?): ByteArray
+    @JvmStatic external fun export(handle: Long, text: String, ext: String, smooth: Boolean, language: String?, profile: String?): ByteArray
 
     @JvmStatic external fun deleteVoice(storeDir: String, name: String)
 
@@ -62,5 +68,5 @@ object Native {
      * words:[{start,end,at,atS,endS}], sentences, audio:{rate,samples,seconds,step,envelope} | {error}}`;
      * word `start`/`end` are UTF-16 offsets in [text].
      */
-    @JvmStatic external fun analyse(handle: Long, text: String, smooth: Boolean, language: String?): Analysed
+    @JvmStatic external fun analyse(handle: Long, text: String, smooth: Boolean, language: String?, profile: String?): Analysed
 }
