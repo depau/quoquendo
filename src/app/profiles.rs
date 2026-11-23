@@ -64,10 +64,13 @@ impl App {
         let mut action = Action::None;
         let mut error = None;
 
+        // no wider or taller than the screen: a phone's is narrower than it wants
+        let screen = ctx.screen_rect();
+        let width = (screen.width() - 16.0).min(760.0);
         egui::Window::new("Settings")
             .open(&mut open)
-            .default_size([760.0, 720.0])
-            .min_width(520.0)
+            .default_size([width, (screen.height() - 60.0).min(720.0)])
+            .min_width(width.min(520.0))
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
                     ui.horizontal(|ui| {

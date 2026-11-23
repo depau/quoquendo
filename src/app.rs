@@ -705,7 +705,8 @@ impl App {
 
     fn status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            // a long message wraps instead of running off a phone's screen
+            ui.horizontal_wrapped(|ui| {
                 if self.unpacking.is_some() || self.loading.is_some() {
                     ui.spinner();
                 }
@@ -787,24 +788,44 @@ impl App {
                 // ready, then needing language data, then unsupported
                 Col::Status | Col::Size => Key::Num(if v.unsupported.is_some() { 2 } else { v.language_missing.is_some() as u64 }),
             });
-            egui::Grid::new("installed").num_columns(5).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
-                for (h, col) in [("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Status", Col::Status)] {
-                    self.sort_installed.header(ui, h, col);
+            // a phone's width: the voice's details under its name, its actions beside them
+            let narrow = narrow(ui);
+            egui::Grid::new("installed").num_columns(if narrow { 2 } else { 5 }).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
+                let headers: &[(&str, Col)] = if narrow {
+                    &[("Voice", Col::Voice)]
+                } else {
+                    &[("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Status", Col::Status)]
+                };
+                for (h, col) in headers {
+                    self.sort_installed.header(ui, h, *col);
                 }
                 ui.label("");
                 ui.end_row();
                 for v in rows {
-                    ui.horizontal(|ui| {
-                        flag(ui, flag_language(v));
-                        ui.label(&v.mother_tongue);
-                    });
-                    ui.label(&v.name);
-                    ui.label(RichText::new(&v.gender).color(MUTED));
-                    match (&v.unsupported, &v.language_missing) {
+                    let status = |ui: &mut egui::Ui| match (&v.unsupported, &v.language_missing) {
                         (Some(u), _) => ui.label(RichText::new(format!("{u} — unsupported yet")).color(MUTED)),
                         (None, Some(t)) => ui.label(RichText::new(format!("needs {t} language data")).color(AMBER)),
                         (None, None) => ui.label(RichText::new(format!("Ready · {}", catalog::size_label(v.bytes))).color(GREEN)),
                     };
+                    if narrow {
+                        ui.vertical(|ui| {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                            ui.horizontal(|ui| {
+                                flag(ui, flag_language(v));
+                                ui.label(&v.name);
+                            });
+                            ui.label(RichText::new(format!("{} · {}", v.mother_tongue, v.gender)).small().color(MUTED));
+                            status(ui);
+                        });
+                    } else {
+                        ui.horizontal(|ui| {
+                            flag(ui, flag_language(v));
+                            ui.label(&v.mother_tongue);
+                        });
+                        ui.label(&v.name);
+                        ui.label(RichText::new(&v.gender).color(MUTED));
+                        status(ui);
+                    }
                     ui.horizontal(|ui| {
                         if self.chosen.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&v.name)) {
                             ui.add_enabled(false, egui::Button::new("In use"));
@@ -867,13 +888,26 @@ impl App {
             let mut stop = None;
             egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                egui::Grid::new("downloads").num_columns(4).spacing([18.0, 6.0]).show(ui, |ui| {
+                let narrow = narrow(ui);
+                egui::Grid::new("downloads").num_columns(if narrow { 3 } else { 4 }).spacing([18.0, 6.0]).show(ui, |ui| {
                     for (i, d) in self.downloads.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            flag(ui, voice_flag_language(d.installer.voice, d.installer.language));
-                            ui.label(d.installer.label);
-                        });
-                        ui.label(RichText::new(format!("{} · {}", d.installer.language, catalog::size_label(d.installer.size))).color(MUTED));
+                        let details = RichText::new(format!("{} · {}", d.installer.language, catalog::size_label(d.installer.size))).color(MUTED);
+                        if narrow {
+                            ui.vertical(|ui| {
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                                ui.horizontal(|ui| {
+                                    flag(ui, voice_flag_language(d.installer.voice, d.installer.language));
+                                    ui.label(d.installer.label);
+                                });
+                                ui.label(details.small());
+                            });
+                        } else {
+                            ui.horizontal(|ui| {
+                                flag(ui, voice_flag_language(d.installer.voice, d.installer.language));
+                                ui.label(d.installer.label);
+                            });
+                            ui.label(details);
+                        }
                         match &d.state {
                             DownloadState::Queued => {
                                 ui.label(RichText::new("Queued").color(MUTED));
@@ -882,7 +916,7 @@ impl App {
                                 let total = total.unwrap_or(d.installer.size).max(1);
                                 ui.add(
                                     egui::ProgressBar::new(*done as f32 / total as f32)
-                                        .desired_width(320.0)
+                                        .desired_width(if narrow { 120.0 } else { 320.0 })
                                         .fill(AMBER)
                                         .text(format!("{} of {}", catalog::size_label(*done), catalog::size_label(total))),
                                 );
@@ -900,7 +934,9 @@ impl App {
                                 });
                             }
                             DownloadState::Failed(e) => {
-                                ui.label(RichText::new(format!("{e} — nothing was installed")).color(RED));
+                                // a phone has no room for the reason: the status bar has it too
+                                let reason = if narrow { "Failed".to_string() } else { format!("{e} — nothing was installed") };
+                                ui.label(RichText::new(reason).color(RED));
                             }
                         }
                         ui.horizontal(|ui| match d.state {
@@ -945,8 +981,13 @@ impl App {
             ui.heading("Catalog");
             ui.label(RichText::new(format!("· {} voices", INSTALLERS.len())).color(MUTED));
         });
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Filter by name or language").desired_width(220.0));
+        ui.horizontal_wrapped(|ui| {
+            // a phone: the filter on its own line, the menus under it
+            let narrow = narrow(ui);
+            ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Filter by name or language").desired_width(if narrow { f32::INFINITY } else { 220.0 }));
+            if narrow {
+                ui.end_row();
+            }
             let mut langs: Vec<&str> = INSTALLERS.iter().map(|i| i.language).collect();
             langs.sort();
             langs.dedup();
@@ -987,9 +1028,15 @@ impl App {
         let mut queue = None;
         egui::Frame::group(ui.style()).fill(GROUND).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            egui::Grid::new("catalog").num_columns(5).striped(true).spacing([18.0, 5.0]).show(ui, |ui| {
-                for (h, col) in [("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Size", Col::Size), ("Status", Col::Status)] {
-                    self.sort_catalog.header(ui, h, col);
+            let narrow = narrow(ui);
+            egui::Grid::new("catalog").num_columns(if narrow { 2 } else { 5 }).striped(true).spacing([18.0, 5.0]).show(ui, |ui| {
+                let headers: &[(&str, Col)] = if narrow {
+                    &[("Voice", Col::Voice), ("Status", Col::Status)]
+                } else {
+                    &[("Language", Col::Language), ("Voice", Col::Voice), ("Gender", Col::Gender), ("Size", Col::Size), ("Status", Col::Status)]
+                };
+                for (h, col) in headers {
+                    self.sort_catalog.header(ui, h, *col);
                 }
                 ui.end_row();
                 for inst in shown {
@@ -997,13 +1044,25 @@ impl App {
                     let dead = catalog::unsupported(inst.language);
                     // weaker than the theme's text, whatever that is
                     let ink = |t: &str| if dead.is_some() { RichText::new(t).weak() } else { RichText::new(t) };
-                    ui.horizontal(|ui| {
-                        flag(ui, voice_flag_language(inst.voice, inst.language));
-                        ui.label(ink(inst.language));
-                    });
-                    ui.label(ink(inst.label));
-                    ui.label(if dead.is_some() { RichText::new(inst.gender).weak() } else { RichText::new(inst.gender).color(MUTED) });
-                    ui.label(ink(&catalog::size_label(inst.size)).monospace());
+                    let muted = |t: &str| if dead.is_some() { RichText::new(t).weak() } else { RichText::new(t).color(MUTED) };
+                    if narrow {
+                        ui.vertical(|ui| {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                            ui.horizontal(|ui| {
+                                flag(ui, voice_flag_language(inst.voice, inst.language));
+                                ui.label(ink(inst.label));
+                            });
+                            ui.label(muted(&format!("{} · {} · {}", inst.language, inst.gender, catalog::size_label(inst.size))).small());
+                        });
+                    } else {
+                        ui.horizontal(|ui| {
+                            flag(ui, voice_flag_language(inst.voice, inst.language));
+                            ui.label(ink(inst.language));
+                        });
+                        ui.label(ink(inst.label));
+                        ui.label(muted(inst.gender));
+                        ui.label(ink(&catalog::size_label(inst.size)).monospace());
+                    }
                     if installed(inst) {
                         ui.label(RichText::new("Installed").color(GREEN));
                     } else if pending(inst) {
@@ -1151,7 +1210,8 @@ impl App {
         let mut pick_phone: Option<String> = None;
         let mut page = self.explore.page;
         let mut back = false;
-        ui.horizontal(|ui| {
+        let mut close_phone = false;
+        ui.horizontal_wrapped(|ui| {
             back = ui.button("◀ Voices").clicked();
             ui.heading(format!("{}'s recordings", voice.descriptor.name));
             let secs = db.audio.as_ref().map(|a| a.total_samples() / a.rate as usize).unwrap_or(0);
@@ -1173,11 +1233,23 @@ impl App {
         }
         ui.separator();
         let height = ui.available_height();
+        // a phone's width has room for the list or what's picked in it, not both
+        let narrow = narrow(ui);
+        let picked = self.explore.unit.is_some() || self.explore.phone.is_some();
         ui.horizontal_top(|ui| {
             // a list to pick from: the phones, with how often each was
             // recorded, or the recorded sentences
             ui.vertical(|ui| {
-                let width = if self.explore.phones { 170.0 } else { 380.0 };
+                if narrow && picked {
+                    return;
+                }
+                let width = if narrow {
+                    ui.available_width()
+                } else if self.explore.phones {
+                    170.0
+                } else {
+                    380.0
+                };
                 ui.set_width(width);
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.explore.phones, false, "Sentences");
@@ -1238,13 +1310,18 @@ impl App {
                     }
                 });
             });
-            ui.separator();
+            if !narrow {
+                ui.separator();
+            }
             ui.vertical(|ui| {
+                if narrow && !picked {
+                    return;
+                }
                 if let Some(u) = self.explore.unit.filter(|&u| u < db.units.len()) {
                     // one recorded sentence: each phone plays on its own
                     let unit = &db.units[u];
                     let timed: Vec<&quoquendo::loquendo::Phone> = unit.phones.iter().filter(|p| p.timed).collect();
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if ui.button("◀ Back").clicked() {
                             open_unit = Some(None);
                         }
@@ -1287,7 +1364,11 @@ impl App {
                     const PAGE: usize = 100;
                     let pages = takes.len().div_ceil(PAGE).max(1);
                     page = page.min(pages - 1);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        // on a phone the list is behind it
+                        if narrow && ui.button("◀ Back").clicked() {
+                            close_phone = true;
+                        }
                         ui.label(RichText::new(format!("“{sym}”")).monospace().strong().color(AMBER));
                         ui.label(RichText::new(format!("· {} takes", takes.len())).color(MUTED));
                         if ui.add_enabled(page > 0, egui::Button::new("◀")).clicked() {
@@ -1298,7 +1379,8 @@ impl App {
                             page += 1;
                         }
                     });
-                    egui::ScrollArea::vertical().id_salt("takes").max_height(height - 60.0).show(ui, |ui| {
+                    // its grid is wider than a phone
+                    egui::ScrollArea::both().id_salt("takes").max_height(height - 60.0).show(ui, |ui| {
                         egui::Grid::new("takes_grid").num_columns(7).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
                             for h in ["", "", "in context", "sentence", "length", "pitch", ""] {
                                 ui.label(RichText::new(h).small().color(MUTED));
@@ -1345,6 +1427,9 @@ impl App {
             self.explore.unit = None;
             self.explore.page = 0;
         }
+        if close_phone {
+            self.explore.phone = None;
+        }
         if let Some(u) = open_unit {
             self.explore.unit = u;
         }
@@ -1377,6 +1462,11 @@ fn voice_flag_language<'a>(voice: &str, language: &'a str) -> &'a str {
     } else {
         language
     }
+}
+
+/// A phone's width: room for one column of a table or a pane.
+pub(crate) fn narrow(ui: &egui::Ui) -> bool {
+    ui.ctx().screen_rect().width() < 640.0
 }
 
 /// A language's flag, or as much room for a language without one.

@@ -798,14 +798,16 @@ fn section(ui: &mut egui::Ui, id: &str, header: impl FnOnce(&mut egui::Ui), body
 }
 
 /// The Pieces table's column widths for `width`: play, sounds, sentence,
-/// what it says (the slack, dropped when there is none), at, length, pitch.
+/// what it says (the slack, dropped when there is none), at (dropped on a
+/// phone), length, pitch.
 fn piece_columns(width: f32) -> [f32; 7] {
-    let fixed = 34.0 + 70.0 + 100.0 + 80.0 + 70.0;
+    let at = if width < 34.0 + 70.0 + 100.0 + 80.0 + 70.0 + 60.0 { 0.0 } else { 100.0 };
+    let fixed = 34.0 + 70.0 + at + 80.0 + 70.0;
     let (sounds, said) = match width - fixed - 200.0 {
         slack if slack >= 80.0 => (200.0, slack),
         _ => ((width - fixed).max(60.0), 0.0),
     };
-    [34.0, sounds, 70.0, said, 100.0, 80.0, 70.0]
+    [34.0, sounds, 70.0, said, at, 80.0, 70.0]
 }
 
 /// One table row of `widths`, filled with `fill`: `cell` draws each
