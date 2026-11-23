@@ -337,6 +337,7 @@ fn style(ctx: &egui::Context) {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, launch: Launch) -> App {
         style(&cc.egui_ctx);
+        fonts::set(&cc.egui_ctx, None);
         // a screenshot shows the defaults and the launch options, not this
         // computer's saved settings
         #[cfg(not(target_arch = "wasm32"))]

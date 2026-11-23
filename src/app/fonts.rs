@@ -1,6 +1,10 @@
-//! Hanzi: egui's own fonts have none, so Chinese text shows as tofu. The
-//! first time the text has some, a Chinese font joins egui's as their
-//! fallback: the system's on desktop, Noto Sans SC from jsDelivr on the web.
+//! Fonts egui's own lack, after them so Latin text keeps its look.
+//!
+//! IPA letters: Ubuntu has no ə or ɜ (inclusive Italian), so Noto Sans'
+//! IPA Extensions block (U+0250–02AF, Light, 13 KB) is always there.
+//!
+//! Hanzi: the first time the text has some, a Chinese font joins too: the
+//! system's on desktop, Noto Sans SC from jsDelivr on the web.
 
 use eframe::egui;
 
@@ -35,7 +39,7 @@ impl Cjk {
     pub fn ensure(&mut self, ctx: &egui::Context, text: &str) {
         #[cfg(target_arch = "wasm32")]
         if let Some(font) = self.arrived.borrow_mut().take() {
-            install(ctx, font, 0);
+            set(ctx, Some((font, 0)));
         }
         if self.asked || !text.chars().any(is_hanzi) {
             return;
@@ -43,7 +47,7 @@ impl Cjk {
         self.asked = true;
         #[cfg(not(target_arch = "wasm32"))]
         if let Some((font, index)) = SYSTEM.iter().find_map(|(p, i)| Some((std::fs::read(p).ok()?, *i))) {
-            install(ctx, font, index);
+            set(ctx, Some((font, index)));
         }
         #[cfg(target_arch = "wasm32")]
         {
@@ -62,28 +66,38 @@ fn is_hanzi(c: char) -> bool {
     matches!(c, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}' | '\u{20000}'..='\u{2ffff}')
 }
 
-/// The font after egui's own in both families, so Latin text keeps its look.
+/// egui's fonts, the IPA letters and, once wanted, the Chinese font.
+pub fn set(ctx: &egui::Context, cjk: Option<(Vec<u8>, u32)>) {
+    let mut fonts = egui::FontDefinitions::default();
+    fallback(&mut fonts, "ipa", egui::FontData::from_static(include_bytes!("../../assets/fonts/NotoSans-Light-IPA.ttf")));
+    if let Some((font, index)) = cjk {
+        fallback(&mut fonts, "cjk", egui::FontData { index, ..egui::FontData::from_owned(font) });
+    }
+    ctx.set_fonts(fonts);
+}
+
+/// The font after egui's own in both families.
 /// egui sets each font's glyphs from the row's top by that font's ascent,
 /// centring the difference in line heights, so a font whose metrics differ
 /// from Ubuntu's sits off its baseline: shifted back by that difference.
-fn install(ctx: &egui::Context, font: Vec<u8>, index: u32) {
+/// egui sizes every font to the same em, and scales a font's shift by its
+/// ascent-to-descent height.
+fn fallback(fonts: &mut egui::FontDefinitions, name: &str, data: egui::FontData) {
     use ab_glyph::Font;
-    let mut fonts = egui::FontDefinitions::default();
-    // ascent and line height as fractions of the size egui scales by
+    // ascent, line height and ascent-to-descent height, in ems
     let metrics = |f: &[u8], i| {
         let f = ab_glyph::FontRef::try_from_slice_and_index(f, i).ok()?;
-        let h = f.height_unscaled();
-        Some((f.ascent_unscaled() / h, (h + f.line_gap_unscaled()) / h))
+        let (em, h) = (f.units_per_em()?, f.height_unscaled());
+        Some((f.ascent_unscaled() / em, (h + f.line_gap_unscaled()) / em, h / em))
     };
-    let Some((ascent, height)) = metrics(&font, index) else { return };
+    let Some((ascent, height, size)) = metrics(&data.font, data.index) else { return };
     let latin = &fonts.font_data["Ubuntu-Light"];
-    let (latin_ascent, latin_height) = metrics(&latin.font, latin.index).expect("egui's own font");
-    let tweak = egui::FontTweak { y_offset_factor: latin_ascent - ascent - 0.5 * (latin_height - height), ..Default::default() };
-    fonts.font_data.insert("cjk".into(), egui::FontData { index, tweak, ..egui::FontData::from_owned(font) });
+    let (latin_ascent, latin_height, _) = metrics(&latin.font, latin.index).expect("egui's own font");
+    let tweak = egui::FontTweak { y_offset_factor: (latin_ascent - ascent - 0.5 * (latin_height - height)) / size, ..Default::default() };
+    fonts.font_data.insert(name.into(), egui::FontData { tweak, ..data });
     for family in fonts.families.values_mut() {
-        family.push("cjk".into());
+        family.push(name.into());
     }
-    ctx.set_fonts(fonts);
 }
 
 #[cfg(target_arch = "wasm32")]
